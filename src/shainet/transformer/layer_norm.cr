@@ -212,10 +212,8 @@ module SHAInet
       rows = x.rows
       cols = x.cols
 
-      # If all tensors are CUDA and kernels are available, use GPU computation
+      # GPU implementation keeps all data on the device
       if CUDA.fully_available? && @mean.is_a?(CudaMatrix) && @var.is_a?(CudaMatrix) && @norm.is_a?(CudaMatrix)
-        begin
-          # Use pre-allocated workspace matrices instead of creating new ones
           d_x = @workspace_d_x.not_nil!
           d_gamma = @workspace_d_gamma.not_nil!
           d_beta = @workspace_d_beta.not_nil!
@@ -261,71 +259,9 @@ module SHAInet
           end
 
           return d_x
-        rescue e : Exception
-          # Fall back to CPU implementation
-        end
       end
 
-      # CPU fallback - sync ALL matrices from device first
-      x.sync_from_device!("layer_norm_backward")
-      d_out.sync_from_device!("layer_norm_backward") # This was missing!
-
-      # Sync gamma if it's on GPU
-      if @gamma.is_a?(CudaMatrix)
-        @gamma.as(CudaMatrix).sync_from_device!("layer_norm_debug")
-      end
-
-      # Use CPU matrices for computation
-      d_gamma = SimpleMatrix.zeros(1, cols)
-      d_beta = SimpleMatrix.zeros(1, cols)
-      d_x = SimpleMatrix.new(rows, cols)
-
-      # Also sync other matrices if they're CUDA
-      if @mean.is_a?(CudaMatrix)
-        @mean.as(CudaMatrix).sync_from_device!("layer_norm_debug")
-      end
-      if @var.is_a?(CudaMatrix)
-        @var.as(CudaMatrix).sync_from_device!("layer_norm_debug")
-      end
-      if @norm.is_a?(CudaMatrix)
-        @norm.as(CudaMatrix).sync_from_device!("layer_norm_debug")
-      end
-
-      rows.times do |i|
-        denom = Math.sqrt(@var[i, 0] + @epsilon)
-        inv = 1.0 / denom
-        col_f = cols.to_f64
-        sum_dout_gamma = 0.0
-        sum_dout_gamma_norm = 0.0
-        cols.times do |j|
-          doutg = d_out[i, j] * @gamma[0, j]
-          sum_dout_gamma += doutg
-          sum_dout_gamma_norm += doutg * (x[i, j] - @mean[i, 0])
-          d_gamma[0, j] += d_out[i, j] * @norm[i, j]
-          d_beta[0, j] += d_out[i, j]
-        end
-        cols.times do |j|
-          xm = x[i, j] - @mean[i, 0]
-          doutg = d_out[i, j] * @gamma[0, j]
-          d_x[i, j] = inv * (doutg - sum_dout_gamma/col_f - xm * inv*inv / col_f * sum_dout_gamma_norm)
-        end
-      end
-
-      # Accumulate gradients to parameters
-      cols.times do |j|
-        @g_gamma[0, j] += d_gamma[0, j]
-        @g_beta[0, j] += d_beta[0, j]
-      end
-
-      # Convert result back to CudaMatrix
-      result = CudaMatrix.new(rows, cols)
-      rows.times do |i|
-        cols.times do |j|
-          result[i, j] = d_x[i, j]
-        end
-      end
-      result.sync_to_device!("layer_norm_gradient_result")
-      result
+      raise "CUDA not available for layer_norm backward"
     end
 
     # CPU path backward - all SimpleMatrix operations

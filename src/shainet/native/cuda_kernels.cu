@@ -467,4 +467,27 @@ void cross_entropy_loss_gradient(double* pred, double* target,
     }
 }
 
+__global__ void mse_cost_gradient_kernel(const double* actual, const double* expected,
+                                         double* grad, double* cost, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= size) return;
+
+    double diff = actual[idx] - expected[idx];
+    grad[idx] = diff;
+    double contrib = 0.5 * diff * diff;
+    atomicAdd(cost, contrib);
+}
+
+void mse_cost_gradient(const double* actual, const double* expected,
+                       double* grad, double* cost, int size) {
+    cudaMemset(cost, 0, sizeof(double));
+    int threads = 256;
+    int blocks = (size + threads - 1) / threads;
+    mse_cost_gradient_kernel<<<blocks, threads>>>(actual, expected, grad, cost, size);
+    cudaError_t err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        printf("CUDA Error in mse_cost_gradient: %s\n", cudaGetErrorString(err));
+    }
+}
+
 } // extern "C"

@@ -294,6 +294,7 @@ module SHAInet
     @@softmax_backward_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
     @@element_log_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Void)? = nil
     @@cross_entropy_loss_grad_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
+    @@mse_cost_grad_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Void)? = nil
 
     def softmax_rows(dst : Pointer(Float64), src : Pointer(Float64), rows : Int32, cols : Int32)
       # Validate inputs
@@ -870,9 +871,26 @@ module SHAInet
     # GPU kernel for mean squared error cost and gradient computation
     def mse_cost_gradient(actual_ptr : Pointer(Float64), expected_ptr : Pointer(Float64),
                           cost_ptr : Pointer(Float64), grad_ptr : Pointer(Float64), size : Int32)
-      # This would be a custom CUDA kernel implementation
-      # For now, fallback is handled in the calling code
-      raise RuntimeError.new("GPU MSE kernel not yet implemented")
+      unless fn = @@mse_cost_grad_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "mse_cost_gradient")
+          unless sym.null?
+            @@mse_cost_grad_proc = Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@mse_cost_grad_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+
+      begin
+        fn.call(actual_ptr, expected_ptr, grad_ptr, cost_ptr, size)
+      rescue e
+        Log.error { "CUDA Error in mse_cost_gradient: #{e}" }
+        raise e
+      end
     end
   end
 end
