@@ -12,6 +12,7 @@ module SHAInet
     @v_heads : Array(SimpleMatrix | CudaMatrix)
     @attn : Array(SimpleMatrix | CudaMatrix)
     @out : SimpleMatrix | CudaMatrix
+    @head_outputs : Array(SimpleMatrix | CudaMatrix)
 
     # Gradient matrices - keep same type as weights
     @g_w_q : SimpleMatrix | CudaMatrix
@@ -95,6 +96,7 @@ module SHAInet
       @k_heads = [] of (SimpleMatrix | CudaMatrix)
       @v_heads = [] of (SimpleMatrix | CudaMatrix)
       @attn = [] of (SimpleMatrix | CudaMatrix)
+      @head_outputs = [] of (SimpleMatrix | CudaMatrix)
       @out = mat_klass.zeros(1, 1)
 
       # Initialize workspace matrices as nil - will be allocated on first use
@@ -184,6 +186,7 @@ module SHAInet
         @k_heads = @k_heads.map { |h| h.is_a?(CudaMatrix) ? h.as(SimpleMatrix | CudaMatrix) : h.as(SimpleMatrix).to_cuda.as(SimpleMatrix | CudaMatrix) }
         @v_heads = @v_heads.map { |h| h.is_a?(CudaMatrix) ? h.as(SimpleMatrix | CudaMatrix) : h.as(SimpleMatrix).to_cuda.as(SimpleMatrix | CudaMatrix) }
         @attn = @attn.map { |h| h.is_a?(CudaMatrix) ? h.as(SimpleMatrix | CudaMatrix) : h.as(SimpleMatrix).to_cuda.as(SimpleMatrix | CudaMatrix) }
+        @head_outputs = @head_outputs.map { |h| h.is_a?(CudaMatrix) ? h.as(SimpleMatrix | CudaMatrix) : h.as(SimpleMatrix).to_cuda.as(SimpleMatrix | CudaMatrix) }
         update_transposes
       end
     end
@@ -210,7 +213,7 @@ module SHAInet
         @k_heads = Array(SimpleMatrix | CudaMatrix).new
         @v_heads = Array(SimpleMatrix | CudaMatrix).new
         @attn = Array(SimpleMatrix | CudaMatrix).new
-        outputs = [] of CudaMatrix
+        @head_outputs = [] of (SimpleMatrix | CudaMatrix)
 
         # Split into heads and compute attention - all GPU operations
         @num_heads.times do |h|
@@ -253,7 +256,7 @@ module SHAInet
 
           # Compute attention output directly into workspace
           attn_output_workspace.gemm!(scores_workspace, vs)
-          outputs << attn_output_workspace
+          @head_outputs << attn_output_workspace
         end
 
         # Concatenate heads - use optimized batch copy instead of set_cols
@@ -263,7 +266,7 @@ module SHAInet
         # Use more efficient concatenation to reduce set_cols syncs
         @num_heads.times do |h|
           start_col = h * @head_dim
-          output_h = outputs[h]
+          output_h = @head_outputs[h].as(CudaMatrix)
 
           # Use GPU-to-GPU copy when possible instead of set_cols
           if (concat_ptr = concat.device_ptr) && (output_ptr = output_h.device_ptr) &&
@@ -301,7 +304,7 @@ module SHAInet
       @k_heads = Array(SimpleMatrix | CudaMatrix).new
       @v_heads = Array(SimpleMatrix | CudaMatrix).new
       @attn = Array(SimpleMatrix | CudaMatrix).new
-      outputs = [] of SimpleMatrix
+      @head_outputs = [] of (SimpleMatrix | CudaMatrix)
 
       # Split into heads and compute attention - all CPU operations
       @num_heads.times do |h|
@@ -328,13 +331,13 @@ module SHAInet
         @attn << scores
 
         # Compute output for this head
-        outputs << (scores * vs)
+        @head_outputs << (scores * vs)
       end
 
       # Concatenate heads - CPU
       concat = SimpleMatrix.new(x.rows, @d_model)
       @num_heads.times do |h|
-        concat.set_cols!(h * @head_dim, outputs[h])
+        concat.set_cols!(h * @head_dim, @head_outputs[h].as(SimpleMatrix))
       end
 
       # Final projection - CPU
@@ -351,7 +354,7 @@ module SHAInet
       # Gradient w.r.t. W_o
       concat = mat_klass.new(x.rows, @d_model)
       @num_heads.times do |h|
-        output = @attn[h].as(SimpleMatrix) * @v_heads[h].as(SimpleMatrix)
+        output = @head_outputs[h].as(SimpleMatrix)
         concat.set_cols!(h * @head_dim, output)
       end
       @g_w_o = @g_w_o.as(SimpleMatrix) + (concat.transpose * d_out)
@@ -430,10 +433,8 @@ module SHAInet
         # Gradient w.r.t. W_o (use pre-allocated workspace)
         concat = @workspace_concat.not_nil!
         @num_heads.times do |h|
-          output = CudaMatrix.get_workspace(@attn[h].rows, @v_heads[h].cols, "mha_head_out")
-          output.gemm!(@attn[h].as(CudaMatrix), @v_heads[h].as(CudaMatrix))
+          output = @head_outputs[h].as(CudaMatrix)
           concat.set_cols!(h * @head_dim, output)
-          CudaMatrix.return_workspace(output)
         end
 
         # Compute gradient and accumulate in-place
