@@ -1,5 +1,10 @@
 require "./spec_helper"
 
+# Verify parity between the CPU implementation of softmax cross-entropy with
+# label indices and the optimized CUDA kernel. The test computes a reference
+# loss and gradient on the CPU and ensures the GPU API returns nearly identical
+# results.
+
 private def cpu_softmax_cross_entropy_label(logits : SHAInet::SimpleMatrix, labels : Array(Int32))
   rows = logits.rows
   cols = logits.cols
