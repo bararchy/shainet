@@ -1,4 +1,6 @@
 require "./simple_matrix"
+require "../precision"
+require "../float16"
 {% if flag?(:enable_cuda) %}
   require "../cuda"
   require "../cudnn"
@@ -12,10 +14,14 @@ module SHAInet
   # to avoid method resolution conflicts.
   class CudaMatrix
     property device_ptr : Pointer(Float64)?
+    property precision : Precision
     @device_dirty : Bool = false # Track if GPU data is newer than CPU data
     @rows : Int32
     @cols : Int32
     @data : Array(Float64)
+    @half_data : Array(Float16) | Array(BFloat16) | Nil
+    @master_data : Array(Float32) | Nil
+    @element_size : Int32 = 8
     @gpu_memory_size : UInt64 = 0_u64 # Track our own GPU memory size
 
     # Global GPU memory tracking
@@ -101,8 +107,23 @@ module SHAInet
       @@allocation_sites.clear
     end
 
-    def initialize(@rows : Int32, @cols : Int32, init : Float64 = 0.0)
+    def initialize(@rows : Int32, @cols : Int32, init : Float64 = 0.0, precision : Precision = Precision::Fp64)
+      @precision = precision
       @data = Array(Float64).new(@rows * @cols, init)
+      case @precision
+      when Precision::Fp16
+        @half_data = Array(Float16).new(@rows * @cols) { Float16.new(init) }
+        @master_data = Array(Float32).new(@rows * @cols, init.to_f32)
+        @element_size = 2
+      when Precision::Bf16
+        @half_data = Array(BFloat16).new(@rows * @cols) { BFloat16.new(init.to_f32) }
+        @master_data = Array(Float32).new(@rows * @cols, init.to_f32)
+        @element_size = 2
+      else
+        @half_data = nil
+        @master_data = nil
+        @element_size = 8
+      end
       @device_ptr = Pointer(Float64).null
 
       # Count matrix creation
@@ -117,7 +138,7 @@ module SHAInet
       raise RuntimeError.new("CudaMatrix requires CUDA to be available") unless CUDA.fully_available?
       # Print the most frequent allocation sites
       size = @rows * @cols
-      bytes = (size * 8).to_u64
+      bytes = (size * @element_size).to_u64
 
       # Check if we would exceed memory limits or are getting close
       if @@total_gpu_memory_allocated + bytes > @@max_gpu_memory ||
@@ -156,6 +177,9 @@ module SHAInet
 
     def []=(row : Int32, col : Int32, value : Float64)
       @data[row * @cols + col] = value
+      if md = @master_data
+        md[row * @cols + col] = value.to_f32
+      end
       # CPU data is now newer, need to sync to device before next GPU op
       mark_device_clean!
     end
@@ -168,6 +192,9 @@ module SHAInet
     # Provide a method to set values without affecting sync state
     def unsafe_set(row : Int32, col : Int32, value : Float64)
       @data[row * @cols + col] = value
+      if md = @master_data
+        md[row * @cols + col] = value.to_f32
+      end
     end
 
     def self.from_a(array : Array(Array(GenNum)))
@@ -273,7 +300,7 @@ module SHAInet
 
       begin
         size = @rows * @cols
-        bytes = (size * 8).to_u64
+        bytes = (size * @element_size).to_u64
 
         # Track sync operations for performance monitoring
         @@sync_to_device_count += 1
@@ -303,7 +330,7 @@ module SHAInet
 
       begin
         size = @rows * @cols
-        bytes = (size * 8).to_u64
+        bytes = (size * @element_size).to_u64
 
         # Track sync operations for performance monitoring
         @@sync_from_device_count += 1
@@ -378,8 +405,8 @@ module SHAInet
       dest_row_ptr = dptr + (row_idx * @cols)
       src_row_ptr = sptr + (source_row * other.cols)
 
-      # Copy the row data (cols * 8 bytes for Float64)
-      bytes = (@cols * 8).to_u64
+      # Copy the row data (precision aware)
+      bytes = (@cols * @element_size).to_u64
       CUDA.copy_device_to_device(dest_row_ptr, src_row_ptr, bytes)
 
       mark_device_dirty!
@@ -484,7 +511,7 @@ module SHAInet
       # If we have GPU data, copy it directly on GPU
       if device_dirty?
         # GPU -> GPU copy
-        bytes = (@rows * @cols * 8).to_u64
+        bytes = (@rows * @cols * @element_size).to_u64
         result = CUDA.memcpy(dptr.as(Pointer(Void)), sptr.as(Pointer(Void)), bytes, CUDA::MemcpyKind::DeviceToDevice)
         raise RuntimeError.new("GPU-to-GPU memcpy failed") if result != 0
 
@@ -764,7 +791,7 @@ module SHAInet
       other.sync_to_device!("copy_from") unless other.device_dirty?
 
       # GPU -> GPU copy
-      bytes = (@rows * @cols * 8).to_u64
+      bytes = (@rows * @cols * @element_size).to_u64
       result = CUDA.memcpy(dptr.as(Pointer(Void)), sptr.as(Pointer(Void)), bytes, CUDA::MemcpyKind::DeviceToDevice)
       raise RuntimeError.new("GPU-to-GPU memcpy failed") if result != 0
 
