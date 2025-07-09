@@ -2,6 +2,7 @@ require "log"
 require "json"
 require "../pytorch_import"
 require "../math/simple_matrix"
+require "../precision"
 require "./matrix_layer"
 
 module SHAInet
@@ -40,7 +41,7 @@ module SHAInet
     property weight_decay : Float64
     property accumulation_steps : Int32
     property accumulation_counter : Int32
-    property mixed_precision : Bool
+    property precision : Precision
     property decay_type : Symbol?
     property decay_rate : Float64
     property decay_step : Int32
@@ -82,7 +83,7 @@ module SHAInet
       @weight_decay = 0.0
       @accumulation_steps = 1
       @accumulation_counter = 0
-      @mixed_precision = false
+      @precision = Precision::Fp64
       @decay_type = nil
       @decay_rate = 0.0
       @decay_step = 1

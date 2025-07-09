@@ -8,6 +8,7 @@ require "json"
 {% end %}
 require "../math/simple_matrix"
 require "../math/cuda_matrix"
+require "../precision"
 
 module SHAInet
   class Network
@@ -24,6 +25,23 @@ module SHAInet
     @batch_out_ws : CudaMatrix? = nil
     @batch_grad_ws : CudaMatrix? = nil
 
+    private def convert_num(v : GenNum) : Float64
+      case @precision
+      when Precision::Fp64
+        v.to_f64
+      else
+        v.to_f32.to_f64
+      end
+    end
+
+    private def convert_array(arr : Array(GenNum))
+      arr.map { |v| convert_num(v) }
+    end
+
+    private def convert_seq(seq : Array(Array(GenNum)))
+      seq.map { |row| convert_array(row) }
+    end
+
     # Run an input through the network to get an output (weights & biases do not change)
     # Simple wrapper that converts array input to matrix and calls the core matrix method
     def run(input : Array(GenNum), stealth : Bool = false) : Array(Float64)
@@ -33,7 +51,7 @@ module SHAInet
         "Error input data size: #{input.size} doesn't fit input layer size: #{expected_size}.") unless input.size == expected_size
 
       # Convert to matrix and use core matrix method
-      processed = @mixed_precision ? input.map { |v| v.to_f32.to_f64 } : input.map(&.to_f64)
+      processed = convert_array(input)
       matrix = GPUMemory.to_gpu(SimpleMatrix.from_a([processed]))
       result_matrix = run(matrix, stealth: stealth)
 
@@ -60,7 +78,7 @@ module SHAInet
       raise NeuralNetRunError.new(
         "Error input data size: #{input.size} doesn't fit input layer size: #{expected_size}.") unless input.size == expected_size
 
-      processed = @mixed_precision ? input.map { |v| v.to_f32.to_f64 } : input.map(&.to_f64)
+      processed = convert_array(input)
       matrix = GPUMemory.to_gpu(SimpleMatrix.from_a([processed]))
       result_matrix = run(matrix, stealth: stealth)
 
@@ -317,9 +335,7 @@ module SHAInet
       end
 
       # Convert to matrix and use core matrix method
-      processed = input.map do |x|
-        @mixed_precision ? x.map { |v| v.to_f32.to_f64 } : x.map(&.to_f64)
-      end
+      processed = convert_seq(input)
       matrix = GPUMemory.to_gpu(SimpleMatrix.from_a(processed))
       result_matrix = run(matrix, stealth: stealth)
 
@@ -341,9 +357,7 @@ module SHAInet
         raise NeuralNetRunError.new("Error input data size: #{step.size} doesn't fit input layer size: #{expected_size}.") unless step.size == expected_size
       end
 
-      processed = input.map do |x|
-        @mixed_precision ? x.map { |v| v.to_f32.to_f64 } : x.map(&.to_f64)
-      end
+      processed = convert_seq(input)
       matrix = GPUMemory.to_gpu(SimpleMatrix.from_a(processed))
       result_matrix = run(matrix, stealth: stealth)
 
@@ -366,7 +380,7 @@ module SHAInet
     def evaluate(input_data : Array(GenNum),
                  expected_output : Array(GenNum),
                  cost_function : CostFunction = SHAInet.quadratic_cost)
-      processed = @mixed_precision ? input_data.map { |v| v.to_f32.to_f64 } : input_data.map(&.to_f64)
+      processed = convert_array(input_data)
       actual_output = run(processed, stealth: true)
 
       # Test for NaNs & exploading gradients
@@ -496,9 +510,7 @@ module SHAInet
     def evaluate_sequence(input_data : Array(Array(GenNum)),
                           expected_output : Array(GenNum),
                           cost_function : CostFunction = SHAInet.quadratic_cost)
-      seq = input_data.map do |x|
-        @mixed_precision ? x.map { |v| v.to_f32 to_f64 } : x.map(&.to_f64)
-      end
+      seq = convert_seq(input_data)
       outputs = run(seq, stealth: true)
       actual_output = outputs.last
 
