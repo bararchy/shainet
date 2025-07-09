@@ -524,27 +524,9 @@ module SHAInet
 
     def finalize
       if CUDA.fully_available?
-        if ws = @workspace_mean
-          CudaMatrix.return_workspace(ws)
-        end
-        if ws = @workspace_var
-          CudaMatrix.return_workspace(ws)
-        end
-        if ws = @workspace_norm
-          CudaMatrix.return_workspace(ws)
-        end
-        if ws = @workspace_result
-          CudaMatrix.return_workspace(ws)
-        end
-        if ws = @workspace_d_x
-          CudaMatrix.return_workspace(ws)
-        end
-        if ws = @workspace_d_gamma
-          CudaMatrix.return_workspace(ws)
-        end
-        if ws = @workspace_d_beta
-          CudaMatrix.return_workspace(ws)
-        end
+        # Avoid returning workspace matrices to the pool from a finalizer to
+        # prevent allocations during GC. Dropping the references is enough for
+        # their own finalizers to free GPU memory.
       end
 
       @workspace_mean = nil

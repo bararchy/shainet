@@ -281,10 +281,9 @@ module SHAInet
     end
 
     def finalize
-      if ws = @workspace_result
-        CudaMatrix.return_workspace(ws)
-        @workspace_result = nil
-      end
+      # Only release reference to allow CudaMatrix's own finalizer
+      # to free GPU memory without performing allocations here.
+      @workspace_result = nil
     end
   end
 end
