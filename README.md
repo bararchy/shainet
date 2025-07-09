@@ -179,6 +179,18 @@ Enable weight decay to shrink parameters on each update:
 net.weight_decay = 0.01
 ```
 
+### INT8 Quantization
+
+Convert a trained network to use INT8 weights for faster inference:
+
+```crystal
+net.quantize_int8!
+net.precision = SHAInet::Precision::Int8
+puts net.run([1.0, 0.0])
+```
+
+See `examples/quantize_int8.cr` for a full example.
+
 ---
 
 ## Advanced
