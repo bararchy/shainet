@@ -11,6 +11,7 @@ SHAInet (Super Human Artificial Intelligence Network) is a neural network librar
 - Includes ReLU, Sigmoid, GELU and more
 - Various training algorithms (SGD, Adam, iRprop+, etc.)
 - Streaming data support for large datasets
+- Residual skip connections between layers
 - PyTorch and HuggingFace model import
 - Transformer and modern NLP support
 

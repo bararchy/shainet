@@ -40,6 +40,8 @@ module SHAInet
     property weight_decay : Float64
     property accumulation_steps : Int32
     property mixed_precision : Bool
+    # Map of destination layer index to array of source layer indices for residual connections
+    getter :residual_edges
 
     @cached_expanded_grad : SimpleMatrix | CudaMatrix | Nil
 
@@ -85,6 +87,7 @@ module SHAInet
       @batch_in_ws = nil
       @batch_out_ws = nil
       @batch_grad_ws = nil
+      @residual_edges = {} of Int32 => Array(Int32)
     end
 
     # Create and populate a layer
@@ -198,6 +201,14 @@ module SHAInet
       end
     rescue e : Exception
       raise NeuralNetRunError.new("Error in connect_ltl: #{e}")
+    end
+
+    # Register a residual (skip) connection from one layer to another.
+    # Indices correspond to hidden layer order with the output layer index
+    # equal to `hidden_layers.size`.
+    def add_residual(from_idx : Int32, to_idx : Int32)
+      list = (@residual_edges[to_idx] ||= Array(Int32).new)
+      list << from_idx
     end
 
     def log_summary(e)

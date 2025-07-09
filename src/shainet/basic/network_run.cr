@@ -149,7 +149,8 @@ module SHAInet
         matrix.as(CudaMatrix)
       else
         # Standard matrix processing for non-transformer networks
-        @hidden_layers.each do |l|
+        outputs = [] of CudaMatrix | SimpleMatrix
+        @hidden_layers.each_with_index do |l, idx|
           case l
           when EmbeddingLayer
             # Ensure embedding layer is on GPU for GPU path
@@ -162,11 +163,27 @@ module SHAInet
             l.to_gpu! if l.responds_to?(:to_gpu!)
             matrix = l.forward(matrix)
           end
+          if !@residual_edges.empty?
+            if list = @residual_edges[idx]?
+              list.each do |src|
+                add_matrix!(matrix, outputs[src])
+              end
+            end
+            outputs << matrix
+          end
         end
         out_layer = @output_layers.last
         # Ensure output layer is on GPU for GPU path
         out_layer.to_gpu!
         matrix = out_layer.forward(matrix)
+        if !@residual_edges.empty?
+          if list = @residual_edges[@hidden_layers.size]?
+            list.each do |src|
+              add_matrix!(matrix, outputs[src])
+            end
+          end
+          outputs << matrix
+        end
         matrix.as(CudaMatrix)
       end
     rescue e : Exception
@@ -222,7 +239,8 @@ module SHAInet
         matrix.as(SimpleMatrix)
       else
         # Standard matrix processing for non-transformer networks
-        @hidden_layers.each do |l|
+        outputs = [] of CudaMatrix | SimpleMatrix
+        @hidden_layers.each_with_index do |l, idx|
           case l
           when EmbeddingLayer
             raise NeuralNetRunError.new("Embedding input mismatch") unless matrix.cols == 1
@@ -231,9 +249,21 @@ module SHAInet
           else
             matrix = l.forward(matrix)
           end
+          if list = @residual_edges[idx]?
+            list.each do |src|
+              add_matrix!(matrix, outputs[src])
+            end
+          end
+          outputs << matrix
         end
         out_layer = @output_layers.last
         matrix = out_layer.forward(matrix)
+        if list = @residual_edges[@hidden_layers.size]?
+          list.each do |src|
+            add_matrix!(matrix, outputs[src])
+          end
+        end
+        outputs << matrix
         matrix.as(SimpleMatrix)
       end
     rescue e : Exception
@@ -1049,6 +1079,13 @@ module SHAInet
           batch_error += sample_error
 
           # grad_matrix is already GPU-compatible and reused across samples
+          extras = Hash(Int32, CudaMatrix | SimpleMatrix).new
+          if list = @residual_edges[@hidden_layers.size]?
+            list.each do |src|
+              extras[src] = clone_matrix(grad_matrix)
+            end
+          end
+
           grad = output_layer.backward(grad_matrix)
 
           # Handle transformer layers backward pass with proper gradient reshaping
@@ -1112,7 +1149,22 @@ module SHAInet
             end
           end
 
-          @hidden_layers.reverse_each do |layer|
+          (@hidden_layers.size - 1).downto(0) do |idx|
+            if extra = extras[idx]?
+              add_matrix!(grad, extra)
+            end
+
+            if list = @residual_edges[idx]?
+              list.each do |src|
+                if extras[src]?
+                  add_matrix!(extras[src], grad)
+                else
+                  extras[src] = clone_matrix(grad)
+                end
+              end
+            end
+
+            layer = @hidden_layers[idx]
             if layer.is_a?(MatrixLayer)
               grad = layer.backward(grad)
             elsif layer.is_a?(EmbeddingLayer)
@@ -1561,6 +1613,20 @@ module SHAInet
       end
 
       sample_error
+    end
+
+    private def add_matrix!(dest : CudaMatrix | SimpleMatrix, src : CudaMatrix | SimpleMatrix)
+      if dest.is_a?(CudaMatrix)
+        other = src.is_a?(CudaMatrix) ? src.as(CudaMatrix) : src.as(SimpleMatrix).to_cuda
+        dest.as(CudaMatrix).add!(other)
+      else
+        other = src.is_a?(SimpleMatrix) ? src.as(SimpleMatrix) : src.as(CudaMatrix).to_simple
+        dest.as(SimpleMatrix).add!(other)
+      end
+    end
+
+    private def clone_matrix(mat : CudaMatrix | SimpleMatrix)
+      mat.is_a?(CudaMatrix) ? mat.as(CudaMatrix).clone : mat.as(SimpleMatrix).clone
     end
   end
 end
