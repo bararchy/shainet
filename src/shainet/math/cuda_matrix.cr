@@ -11,11 +11,16 @@ module SHAInet
   # available. This class is standalone and doesn't inherit from SimpleMatrix
   # to avoid method resolution conflicts.
   class CudaMatrix
-    property device_ptr : Pointer(Float64)?
+    # Device pointer is stored as `Void*` so we can handle different
+    # element types (Float64 or Int8).  Existing code casting to
+    # `Pointer(Float64)` continues to work for Float64 matrices.
+    property device_ptr : Pointer(Void)?
+    property precision : Precision
     @device_dirty : Bool = false # Track if GPU data is newer than CPU data
     @rows : Int32
     @cols : Int32
-    @data : Array(Float64)
+    @data_f64 : Array(Float64)?
+    @data_i8 : Array(Int8)?
     @gpu_memory_size : UInt64 = 0_u64 # Track our own GPU memory size
 
     # Global GPU memory tracking
@@ -101,9 +106,17 @@ module SHAInet
       @@allocation_sites.clear
     end
 
-    def initialize(@rows : Int32, @cols : Int32, init : Float64 = 0.0)
-      @data = Array(Float64).new(@rows * @cols, init)
-      @device_ptr = Pointer(Float64).null
+    def initialize(@rows : Int32, @cols : Int32, init : Float64 = 0.0,
+                   precision : Precision = Precision::Fp64)
+      @precision = precision
+      if precision == Precision::Int8
+        @data_i8 = Array(Int8).new(@rows * @cols, init.round.to_i8)
+        @data_f64 = nil
+      else
+        @data_f64 = Array(Float64).new(@rows * @cols, init)
+        @data_i8 = nil
+      end
+      @device_ptr = Pointer(Void).null
 
       # Count matrix creation
       @@matrix_creation_count += 1
@@ -117,7 +130,8 @@ module SHAInet
       raise RuntimeError.new("CudaMatrix requires CUDA to be available") unless CUDA.fully_available?
       # Print the most frequent allocation sites
       size = @rows * @cols
-      bytes = (size * 8).to_u64
+      elem_size = @precision == Precision::Int8 ? 1 : 8
+      bytes = (size * elem_size).to_u64
 
       # Check if we would exceed memory limits or are getting close
       if @@total_gpu_memory_allocated + bytes > @@max_gpu_memory ||
@@ -132,7 +146,7 @@ module SHAInet
 
       @@allocation_attempts += 1
 
-      ptr = Pointer(Float64).null
+      ptr = Pointer(Void).null
       result = CUDA.malloc(pointerof(ptr).as(Pointer(Pointer(Void))), bytes)
 
       if result == 0 && !ptr.null?
@@ -151,27 +165,47 @@ module SHAInet
     def [](row : Int32, col : Int32)
       # If GPU data is newer, sync it to CPU first
       sync_from_device!("element_access") if device_dirty?
-      @data[row * @cols + col]
+      idx = row * @cols + col
+      if @precision == Precision::Int8
+        @data_i8.not_nil![idx].to_f64
+      else
+        @data_f64.not_nil![idx]
+      end
     end
 
     def []=(row : Int32, col : Int32, value : Float64)
-      @data[row * @cols + col] = value
+      idx = row * @cols + col
+      if @precision == Precision::Int8
+        @data_i8.not_nil![idx] = value.round.clamp(-128, 127).to_i8
+      else
+        @data_f64.not_nil![idx] = value
+      end
       # CPU data is now newer, need to sync to device before next GPU op
       mark_device_clean!
     end
 
     # Provide a method to access values without syncing (for performance-critical code)
     def unsafe_get(row : Int32, col : Int32)
-      @data[row * @cols + col]
+      idx = row * @cols + col
+      if @precision == Precision::Int8
+        @data_i8.not_nil![idx].to_f64
+      else
+        @data_f64.not_nil![idx]
+      end
     end
 
     # Provide a method to set values without affecting sync state
     def unsafe_set(row : Int32, col : Int32, value : Float64)
-      @data[row * @cols + col] = value
+      idx = row * @cols + col
+      if @precision == Precision::Int8
+        @data_i8.not_nil![idx] = value.round.clamp(-128, 127).to_i8
+      else
+        @data_f64.not_nil![idx] = value
+      end
     end
 
-    def self.from_a(array : Array(Array(GenNum)))
-      m = new(array.size, array.first.size)
+    def self.from_a(array : Array(Array(GenNum)), precision : Precision = Precision::Fp64)
+      m = new(array.size, array.first.size, 0.0, precision)
       array.each_with_index do |row, i|
         row.each_with_index do |val, j|
           m.unsafe_set(i, j, val.to_f64)
@@ -181,16 +215,16 @@ module SHAInet
       m
     end
 
-    def self.zeros(rows : Int32, cols : Int32)
+    def self.zeros(rows : Int32, cols : Int32, precision : Precision = Precision::Fp64)
       # Create new matrix directly - zeros are often used for weight matrices that persist
-      m = new(rows, cols)
+      m = new(rows, cols, 0.0, precision)
       m.zero! # Use optimized GPU zero kernel
       m
     end
 
-    def self.ones(rows : Int32, cols : Int32)
+    def self.ones(rows : Int32, cols : Int32, precision : Precision = Precision::Fp64)
       # Create new matrix directly - ones are often used for weight matrices that persist
-      m = new(rows, cols)
+      m = new(rows, cols, 1.0, precision)
       m.fill!(1.0)
       m
     end
@@ -213,7 +247,7 @@ module SHAInet
             CUDA.free(dptr.as(Pointer(Void)))
             @@total_gpu_memory_allocated -= @gpu_memory_size
             @@active_matrices -= 1
-            @device_ptr = Pointer(Float64).null
+            @device_ptr = Pointer(Void).null
             @gpu_memory_size = 0_u64
           rescue ex
             Log.warn { "CudaMatrix.finalize: Failed to free GPU memory for #{@rows}x#{@cols}: #{ex}" }
@@ -273,26 +307,30 @@ module SHAInet
 
       begin
         size = @rows * @cols
-        bytes = (size * 8).to_u64
+        elem_size = @precision == Precision::Int8 ? 1 : 8
+        bytes = (size * elem_size).to_u64
 
         # Track sync operations for performance monitoring
         @@sync_to_device_count += 1
         @@total_sync_bytes_to_device += bytes
         self.class.track_sync("to_device:#{source}")
 
-        # Directly copy from the matrix's backing array
-        slice = Slice.new(@data.to_unsafe, size)
-        copy_result = CUDA.memcpy(dptr.as(Pointer(Void)), slice.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
+        ptr = if @precision == Precision::Int8
+                @data_i8.not_nil!.to_unsafe.as(Pointer(Void))
+              else
+                @data_f64.not_nil!.to_unsafe.as(Pointer(Void))
+              end
+        copy_result = CUDA.memcpy(dptr.as(Pointer(Void)), ptr, bytes, CUDA::MemcpyKind::HostToDevice)
 
         if copy_result != 0
           Log.error { "CudaMatrix.sync_to_device!: GPU memcpy failed with result #{copy_result} for #{@rows}x#{@cols}" }
-          @device_ptr = Pointer(Float64).null
+          @device_ptr = Pointer(Void).null
         else
           mark_device_clean!
         end
       rescue ex : Exception
         Log.error { "CudaMatrix.sync_to_device!: Exception during sync for #{@rows}x#{@cols}: #{ex}" }
-        @device_ptr = Pointer(Float64).null
+        @device_ptr = Pointer(Void).null
       end
     end
 
@@ -303,23 +341,28 @@ module SHAInet
 
       begin
         size = @rows * @cols
-        bytes = (size * 8).to_u64
+        elem_size = @precision == Precision::Int8 ? 1 : 8
+        bytes = (size * elem_size).to_u64
 
         # Track sync operations for performance monitoring
         @@sync_from_device_count += 1
         @@total_sync_bytes_from_device += bytes
         self.class.track_sync("from_device:#{source}")
 
-        slice = Slice.new(@data.to_unsafe, size)
-        copy_result = CUDA.memcpy(slice.to_unsafe.as(Pointer(Void)), dptr.as(Pointer(Void)), bytes, CUDA::MemcpyKind::DeviceToHost)
+        ptr = if @precision == Precision::Int8
+                @data_i8.not_nil!.to_unsafe.as(Pointer(Void))
+              else
+                @data_f64.not_nil!.to_unsafe.as(Pointer(Void))
+              end
+        copy_result = CUDA.memcpy(ptr, dptr.as(Pointer(Void)), bytes, CUDA::MemcpyKind::DeviceToHost)
 
         if copy_result == 0
           mark_device_clean!
         else
-          @device_ptr = Pointer(Float64).null
+          @device_ptr = Pointer(Void).null
         end
       rescue
-        @device_ptr = Pointer(Float64).null
+        @device_ptr = Pointer(Void).null
       end
     end
 
@@ -378,8 +421,9 @@ module SHAInet
       dest_row_ptr = dptr + (row_idx * @cols)
       src_row_ptr = sptr + (source_row * other.cols)
 
-      # Copy the row data (cols * 8 bytes for Float64)
-      bytes = (@cols * 8).to_u64
+      # Copy the row data taking element size into account
+      elem_size = @precision == Precision::Int8 ? 1 : 8
+      bytes = (@cols * elem_size).to_u64
       CUDA.copy_device_to_device(dest_row_ptr, src_row_ptr, bytes)
 
       mark_device_dirty!
@@ -404,7 +448,7 @@ module SHAInet
         # Optimized cuBLAS GEMM - account for row-major vs column-major difference
         # To compute C = A * B in row-major, we compute C^T = B^T * A^T
         # So we swap the order: gemm(B, A, C) with dimensions swapped
-        CUDA.gemm(handle, ptr_b, ptr_a, result.device_ptr.not_nil!,
+        CUDA.gemm(handle, ptr_b.as(Pointer(Float64)), ptr_a.as(Pointer(Float64)), result.device_ptr.not_nil!.as(Pointer(Float64)),
           other.cols, @rows, other.rows,
           other.cols, @cols, result.cols)
       ensure
@@ -442,7 +486,7 @@ module SHAInet
       # Fallback to cuBLAS GEAM
       handle = CUDA.create_handle
       begin
-        CUDA.geam(handle, ptr_a, ptr_b, result.device_ptr.not_nil!, @rows, @cols, 1.0, 1.0)
+        CUDA.geam(handle, ptr_a.as(Pointer(Float64)), ptr_b.as(Pointer(Float64)), result.device_ptr.not_nil!.as(Pointer(Float64)), @rows, @cols, 1.0, 1.0)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -467,7 +511,7 @@ module SHAInet
       handle = CUDA.create_handle
       begin
         # Use GEAM with alpha=1.0, beta=-1.0 to compute A - B
-        CUDA.geam(handle, ptr_a, ptr_b, result.device_ptr.not_nil!, @rows, @cols, 1.0, -1.0)
+        CUDA.geam(handle, ptr_a.as(Pointer(Float64)), ptr_b.as(Pointer(Float64)), result.device_ptr.not_nil!.as(Pointer(Float64)), @rows, @cols, 1.0, -1.0)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -478,13 +522,14 @@ module SHAInet
     end
 
     def clone
-      dup = CudaMatrix.new(@rows, @cols)
+      dup = CudaMatrix.new(@rows, @cols, 0.0, @precision)
       raise RuntimeError.new("GPU clone requires valid device pointers") unless (sptr = self.device_ptr) && (dptr = dup.device_ptr) && !sptr.null? && !dptr.null?
 
       # If we have GPU data, copy it directly on GPU
       if device_dirty?
         # GPU -> GPU copy
-        bytes = (@rows * @cols * 8).to_u64
+        elem_size = @precision == Precision::Int8 ? 1 : 8
+        bytes = (@rows * @cols * elem_size).to_u64
         result = CUDA.memcpy(dptr.as(Pointer(Void)), sptr.as(Pointer(Void)), bytes, CUDA::MemcpyKind::DeviceToDevice)
         raise RuntimeError.new("GPU-to-GPU memcpy failed") if result != 0
 
@@ -524,7 +569,7 @@ module SHAInet
       # Fallback to cuBLAS GEAM
       handle = CUDA.create_handle
       begin
-        CUDA.geam(handle, ptr_a, ptr_b, ptr_a, @rows, @cols, 1.0, 1.0)
+        CUDA.geam(handle, ptr_a.as(Pointer(Float64)), ptr_b.as(Pointer(Float64)), ptr_a.as(Pointer(Float64)), @rows, @cols, 1.0, 1.0)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -544,7 +589,7 @@ module SHAInet
 
       handle = CUDA.create_handle
       begin
-        CUDA.geam(handle, ptr_a, ptr_b, ptr_a, @rows, @cols, 1.0, -1.0)
+        CUDA.geam(handle, ptr_a.as(Pointer(Float64)), ptr_b.as(Pointer(Float64)), ptr_a.as(Pointer(Float64)), @rows, @cols, 1.0, -1.0)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -556,12 +601,12 @@ module SHAInet
 
     # Fill matrix with a constant value in-place.
     def fill!(value : Float64)
-      if CUDA.fully_available? && (dptr = device_ptr) && !dptr.null?
+      if CUDA.fully_available? && (dptr = device_ptr) && !dptr.null? && @precision != Precision::Int8
         size = @rows * @cols
         if value == 0.0
-          CUDA.zero_matrix(dptr, size)
+          CUDA.zero_matrix(dptr.as(Pointer(Float64)), size)
         else
-          CUDA.fill_matrix(dptr, value, size)
+          CUDA.fill_matrix(dptr.as(Pointer(Float64)), value, size)
         end
         mark_device_dirty!
       else
@@ -585,7 +630,7 @@ module SHAInet
 
       # Create a copy to avoid modifying the original
       out = self.clone
-      ptr = out.device_ptr.not_nil!
+      ptr = out.device_ptr.not_nil!.as(Pointer(Float64))
 
       handle = CUDA.create_handle
       begin
@@ -695,10 +740,10 @@ module SHAInet
     # Convert CudaMatrix to SimpleMatrix for CPU operations
     def to_simple : SimpleMatrix
       sync_from_device!("to_simple_conversion") if device_dirty?
-      result = SimpleMatrix.new(@rows, @cols)
+      result = SimpleMatrix.new(@rows, @cols, 0.0, @precision)
       @rows.times do |i|
         @cols.times do |j|
-          result[i, j] = @data[i * @cols + j]
+          result[i, j] = self.unsafe_get(i, j)
         end
       end
       result
@@ -724,7 +769,7 @@ module SHAInet
       # Use direct data array access to avoid repeated element access syncs
       Array.new(@rows) do |i|
         Array.new(@cols) do |j|
-          @data[i * @cols + j]
+          self.unsafe_get(i, j)
         end
       end
     end
@@ -732,7 +777,11 @@ module SHAInet
     # More efficient flat array conversion - avoids nested array creation
     def to_flat_array
       sync_from_device!("bulk_to_flat_array") if device_dirty?
-      @data.dup
+      if @precision == Precision::Int8
+        @data_i8.not_nil!.dup.map(&.to_f64)
+      else
+        @data_f64.not_nil!.dup
+      end
     end
 
     # Force cleanup of GPU memory for this matrix
@@ -742,7 +791,7 @@ module SHAInet
           CUDA.free(dptr.as(Pointer(Void)))
           @@total_gpu_memory_allocated -= @gpu_memory_size
           @@active_matrices -= 1
-          @device_ptr = Pointer(Float64).null
+          @device_ptr = Pointer(Void).null
           @gpu_memory_size = 0_u64
         end
       end
@@ -752,7 +801,11 @@ module SHAInet
 
     # Provide access to raw data for batch operations
     def raw_data
-      @data
+      if @precision == Precision::Int8
+        @data_i8.not_nil!.map(&.to_f64)
+      else
+        @data_f64.not_nil!
+      end
     end
 
     # Copy data from another CudaMatrix
@@ -764,7 +817,8 @@ module SHAInet
       other.sync_to_device!("copy_from") unless other.device_dirty?
 
       # GPU -> GPU copy
-      bytes = (@rows * @cols * 8).to_u64
+      elem_size = @precision == Precision::Int8 ? 1 : 8
+      bytes = (@rows * @cols * elem_size).to_u64
       result = CUDA.memcpy(dptr.as(Pointer(Void)), sptr.as(Pointer(Void)), bytes, CUDA::MemcpyKind::DeviceToDevice)
       raise RuntimeError.new("GPU-to-GPU memcpy failed") if result != 0
 
@@ -774,9 +828,9 @@ module SHAInet
 
     # In-place zeroing using GPU kernel
     def zero!
-      if CUDA.fully_available? && (dptr = device_ptr) && !dptr.null?
+      if CUDA.fully_available? && (dptr = device_ptr) && !dptr.null? && @precision != Precision::Int8
         size = @rows * @cols
-        CUDA.zero_matrix(dptr, size)
+        CUDA.zero_matrix(dptr.as(Pointer(Float64)), size)
         mark_device_dirty!
       else
         # CPU fallback - zero all elements
@@ -1002,6 +1056,47 @@ module SHAInet
       # Mark self as having newer GPU data
       mark_device_dirty!
       self
+    end
+
+    # Matrix multiplication for INT8 matrices using cuBLAS cublasGemmEx.
+    # The result is returned as a regular Float64 CudaMatrix.
+    def self.gemm_int8(a : CudaMatrix, b : CudaMatrix) : CudaMatrix
+      raise ArgumentError.new("precision mismatch") unless a.precision == Precision::Int8 && b.precision == Precision::Int8
+      raise ArgumentError.new("size mismatch") unless a.cols == b.rows
+
+      a.sync_to_device!("gemm_int8") unless a.device_dirty?
+      b.sync_to_device!("gemm_int8") unless b.device_dirty?
+
+      result = CudaMatrix.new(a.rows, b.cols)
+
+      handle = CUDA.create_handle
+      size = a.rows * b.cols
+      out_ptr = Pointer(Int32).null
+      bytes = (size * 4).to_u64
+      CUDA.malloc(pointerof(out_ptr).as(Pointer(Pointer(Void))), bytes)
+      begin
+        CUDA.gemm_int8(handle,
+          b.device_ptr.not_nil!.as(Pointer(Int8)),
+          a.device_ptr.not_nil!.as(Pointer(Int8)),
+          out_ptr,
+          b.cols, a.rows, b.rows,
+          b.cols, a.cols, b.cols)
+
+        buf = Array(Int32).new(size)
+        CUDA.memcpy(buf.to_unsafe.as(Pointer(Void)), out_ptr.as(Pointer(Void)), bytes, CUDA::MemcpyKind::DeviceToHost)
+        buf.each_with_index do |v, idx|
+          r = idx / result.cols
+          c = idx % result.cols
+          result.unsafe_set(r, c, v.to_f64)
+        end
+        result.sync_to_device!("gemm_int8_result")
+      ensure
+        CUDA.free(out_ptr.as(Pointer(Void))) if out_ptr
+        CUDA.destroy_handle(handle)
+      end
+
+      result.mark_device_dirty!
+      result
     end
 
     # In-place weight update: self = self - lr * gradient

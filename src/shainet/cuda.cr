@@ -23,17 +23,20 @@ module SHAInet
 
       # Additional datatypes for half precision routines
       enum DataType
-        CUDA_R_32F  = 0
-        CUDA_R_64F  = 1
-        CUDA_R_16F  = 2
+        CUDA_R_32F  =  0
+        CUDA_R_64F  =  1
+        CUDA_R_16F  =  2
         CUDA_R_16BF = 14
+        CUDA_R_8I   =  3
+        CUDA_R_32I  = 10
       end
 
       enum ComputeType
-        CUBLAS_COMPUTE_16F  = 64
-        CUBLAS_COMPUTE_32F  = 68
-        CUBLAS_COMPUTE_64F  = 70
+        CUBLAS_COMPUTE_16F  =  64
+        CUBLAS_COMPUTE_32F  =  68
+        CUBLAS_COMPUTE_64F  =  70
         CUBLAS_COMPUTE_16BF = 119
+        CUBLAS_COMPUTE_32I  =  82
       end
 
       fun cublasCreate_v2(handle : Pointer(Handle)) : Int32
@@ -298,6 +301,22 @@ module SHAInet
         pointerof(beta).as(Void*),
         c, ctype.value, ldc,
         compute_type.value, 0)
+    end
+
+    # Convenience wrapper for INT8 GEMM using compute type INT32
+    def gemm_int8(handle : LibCUBLAS::Handle, a : Pointer(Int8), b : Pointer(Int8), c : Pointer(Int32),
+                  m : Int32, n : Int32, k : Int32, lda : Int32, ldb : Int32, ldc : Int32)
+      alpha = 1_i32
+      beta = 0_i32
+      LibCUBLAS.cublasGemmEx(handle,
+        Operation::N.value, Operation::N.value,
+        m, n, k,
+        pointerof(alpha).as(Void*),
+        a.as(Void*), LibCUBLAS::DataType::CUDA_R_8I.value, lda,
+        b.as(Void*), LibCUBLAS::DataType::CUDA_R_8I.value, ldb,
+        pointerof(beta).as(Void*),
+        c.as(Void*), LibCUBLAS::DataType::CUDA_R_32I.value, ldc,
+        LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32I.value, 0)
     end
 
     def gemm_accumulate(handle : LibCUBLAS::Handle, a : Pointer(Float64), b : Pointer(Float64), c : Pointer(Float64),
