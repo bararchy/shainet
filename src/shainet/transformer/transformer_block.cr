@@ -15,6 +15,8 @@ module SHAInet
     property drop_percent : Int32
     # Optional attention mask used if none is provided to `forward`
     property mask : SimpleMatrix | CudaMatrix | Nil
+    # KV cache for autoregressive generation
+    property kv_cache : KVCache | Nil
 
     def initialize(d_model : Int32, num_heads : Int32, ff_hidden : Int32,
                    drop_percent : Int32 = 0, pre_norm : Bool = false,
@@ -28,6 +30,7 @@ module SHAInet
       @drop_percent = drop_percent
       @pre_norm = pre_norm
       @mask = nil
+      @kv_cache = nil
     end
 
     # Convert all internal matrices to GPU
@@ -40,6 +43,8 @@ module SHAInet
         if pe = @positional_encoding
           @positional_encoding = pe.is_a?(CudaMatrix) ? pe : pe.to_cuda
         end
+        # Clear any existing cache when switching devices
+        @kv_cache = nil
         super
       end
     end
@@ -64,10 +69,19 @@ module SHAInet
                 x
               end
 
+      use_cache = !@kv_cache.nil?
+      @kv_cache.not_nil!.clear_layer!(0) if use_cache && x.rows > 1
+
       if @pre_norm
         normed_in = @norm1.forward(input).as(CudaMatrix)
         attn_mask = mask.as?(CudaMatrix)
-        attn = @mha.forward(normed_in, attn_mask)
+        attn = if use_cache
+                 out, cache = @mha.forward(normed_in, attn_mask, @kv_cache.not_nil!, 0)
+                 @kv_cache = cache
+                 out
+               else
+                 @mha.forward(normed_in, attn_mask)
+               end
         TransformerDropout.apply!(attn, @drop_percent) if @drop_percent > 0
         attn.add!(input)
         normed_ff = @norm2.forward(attn).as(CudaMatrix)
@@ -77,7 +91,13 @@ module SHAInet
         ff.as(CudaMatrix)
       else
         attn_mask = mask.as?(CudaMatrix)
-        attn = @mha.forward(input, attn_mask)
+        attn = if use_cache
+                 out, cache = @mha.forward(input, attn_mask, @kv_cache.not_nil!, 0)
+                 @kv_cache = cache
+                 out
+               else
+                 @mha.forward(input, attn_mask)
+               end
         TransformerDropout.apply!(attn, @drop_percent) if @drop_percent > 0
         attn.add!(input)
         normed = @norm1.forward(attn).as(CudaMatrix)
@@ -109,10 +129,19 @@ module SHAInet
                 x
               end
 
+      use_cache = !@kv_cache.nil?
+      @kv_cache.not_nil!.clear_layer!(0) if use_cache && x.rows > 1
+
       if @pre_norm
         normed_in = @norm1.forward(input).as(SimpleMatrix)
         attn_mask = mask.as?(SimpleMatrix)
-        attn = @mha.forward(normed_in, attn_mask)
+        attn = if use_cache
+                 out, cache = @mha.forward(normed_in, attn_mask, @kv_cache.not_nil!, 0)
+                 @kv_cache = cache
+                 out
+               else
+                 @mha.forward(normed_in, attn_mask)
+               end
         TransformerDropout.apply!(attn, @drop_percent) if @drop_percent > 0
         attn.add!(input)
         normed_ff = @norm2.forward(attn).as(SimpleMatrix)
@@ -122,7 +151,13 @@ module SHAInet
         ff.as(SimpleMatrix)
       else
         attn_mask = mask.as?(SimpleMatrix)
-        attn = @mha.forward(input, attn_mask)
+        attn = if use_cache
+                 out, cache = @mha.forward(input, attn_mask, @kv_cache.not_nil!, 0)
+                 @kv_cache = cache
+                 out
+               else
+                 @mha.forward(input, attn_mask)
+               end
         TransformerDropout.apply!(attn, @drop_percent) if @drop_percent > 0
         attn.add!(input)
         normed = @norm1.forward(attn).as(SimpleMatrix)
