@@ -9,6 +9,8 @@ module SHAInet
     property biases : SimpleMatrix | CudaMatrix
     property g_w : SimpleMatrix | CudaMatrix
     property g_b : SimpleMatrix | CudaMatrix
+    property master_weights : SimpleMatrix | CudaMatrix | Nil
+    property precision : Precision
     property q_weights : Array(Int8)?
     property q_biases : Array(Int8)?
     property q_w_scale : Float32?
@@ -24,15 +26,21 @@ module SHAInet
     @forward_workspace : CudaMatrix | Nil
     @grad_workspace : CudaMatrix | Nil
 
-    def initialize(in_size : Int32, @size : Int32)
+    def initialize(in_size : Int32, @size : Int32, *, precision : Precision = Precision::Fp64)
       @l_size = @size
+      @precision = precision
       @activation_function = SHAInet.sigmoid
-      # Use CudaMatrix when CUDA is fully available, otherwise SimpleMatrix
       mat_klass = CUDA.fully_available? ? CudaMatrix : SimpleMatrix
-      @weights = mat_klass.new(in_size, @size).random_fill!
-      @biases = mat_klass.new(1, @size).random_fill!
-      @g_w = mat_klass.zeros(in_size, @size)
-      @g_b = mat_klass.zeros(1, @size)
+      if precision.in?({Precision::Fp16, Precision::Bf16})
+        @master_weights = mat_klass.new(in_size, @size, 0.0, Precision::Fp32).random_fill!
+        @weights = convert_matrix_precision(@master_weights.not_nil!, precision)
+      else
+        @weights = mat_klass.new(in_size, @size, 0.0, precision).random_fill!
+        @master_weights = nil
+      end
+      @biases = mat_klass.new(1, @size, 0.0, precision).random_fill!
+      @g_w = mat_klass.zeros(in_size, @size, precision)
+      @g_b = mat_klass.zeros(1, @size, precision)
       @q_weights = nil
       @q_biases = nil
       @q_w_scale = nil
@@ -46,15 +54,25 @@ module SHAInet
       @grad_workspace = nil
     end
 
+    def initialize(in_size : Int32, size : Int32)
+      initialize(in_size, size, SHAInet.sigmoid, precision: Precision::Fp64)
+    end
+
     # Constructor for compatibility with Layer API
-    def initialize(@size : Int32, @activation_function : ActivationFunction = SHAInet.sigmoid)
+    def initialize(@size : Int32, @activation_function : ActivationFunction = SHAInet.sigmoid, *, precision : Precision = Precision::Fp64)
       @l_size = @size
-      # Use CudaMatrix when CUDA is fully available, otherwise SimpleMatrix
+      @precision = precision
       mat_klass = CUDA.fully_available? ? CudaMatrix : SimpleMatrix
-      @weights = mat_klass.new(1, @size).random_fill!
-      @biases = mat_klass.new(1, @size).random_fill!
-      @g_w = mat_klass.zeros(1, @size)
-      @g_b = mat_klass.zeros(1, @size)
+      if precision.in?({Precision::Fp16, Precision::Bf16})
+        @master_weights = mat_klass.new(1, @size, 0.0, Precision::Fp32).random_fill!
+        @weights = convert_matrix_precision(@master_weights.not_nil!, precision)
+      else
+        @weights = mat_klass.new(1, @size, 0.0, precision).random_fill!
+        @master_weights = nil
+      end
+      @biases = mat_klass.new(1, @size, 0.0, precision).random_fill!
+      @g_w = mat_klass.zeros(1, @size, precision)
+      @g_b = mat_klass.zeros(1, @size, precision)
       @q_weights = nil
       @q_biases = nil
       @q_w_scale = nil
@@ -69,14 +87,20 @@ module SHAInet
     end
 
     # Constructor with custom activation function
-    def initialize(in_size : Int32, @size : Int32, @activation_function : ActivationFunction)
+    def initialize(in_size : Int32, @size : Int32, @activation_function : ActivationFunction, *, precision : Precision = Precision::Fp64)
       @l_size = @size
-      # Use CudaMatrix when CUDA is fully available, otherwise SimpleMatrix
+      @precision = precision
       mat_klass = CUDA.fully_available? ? CudaMatrix : SimpleMatrix
-      @weights = mat_klass.new(in_size, @size).random_fill!
-      @biases = mat_klass.new(1, @size).random_fill!
-      @g_w = mat_klass.zeros(in_size, @size)
-      @g_b = mat_klass.zeros(1, @size)
+      if precision.in?({Precision::Fp16, Precision::Bf16})
+        @master_weights = mat_klass.new(in_size, @size, 0.0, Precision::Fp32).random_fill!
+        @weights = convert_matrix_precision(@master_weights.not_nil!, precision)
+      else
+        @weights = mat_klass.new(in_size, @size, 0.0, precision).random_fill!
+        @master_weights = nil
+      end
+      @biases = mat_klass.new(1, @size, 0.0, precision).random_fill!
+      @g_w = mat_klass.zeros(in_size, @size, precision)
+      @g_b = mat_klass.zeros(1, @size, precision)
       @q_weights = nil
       @q_biases = nil
       @q_w_scale = nil
@@ -98,6 +122,7 @@ module SHAInet
     def to_gpu!
       if CUDA.fully_available?
         @weights = @weights.as(SimpleMatrix).to_cuda unless @weights.is_a?(CudaMatrix)
+        @master_weights = @master_weights.as(SimpleMatrix).to_cuda if @master_weights && @master_weights.is_a?(SimpleMatrix)
         @biases = @biases.as(SimpleMatrix).to_cuda unless @biases.is_a?(CudaMatrix)
         @g_w = @g_w.as(SimpleMatrix).to_cuda unless @g_w.is_a?(CudaMatrix)
         @g_b = @g_b.as(SimpleMatrix).to_cuda unless @g_b.is_a?(CudaMatrix)
@@ -111,6 +136,7 @@ module SHAInet
     def to_cpu!
       if @weights.is_a?(CudaMatrix)
         @weights = @weights.as(CudaMatrix).to_simple
+        @master_weights = @master_weights.as(CudaMatrix).to_simple if @master_weights && @master_weights.is_a?(CudaMatrix)
         @biases = @biases.as(CudaMatrix).to_simple
         @g_w = @g_w.as(CudaMatrix).to_simple
         @g_b = @g_b.as(CudaMatrix).to_simple
@@ -302,10 +328,18 @@ module SHAInet
       # Apply activation derivative: grad ⊙ σ'
       local_grad = grad.clone
 
-      # CPU gradient computation
-      local_grad.rows.times do |i|
-        local_grad.cols.times do |j|
-          local_grad[i, j] = grad[i, j] * sigma_primes[i, j]
+      if @precision == Precision::Fp64 && grad.precision == Precision::Fp64
+        local_grad.rows.times do |i|
+          local_grad.cols.times do |j|
+            local_grad[i, j] = grad[i, j] * sigma_primes[i, j]
+          end
+        end
+      else
+        local_grad.rows.times do |i|
+          local_grad.cols.times do |j|
+            v = grad[i, j].to_f32 * sigma_primes[i, j].to_f32
+            local_grad[i, j] = v.to_f64
+          end
         end
       end
 
@@ -315,7 +349,12 @@ module SHAInet
       # Accumulate bias gradients: ∂L/∂b += sum(local_grad, axis=0)
       local_grad.rows.times do |i|
         local_grad.cols.times do |j|
-          @g_b[0, j] += local_grad[i, j]
+          if @precision == Precision::Fp64
+            @g_b[0, j] += local_grad[i, j]
+          else
+            val = @g_b[0, j].to_f32 + local_grad[i, j].to_f32
+            @g_b[0, j] = val.to_f64
+          end
         end
       end
 
@@ -346,12 +385,24 @@ module SHAInet
 
     # CPU path weight update - all SimpleMatrix operations
     private def update_weights_cpu(learning_rate : Float64, weight_decay : Float64)
-      # W := W - lr * ∂L/∂W - weight_decay * W
-      # b := b - lr * ∂L/∂b
-      w = @weights.as(SimpleMatrix) - @g_w.as(SimpleMatrix) * learning_rate
-      w = w * (1.0 - weight_decay) if weight_decay != 0.0
-      @weights = w
-      @biases = @biases.as(SimpleMatrix) - @g_b.as(SimpleMatrix) * learning_rate
+      if @precision.in?({Precision::Fp16, Precision::Bf16})
+        master = @master_weights.as(SimpleMatrix)
+        gw_f32 = convert_matrix_precision(@g_w.as(SimpleMatrix), Precision::Fp32).as(SimpleMatrix)
+        master = master - gw_f32 * learning_rate
+        master = master * (1.0 - weight_decay) if weight_decay != 0.0
+        @master_weights = master
+        @weights = convert_matrix_precision(master, @precision)
+
+        b_f32 = convert_matrix_precision(@biases.as(SimpleMatrix), Precision::Fp32).as(SimpleMatrix)
+        gb_f32 = convert_matrix_precision(@g_b.as(SimpleMatrix), Precision::Fp32).as(SimpleMatrix)
+        b_f32 = b_f32 - gb_f32 * learning_rate
+        @biases = convert_matrix_precision(b_f32, @precision)
+      else
+        w = @weights.as(SimpleMatrix) - @g_w.as(SimpleMatrix) * learning_rate
+        w = w * (1.0 - weight_decay) if weight_decay != 0.0
+        @weights = w
+        @biases = @biases.as(SimpleMatrix) - @g_b.as(SimpleMatrix) * learning_rate
+      end
     end
 
     # Reset gradients to zero
@@ -372,14 +423,25 @@ module SHAInet
         g_b_cuda.mark_device_dirty!
       else
         # CPU fallback - create new zero matrices
-        @g_w = SimpleMatrix.zeros(@g_w.rows, @g_w.cols)
-        @g_b = SimpleMatrix.zeros(@g_b.rows, @g_b.cols)
+        @g_w = SimpleMatrix.zeros(@g_w.rows, @g_w.cols, @precision)
+        @g_b = SimpleMatrix.zeros(@g_b.rows, @g_b.cols, @precision)
       end
     end
 
     # Getter for activations (for testing and debugging)
     def activations
       @activations.not_nil!
+    end
+
+    def convert_matrix_precision(src : SimpleMatrix | CudaMatrix, p : Precision)
+      mat_klass = src.is_a?(CudaMatrix) ? CudaMatrix : SimpleMatrix
+      dest = mat_klass.new(src.rows, src.cols, 0.0, p)
+      src.rows.times do |i|
+        src.cols.times do |j|
+          dest[i, j] = src[i, j]
+        end
+      end
+      dest
     end
   end
 end
