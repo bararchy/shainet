@@ -316,6 +316,54 @@ module SHAInet
       end
     end
 
+    # GPU path with KV caching. Returns a tuple of the output and updated cache.
+    def forward(x : CudaMatrix, mask : CudaMatrix | Nil, cache : KVCache, layer : Int32) : Tuple(CudaMatrix, KVCache)
+      # Compute fresh projections for the new step
+      q = x * @w_q.as(CudaMatrix)
+      k_proj = x * @w_k.as(CudaMatrix)
+      v_proj = x * @w_v.as(CudaMatrix)
+
+      outputs = [] of CudaMatrix
+
+      @num_heads.times do |h|
+        qs = q.slice_cols(h * @head_dim, @head_dim)
+        ks_new = k_proj.slice_cols(h * @head_dim, @head_dim)
+        vs_new = v_proj.slice_cols(h * @head_dim, @head_dim)
+
+        cached_keys = cache.keys[layer][h]
+        cached_vals = cache.values[layer][h]
+
+        total_len = cached_keys.size + ks_new.rows
+        k_all = CudaMatrix.new(total_len, @head_dim)
+        v_all = CudaMatrix.new(total_len, @head_dim)
+
+        cached_keys.each_with_index { |m, idx| k_all.set_row!(idx, m.as(CudaMatrix)) }
+        cached_vals.each_with_index { |m, idx| v_all.set_row!(idx, m.as(CudaMatrix)) }
+        ks_new.rows.times do |r|
+          k_all.set_row!(cached_keys.size + r, ks_new, r)
+          v_all.set_row!(cached_keys.size + r, vs_new, r)
+        end
+
+        cache.append!(layer, h, ks_new.clone, vs_new.clone)
+
+        scores = qs * k_all.transpose * (1.0 / Math.sqrt(@head_dim.to_f))
+        if m = mask
+          raise "mask size mismatch" unless m.rows == scores.rows && m.cols == scores.cols
+          scores.add!(m)
+        end
+        scores.softmax_rows!
+        outputs << (scores * v_all)
+      end
+
+      concat = CudaMatrix.new(x.rows, @d_model)
+      @num_heads.times do |h|
+        concat.set_cols!(h * @head_dim, outputs[h])
+      end
+
+      out = concat * @w_o.as(CudaMatrix)
+      {out, cache}
+    end
+
     # CPU path - all operations with SimpleMatrix
     def forward(x : SimpleMatrix, mask : SimpleMatrix | Nil = nil) : SimpleMatrix
       @x = x
@@ -368,6 +416,60 @@ module SHAInet
       # Final projection - CPU
       @out = concat * @w_o.as(SimpleMatrix)
       @out.as(SimpleMatrix)
+    end
+
+    # CPU path with KV caching. Returns a tuple of the output and updated cache.
+    def forward(x : SimpleMatrix, mask : SimpleMatrix | Nil, cache : KVCache, layer : Int32) : Tuple(SimpleMatrix, KVCache)
+      q = x * @w_q.as(SimpleMatrix)
+      k_proj = x * @w_k.as(SimpleMatrix)
+      v_proj = x * @w_v.as(SimpleMatrix)
+
+      outputs = [] of SimpleMatrix
+
+      @num_heads.times do |h|
+        qs = q.slice_cols(h * @head_dim, @head_dim)
+        ks_new = k_proj.slice_cols(h * @head_dim, @head_dim)
+        vs_new = v_proj.slice_cols(h * @head_dim, @head_dim)
+
+        cached_keys = cache.keys[layer][h]
+        cached_vals = cache.values[layer][h]
+
+        total_len = cached_keys.size + ks_new.rows
+        k_all = SimpleMatrix.new(total_len, @head_dim)
+        v_all = SimpleMatrix.new(total_len, @head_dim)
+
+        cached_keys.each_with_index do |m, idx|
+          @head_dim.times { |c| k_all[idx, c] = m.as(SimpleMatrix)[0, c] }
+        end
+        cached_vals.each_with_index do |m, idx|
+          @head_dim.times { |c| v_all[idx, c] = m.as(SimpleMatrix)[0, c] }
+        end
+
+        ks_new.rows.times do |r|
+          @head_dim.times do |c|
+            k_all[cached_keys.size + r, c] = ks_new[r, c]
+            v_all[cached_keys.size + r, c] = vs_new[r, c]
+          end
+        end
+
+        cache.append!(layer, h, ks_new.clone, vs_new.clone)
+
+        scores = qs * k_all.transpose * (1.0 / Math.sqrt(@head_dim.to_f))
+        if m = mask
+          raise "mask size mismatch" unless m.rows == scores.rows && m.cols == scores.cols
+          scores = scores + m
+        end
+        scores.softmax_rows!
+        outputs << (scores * v_all)
+      end
+
+      concat = SimpleMatrix.new(x.rows, @d_model)
+      @num_heads.times do |h|
+        concat.set_cols!(h * @head_dim, outputs[h])
+      end
+
+      out = concat * @w_o.as(SimpleMatrix)
+      {out, cache}
     end
 
     # `d_out` should follow the same batch-first layout as the input to
