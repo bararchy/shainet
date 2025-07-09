@@ -340,6 +340,8 @@ module SHAInet
       rows = x.rows
       cols = x.cols
 
+      raise ArgumentError.new("size mismatch") unless d_out.rows == rows && d_out.cols == cols
+
       # Ensure workspaces exist (in case forward fell back to CPU earlier)
       ensure_workspace_matrices(rows, cols) if @workspace_d_x.nil?
 
@@ -431,6 +433,8 @@ module SHAInet
       end
       rows = x.rows
       cols = x.cols
+
+      raise ArgumentError.new("size mismatch") unless d_out.rows == rows && d_out.cols == cols
 
       # Use CPU matrices for computation
       d_gamma = SimpleMatrix.zeros(1, cols)
