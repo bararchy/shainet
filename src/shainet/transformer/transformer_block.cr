@@ -10,11 +10,12 @@ module SHAInet
     getter ffn : PositionWiseFF
     getter norm1 : LayerNorm
     getter norm2 : LayerNorm
+    getter pre_norm : Bool
     property positional_encoding : SimpleMatrix | CudaMatrix | Nil
     property drop_percent : Int32
 
     def initialize(d_model : Int32, num_heads : Int32, ff_hidden : Int32,
-                   drop_percent : Int32 = 0)
+                   drop_percent : Int32 = 0, pre_norm : Bool = false)
       super(d_model, SHAInet.none)
       @mha = MultiHeadAttention.new(d_model, num_heads)
       @ffn = PositionWiseFF.new(d_model, ff_hidden)
@@ -22,6 +23,7 @@ module SHAInet
       @norm2 = LayerNorm.new(d_model)
       @positional_encoding = nil
       @drop_percent = drop_percent
+      @pre_norm = pre_norm
     end
 
     # Convert all internal matrices to GPU
@@ -57,14 +59,26 @@ module SHAInet
                 x
               end
 
-      attn = @mha.forward(input, mask)
-      TransformerDropout.apply!(attn, @drop_percent) if @drop_percent > 0
-      attn.add!(input)
-      normed = @norm1.forward(attn).as(CudaMatrix)
-      ff = @ffn.forward(normed)
-      TransformerDropout.apply!(ff, @drop_percent) if @drop_percent > 0
-      ff.add!(normed)
-      @norm2.forward(ff).as(CudaMatrix)
+      if @pre_norm
+        normed_in = @norm1.forward(input).as(CudaMatrix)
+        attn = @mha.forward(normed_in, mask)
+        TransformerDropout.apply!(attn, @drop_percent) if @drop_percent > 0
+        attn.add!(input)
+        normed_ff = @norm2.forward(attn).as(CudaMatrix)
+        ff = @ffn.forward(normed_ff)
+        TransformerDropout.apply!(ff, @drop_percent) if @drop_percent > 0
+        ff.add!(normed_ff)
+        ff.as(CudaMatrix)
+      else
+        attn = @mha.forward(input, mask)
+        TransformerDropout.apply!(attn, @drop_percent) if @drop_percent > 0
+        attn.add!(input)
+        normed = @norm1.forward(attn).as(CudaMatrix)
+        ff = @ffn.forward(normed)
+        TransformerDropout.apply!(ff, @drop_percent) if @drop_percent > 0
+        ff.add!(normed)
+        @norm2.forward(ff).as(CudaMatrix)
+      end
     end
 
     # CPU path - all SimpleMatrix operations
@@ -87,37 +101,69 @@ module SHAInet
                 x
               end
 
-      attn = @mha.forward(input, mask)
-      TransformerDropout.apply!(attn, @drop_percent) if @drop_percent > 0
-      attn.add!(input)
-      normed = @norm1.forward(attn).as(SimpleMatrix)
-      ff = @ffn.forward(normed)
-      TransformerDropout.apply!(ff, @drop_percent) if @drop_percent > 0
-      ff.add!(normed)
-      final_result = @norm2.forward(ff)
-      final_result.as(SimpleMatrix)
+      if @pre_norm
+        normed_in = @norm1.forward(input).as(SimpleMatrix)
+        attn = @mha.forward(normed_in, mask)
+        TransformerDropout.apply!(attn, @drop_percent) if @drop_percent > 0
+        attn.add!(input)
+        normed_ff = @norm2.forward(attn).as(SimpleMatrix)
+        ff = @ffn.forward(normed_ff)
+        TransformerDropout.apply!(ff, @drop_percent) if @drop_percent > 0
+        ff.add!(normed_ff)
+        ff.as(SimpleMatrix)
+      else
+        attn = @mha.forward(input, mask)
+        TransformerDropout.apply!(attn, @drop_percent) if @drop_percent > 0
+        attn.add!(input)
+        normed = @norm1.forward(attn).as(SimpleMatrix)
+        ff = @ffn.forward(normed)
+        TransformerDropout.apply!(ff, @drop_percent) if @drop_percent > 0
+        ff.add!(normed)
+        final_result = @norm2.forward(ff)
+        final_result.as(SimpleMatrix)
+      end
     end
 
     # GPU path backward - all CudaMatrix operations
     def backward(d_out : CudaMatrix) : CudaMatrix
-      d_norm2 = @norm2.backward(d_out)
-      d_ff = @ffn.backward(d_norm2).as(CudaMatrix)
-      d_ff.add!(d_norm2.as(CudaMatrix))
-      d_norm1 = @norm1.backward(d_ff).as(CudaMatrix)
-      d_attn = @mha.backward(d_norm1).as(CudaMatrix)
-      d_attn.add!(d_norm1.as(CudaMatrix))
-      d_attn
+      if @pre_norm
+        d_ff_input = @ffn.backward(d_out).as(CudaMatrix)
+        d_ff_input.add!(d_out.as(CudaMatrix))
+        d_residual1 = @norm2.backward(d_ff_input).as(CudaMatrix)
+        d_attn_input = @mha.backward(d_residual1).as(CudaMatrix)
+        d_x = @norm1.backward(d_attn_input).as(CudaMatrix)
+        d_x.add!(d_residual1.as(CudaMatrix))
+        d_x
+      else
+        d_norm2 = @norm2.backward(d_out)
+        d_ff = @ffn.backward(d_norm2).as(CudaMatrix)
+        d_ff.add!(d_norm2.as(CudaMatrix))
+        d_norm1 = @norm1.backward(d_ff).as(CudaMatrix)
+        d_attn = @mha.backward(d_norm1).as(CudaMatrix)
+        d_attn.add!(d_norm1.as(CudaMatrix))
+        d_attn
+      end
     end
 
     # CPU path backward - all SimpleMatrix operations
     def backward(d_out : SimpleMatrix) : SimpleMatrix
-      d_norm2 = @norm2.backward(d_out)
-      d_ff = @ffn.backward(d_norm2).as(SimpleMatrix)
-      d_ff.add!(d_norm2.as(SimpleMatrix))
-      d_norm1 = @norm1.backward(d_ff)
-      d_attn = @mha.backward(d_norm1).as(SimpleMatrix)
-      d_attn.add!(d_norm1.as(SimpleMatrix))
-      d_attn
+      if @pre_norm
+        d_ff_input = @ffn.backward(d_out).as(SimpleMatrix)
+        d_ff_input.add!(d_out.as(SimpleMatrix))
+        d_residual1 = @norm2.backward(d_ff_input).as(SimpleMatrix)
+        d_attn_input = @mha.backward(d_residual1).as(SimpleMatrix)
+        d_x = @norm1.backward(d_attn_input)
+        d_x.add!(d_residual1.as(SimpleMatrix))
+        d_x
+      else
+        d_norm2 = @norm2.backward(d_out)
+        d_ff = @ffn.backward(d_norm2).as(SimpleMatrix)
+        d_ff.add!(d_norm2.as(SimpleMatrix))
+        d_norm1 = @norm1.backward(d_ff)
+        d_attn = @mha.backward(d_norm1).as(SimpleMatrix)
+        d_attn.add!(d_norm1.as(SimpleMatrix))
+        d_attn
+      end
     end
 
     def apply_gradients(lr : Float64)
