@@ -833,7 +833,6 @@ module SHAInet
           break
         end
 
-        @time_step += 1
       end
 
       elapsed = Time.monotonic - start_time
@@ -1219,6 +1218,7 @@ module SHAInet
         @accumulation_counter = 0
       end
 
+      @time_step += 1
       batch_error
     end
 
@@ -1301,7 +1301,17 @@ module SHAInet
       if @warmup_steps > 0 && @time_step < @warmup_steps
         @learning_rate * (@time_step.to_f64 / @warmup_steps)
       else
-        @learning_rate
+        lr = @learning_rate
+        if dt = @decay_type
+          step = @time_step - @warmup_steps
+          case dt
+          when :step
+            lr *= @decay_rate ** (step // @decay_step) if @decay_step > 0
+          when :exp, :exponential
+            lr *= @decay_rate ** step
+          end
+        end
+        lr
       end
     end
 

@@ -41,6 +41,9 @@ module SHAInet
     property accumulation_steps : Int32
     property accumulation_counter : Int32
     property mixed_precision : Bool
+    property decay_type : Symbol?
+    property decay_rate : Float64
+    property decay_step : Int32
     # Map of destination layer index to array of source layer indices for residual connections
     getter :residual_edges
 
@@ -80,6 +83,9 @@ module SHAInet
       @accumulation_steps = 1
       @accumulation_counter = 0
       @mixed_precision = false
+      @decay_type = nil
+      @decay_rate = 0.0
+      @decay_step = 1
 
       # Gradient transformation caching for efficient transformer backward pass
       @cached_expanded_grad = nil

@@ -148,12 +148,25 @@ net.train(
   log_each: 1000)
 ```
 
+### Learning Rate Scheduling
+
+Control the learning rate using warmup and decay:
+
+```crystal
+net = SHAInet::Network.new
+net.warmup_steps = 10
+net.decay_type = :step    # :step or :exp
+net.decay_rate = 0.5
+net.decay_step = 100      # only for :step decay
+```
+
+The scheduler takes effect after the warmup period and updates every batch.
+
 Set `accumulation_steps` to accumulate gradients across several mini-batches when memory is limited:
 
 ```crystal
 net.accumulation_steps = 2 # updates weights every 2 mini-batches
 ```
-
 ---
 
 ## Advanced
