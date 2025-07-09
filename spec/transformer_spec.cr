@@ -47,9 +47,9 @@ describe SHAInet::MultiHeadAttention do
              end
       attn.backward(diff)
       if SHAInet::CUDA.fully_available?
-        attn.apply_gradients(0.2, SHAInet::CudaMatrix)
+        attn.apply_gradients(0.2, SHAInet::CudaMatrix, 0.0)
       else
-        attn.apply_gradients(0.2, SHAInet::SimpleMatrix)
+        attn.apply_gradients(0.2, SHAInet::SimpleMatrix, 0.0)
       end
     end
     out = attn.forward(input)
@@ -134,7 +134,7 @@ describe SHAInet::TransformerLayer do
         diff = output.as(SHAInet::SimpleMatrix) - target.as(SHAInet::SimpleMatrix)
       end
       layer.backward(diff)
-      layer.apply_gradients(0.05)
+      layer.apply_gradients(0.05, 0.0)
     end
 
     output = layer.forward(input)
@@ -168,7 +168,7 @@ describe SHAInet::TransformerLayer do
                out.as(SHAInet::SimpleMatrix) - target.as(SHAInet::SimpleMatrix)
              end
       layer.backward(diff)
-      layer.apply_gradients(0.05)
+      layer.apply_gradients(0.05, 0.0)
     end
     out = layer.forward(input)
     out = if SHAInet::CUDA.fully_available?

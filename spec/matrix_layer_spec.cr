@@ -80,4 +80,19 @@ describe SHAInet::MatrixLayer do
       layer.biases[0, j].should be_close(expected_b[0, j], 1e-6)
     end
   end
+
+  it "shrinks weights with weight decay" do
+    mat_klass = SHAInet::CUDA.fully_available? ? SHAInet::CudaMatrix : SHAInet::SimpleMatrix
+    layer = SHAInet::MatrixLayer.new(1, 2, SHAInet.none)
+    layer.weights = mat_klass.from_a([[0.5, -0.5]])
+    layer.g_w = mat_klass.zeros(1, 2)
+    old_w = layer.weights.clone
+
+    layer.update_weights(0.0, 0.1)
+
+    2.times do |j|
+      expected = (old_w[0, j] * (1.0 - 0.1))
+      layer.weights[0, j].should be_close(expected, 1e-6)
+    end
+  end
 end

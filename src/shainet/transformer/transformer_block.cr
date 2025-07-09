@@ -176,24 +176,24 @@ module SHAInet
       end
     end
 
-    def apply_gradients(lr : Float64)
+    def apply_gradients(lr : Float64, weight_decay : Float64 = 0.0)
       # Determine device type from weights
       if @weights.is_a?(CudaMatrix)
         # GPU path
-        @ffn.apply_gradients(lr) # PositionWiseFF uses standard apply_gradients method
-        @mha.apply_gradients(lr, CudaMatrix)
+        @ffn.apply_gradients(lr, weight_decay) # PositionWiseFF uses standard apply_gradients method
+        @mha.apply_gradients(lr, CudaMatrix, weight_decay)
       else
         # CPU path
-        @ffn.apply_gradients(lr) # PositionWiseFF uses standard apply_gradients method
-        @mha.apply_gradients(lr, SimpleMatrix)
+        @ffn.apply_gradients(lr, weight_decay) # PositionWiseFF uses standard apply_gradients method
+        @mha.apply_gradients(lr, SimpleMatrix, weight_decay)
       end
-      @norm1.apply_gradients(lr)
-      @norm2.apply_gradients(lr)
+      @norm1.apply_gradients(lr, weight_decay)
+      @norm2.apply_gradients(lr, weight_decay)
     end
 
     # Override MatrixLayer's update_weights to prevent conflicts
     # TransformerBlock manages its own weight updates through apply_gradients
-    def update_weights(learning_rate : Float64)
+    def update_weights(learning_rate : Float64, weight_decay : Float64 = 0.0)
       # No-op: weights are updated via apply_gradients in update_transformer_layers
     end
 

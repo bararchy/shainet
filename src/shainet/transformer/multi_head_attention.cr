@@ -558,12 +558,16 @@ module SHAInet
     end
 
     # GPU path for applying gradients
-    def apply_gradients(lr : Float64, device : CudaMatrix.class)
+    def apply_gradients(lr : Float64, device : CudaMatrix.class, weight_decay : Float64 = 0.0)
       # Use in-place weight updates to eliminate matrix creation
       @w_q.as(CudaMatrix).weight_update!(@g_w_q.as(CudaMatrix), lr)
+      @w_q.as(CudaMatrix).scale!(1.0 - weight_decay) if weight_decay != 0.0
       @w_k.as(CudaMatrix).weight_update!(@g_w_k.as(CudaMatrix), lr)
+      @w_k.as(CudaMatrix).scale!(1.0 - weight_decay) if weight_decay != 0.0
       @w_v.as(CudaMatrix).weight_update!(@g_w_v.as(CudaMatrix), lr)
+      @w_v.as(CudaMatrix).scale!(1.0 - weight_decay) if weight_decay != 0.0
       @w_o.as(CudaMatrix).weight_update!(@g_w_o.as(CudaMatrix), lr)
+      @w_o.as(CudaMatrix).scale!(1.0 - weight_decay) if weight_decay != 0.0
 
       # Clear gradients
       zero_gradients(CudaMatrix)
@@ -571,11 +575,11 @@ module SHAInet
     end
 
     # CPU path for applying gradients
-    def apply_gradients(lr : Float64, device : SimpleMatrix.class)
-      @w_q = @w_q.as(SimpleMatrix) - (@g_w_q.as(SimpleMatrix) * lr)
-      @w_k = @w_k.as(SimpleMatrix) - (@g_w_k.as(SimpleMatrix) * lr)
-      @w_v = @w_v.as(SimpleMatrix) - (@g_w_v.as(SimpleMatrix) * lr)
-      @w_o = @w_o.as(SimpleMatrix) - (@g_w_o.as(SimpleMatrix) * lr)
+    def apply_gradients(lr : Float64, device : SimpleMatrix.class, weight_decay : Float64 = 0.0)
+      @w_q = (@w_q.as(SimpleMatrix) - (@g_w_q.as(SimpleMatrix) * lr)) * (1.0 - weight_decay)
+      @w_k = (@w_k.as(SimpleMatrix) - (@g_w_k.as(SimpleMatrix) * lr)) * (1.0 - weight_decay)
+      @w_v = (@w_v.as(SimpleMatrix) - (@g_w_v.as(SimpleMatrix) * lr)) * (1.0 - weight_decay)
+      @w_o = (@w_o.as(SimpleMatrix) - (@g_w_o.as(SimpleMatrix) * lr)) * (1.0 - weight_decay)
 
       # Clear gradients
       zero_gradients(SimpleMatrix)

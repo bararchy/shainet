@@ -832,7 +832,6 @@ module SHAInet
           Log.info { "Training stopped early. Error threshold reached: #{avg_error} < #{error_threshold}" }
           break
         end
-
       end
 
       elapsed = Time.monotonic - start_time
@@ -1195,14 +1194,14 @@ module SHAInet
 
         @hidden_layers.each do |layer|
           if layer.is_a?(MatrixLayer)
-            layer.update_weights(learning_rate)
+            layer.update_weights(learning_rate, @weight_decay)
           elsif layer.is_a?(EmbeddingLayer)
-            layer.apply_gradients(learning_rate)
+            layer.apply_gradients(learning_rate, @weight_decay)
           end
         end
 
         @output_layers.each do |layer|
-          layer.update_weights(learning_rate) if layer.is_a?(MatrixLayer)
+          layer.update_weights(learning_rate, @weight_decay) if layer.is_a?(MatrixLayer)
         end
 
         update_transformer_layers if @transformer_layers.any?
@@ -1318,7 +1317,7 @@ module SHAInet
     def update_transformer_layers
       lr = current_learning_rate
       @transformer_layers.each do |layer|
-        layer.apply_gradients(lr)
+        layer.apply_gradients(lr, @weight_decay)
       end
     end
 

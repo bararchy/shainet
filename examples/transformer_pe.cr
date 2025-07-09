@@ -29,7 +29,7 @@ target = SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.ones(2, 2))
            out.as(SHAInet::SimpleMatrix) - target.as(SHAInet::SimpleMatrix)
          end
   layer.backward(diff)
-  layer.apply_gradients(0.05)
+  layer.apply_gradients(0.05, 0.0)
 end
 
 puts "Output after training:"
