@@ -9,7 +9,11 @@ describe SHAInet::Network do
   end
 
   it "runs transformer block in post and pre norm modes" do
-    input = SHAInet::SimpleMatrix.ones(2, 2)
+    input = if SHAInet::CUDA.fully_available?
+             SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.ones(2, 2)).as(SHAInet::CudaMatrix)
+           else
+             SHAInet::SimpleMatrix.ones(2, 2)
+           end
 
     post = SHAInet::TransformerBlock.new(2, 1, 4)
     pre = SHAInet::TransformerBlock.new(2, 1, 4, 0, true)
@@ -20,7 +24,11 @@ describe SHAInet::Network do
     out_post.rows.should eq(2)
     out_pre.rows.should eq(2)
 
-    dout = SHAInet::SimpleMatrix.ones(2, 2)
+    dout = if SHAInet::CUDA.fully_available?
+             SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.ones(2, 2))
+           else
+             SHAInet::SimpleMatrix.ones(2, 2)
+           end
     post.backward(dout)
     pre.backward(dout)
   end
