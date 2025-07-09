@@ -334,6 +334,9 @@ module SHAInet
     # GPU path backward - all CudaMatrix operations
     def backward(d_out : CudaMatrix) : CudaMatrix
       x = @x.as(CudaMatrix)
+      if d_out.rows != x.rows || d_out.cols != x.cols
+        raise ArgumentError.new("dimension mismatch")
+      end
       rows = x.rows
       cols = x.cols
 
@@ -423,6 +426,9 @@ module SHAInet
     # CPU path backward - all SimpleMatrix operations
     def backward(d_out : SimpleMatrix) : SimpleMatrix
       x = @x.as(SimpleMatrix)
+      if d_out.rows != x.rows || d_out.cols != x.cols
+        raise ArgumentError.new("dimension mismatch")
+      end
       rows = x.rows
       cols = x.cols
 
