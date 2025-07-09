@@ -520,12 +520,41 @@ module SHAInet
 
       handle = CUDA.create_handle
       begin
-        # Optimized cuBLAS GEMM - account for row-major vs column-major difference
-        # To compute C = A * B in row-major, we compute C^T = B^T * A^T
-        # So we swap the order: gemm(B, A, C) with dimensions swapped
-        CUDA.gemm(handle, ptr_b.as(Pointer(Float64)), ptr_a.as(Pointer(Float64)), result.device_ptr.not_nil!.as(Pointer(Float64)),
-          other.cols, @rows, other.rows,
-          other.cols, @cols, result.cols)
+        if self.precision == other.precision &&
+           (self.precision == Precision::Fp16 || self.precision == Precision::Bf16)
+          if CUDA.gemm_ex_available?
+            dtype = CUDA.data_type_for(self.precision)
+            ctype = CUDA.data_type_for(result.precision)
+            compute = CUDA.compute_type_for(self.precision)
+            CUDA.gemm_ex(handle,
+              ptr_b, ptr_a, result.device_ptr.not_nil!,
+              other.cols, @rows, other.rows,
+              other.cols, @cols, result.cols,
+              dtype, dtype, ctype,
+              compute)
+          else
+            # CPU fallback when GEMMEx is unavailable
+            self.sync_from_device!("gemm_fallback") if device_dirty?
+            other.sync_from_device!("gemm_fallback") if other.device_dirty?
+            @rows.times do |i|
+              other.cols.times do |j|
+                sum = 0.0
+                @cols.times do |k|
+                  sum += self.unsafe_get(i, k) * other.unsafe_get(k, j)
+                end
+                result.unsafe_set(i, j, sum)
+              end
+            end
+            result.sync_to_device!("gemm_fallback_result")
+          end
+        else
+          # Optimized cuBLAS GEMM - account for row-major vs column-major difference
+          # To compute C = A * B in row-major, we compute C^T = B^T * A^T
+          # So we swap the order: gemm(B, A, C) with dimensions swapped
+          CUDA.gemm(handle, ptr_b.as(Pointer(Float64)), ptr_a.as(Pointer(Float64)), result.device_ptr.not_nil!.as(Pointer(Float64)),
+            other.cols, @rows, other.rows,
+            other.cols, @cols, result.cols)
+        end
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -1122,14 +1151,44 @@ module SHAInet
 
       handle = CUDA.create_handle
       begin
-        # In-place GEMM: C = alpha * A * B + beta * C
-        # cuBLAS expects column-major ordering, so we perform the same
-        # transpose trick used in `*` by swapping operands and dimensions.
-        # Treating row-major A,B as column-major A^T,B^T results in:
-        # C^T = B^T * A^T
-        CUDA.gemm_accumulate(handle, ptr_b, ptr_a, ptr_c,
-          b.cols, a.rows, b.rows,
-          b.cols, a.cols, @cols, alpha, beta)
+        if a.precision == b.precision && a.precision == self.precision &&
+           (a.precision == Precision::Fp16 || a.precision == Precision::Bf16) &&
+           CUDA.gemm_ex_available?
+          dtype = CUDA.data_type_for(a.precision)
+          compute = CUDA.compute_type_for(a.precision)
+          CUDA.gemm_ex(handle,
+            ptr_b, ptr_a, ptr_c,
+            b.cols, a.rows, b.rows,
+            b.cols, a.cols, @cols,
+            dtype, dtype, dtype,
+            compute)
+        elsif a.precision == b.precision && a.precision == self.precision &&
+              (a.precision == Precision::Fp16 || a.precision == Precision::Bf16)
+          # CPU fallback when gemmEx is unavailable
+          self.sync_from_device!("gemm_fallback") if device_dirty?
+          a.sync_from_device!("gemm_fallback") if a.device_dirty?
+          b.sync_from_device!("gemm_fallback") if b.device_dirty?
+          @rows.times do |i|
+            @cols.times do |j|
+              sum = 0.0
+              a.cols.times do |k|
+                sum += a.unsafe_get(i, k) * b.unsafe_get(k, j)
+              end
+              val = alpha * sum + beta * self.unsafe_get(i, j)
+              self.unsafe_set(i, j, val)
+            end
+          end
+          self.sync_to_device!("gemm_fallback_result")
+        else
+          # In-place GEMM: C = alpha * A * B + beta * C
+          # cuBLAS expects column-major ordering, so we perform the same
+          # transpose trick used in `*` by swapping operands and dimensions.
+          # Treating row-major A,B as column-major A^T,B^T results in:
+          # C^T = B^T * A^T
+          CUDA.gemm_accumulate(handle, ptr_b, ptr_a, ptr_c,
+            b.cols, a.rows, b.rows,
+            b.cols, a.cols, @cols, alpha, beta)
+        end
       ensure
         CUDA.destroy_handle(handle)
       end
