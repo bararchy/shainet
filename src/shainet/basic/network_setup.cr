@@ -91,10 +91,10 @@ module SHAInet
     # l_type is: :input, :hidden or :output
     # l_size = size of the layer
     # n_type = advanced option for layer types
-    def add_layer(l_type : Symbol | String, l_size : Int32, activation_function : ActivationFunction = SHAInet.sigmoid, num_heads : Int32 = 1, ff_hidden : Int32 = l_size*4, drop_percent : Int32 = 0, blocks : Int32 = 1, *, vocab_size : Int32 = 0)
+    def add_layer(l_type : Symbol | String, l_size : Int32, activation_function : ActivationFunction = SHAInet.sigmoid, num_heads : Int32 = 1, ff_hidden : Int32 = l_size*4, drop_percent : Int32 = 0, pre_norm : Bool = false, blocks : Int32 = 1, *, vocab_size : Int32 = 0)
       if l_type.to_s == "transformer" && blocks > 1
         blocks.times do
-          add_layer(l_type, l_size, activation_function, num_heads, ff_hidden, drop_percent, 1)
+          add_layer(l_type, l_size, activation_function, num_heads, ff_hidden, drop_percent, pre_norm, 1)
         end
         return
       end
@@ -103,7 +103,7 @@ module SHAInet
                 raise NeuralNetRunError.new("vocab_size required for embedding layer") if vocab_size <= 0
                 EmbeddingLayer.new(vocab_size, l_size, activation_function)
               when "transformer"
-                TransformerLayer.new(l_size, num_heads, ff_hidden, drop_percent)
+                TransformerLayer.new(l_size, num_heads, ff_hidden, drop_percent, pre_norm)
               else
                 # Use MatrixLayer for regular feedforward layers - it has proper GPU support and gradient computation
                 # Note: MatrixLayer will be properly connected with correct input size in connect_ltl

@@ -151,6 +151,7 @@ net.train(
 ## Advanced
 
 - See `examples/babylm_transformer.cr` for a transformer language model.
+- Transformer blocks can use pre-layer normalization via `pre_norm: true` when added with `net.add_layer(:transformer, d_model, pre_norm: true)`.
 - Import PyTorch models with `net.load_from_pt("model.pt")`.
 - Import HuggingFace GPT weights directly from `pytorch_model.bin`.
 
