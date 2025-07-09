@@ -24,7 +24,10 @@ module SHAInet
             CUDA::MemcpyKind::HostToDevice)
 
           # Run the kernel
-          CUDA.softmax_rows(rptr, dptr, @rows, @cols)
+          CUDA.softmax_rows(rptr.as(Pointer(Float64)),
+                            dptr.as(Pointer(Float64)),
+                            @rows,
+                            @cols)
 
           # Check result data
           test_result = Array(Float64).new(@rows * @cols, 0.0)
@@ -74,6 +77,7 @@ module SHAInet
             rptr.as(Pointer(Float64)),
             dptr.as(Pointer(Float64)),
             @rows, @cols, prob, seed)
+
 
           # Mark result as having newer GPU data
           result.mark_device_dirty!
