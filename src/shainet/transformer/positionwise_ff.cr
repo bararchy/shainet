@@ -493,12 +493,21 @@ module SHAInet
 
     def finalize
       if CUDA.fully_available?
-        [@workspace_w2_t, @workspace_w1_t, @workspace_temp_grad_w2,
-         @workspace_temp_grad_w1, @workspace_x_t, @workspace_h_t, @workspace_h,
-         @workspace_out, @workspace_d_input, @workspace_dh].each do |ws|
-          CudaMatrix.return_workspace(ws.not_nil!) if ws
-        end
+        # Avoid returning matrices to the workspace pool from a finalizer to
+        # prevent allocations while the GC is running. Simply drop references so
+        # each CudaMatrix can clean itself up.
       end
+
+      @workspace_w2_t = nil
+      @workspace_w1_t = nil
+      @workspace_temp_grad_w2 = nil
+      @workspace_temp_grad_w1 = nil
+      @workspace_x_t = nil
+      @workspace_h_t = nil
+      @workspace_h = nil
+      @workspace_out = nil
+      @workspace_d_input = nil
+      @workspace_dh = nil
     end
   end
 end
