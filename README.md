@@ -167,6 +167,7 @@ Set `accumulation_steps` to accumulate gradients across several mini-batches whe
 ```crystal
 net.accumulation_steps = 2 # updates weights every 2 mini-batches
 ```
+
 ---
 
 ## Advanced
