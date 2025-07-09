@@ -6,6 +6,7 @@ require "log"
 {% else %}
   require "./shainet/cuda_stub"
 {% end %}
+require "./shainet/precision"
 
 require "./shainet/autograd/tensor"
 require "./shainet/basic/exceptions"
