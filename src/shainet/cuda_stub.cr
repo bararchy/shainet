@@ -39,6 +39,18 @@ module SHAInet
       false
     end
 
+    def gemm_ex_available? : Bool
+      false
+    end
+
+    def data_type_for(*args)
+      raise "CUDA disabled"
+    end
+
+    def compute_type_for(*args)
+      raise "CUDA disabled"
+    end
+
     def malloc(*args) : Int32
       raise "CUDA disabled"
     end
