@@ -19,13 +19,13 @@ require "../src/shainet"
 
 # Path to the unzipped training text
 path = if ARGV[0]?
-  ARGV[0]
-else
-  puts "Usage: #{__FILE__} <path_to_train.txt>"
-  exit 1
-end
+         ARGV[0]
+       else
+         puts "Usage: #{__FILE__} <path_to_train.txt>"
+         exit 1
+       end
 
-#### Example Control Parameters
+# ### Example Control Parameters
 # You can adjust these parameters to control the training process.
 # vocab_size: Size of the tokenizer vocabulary.
 vocab_size = 10_000
@@ -51,6 +51,16 @@ log_each = 1
 # val_batch_size: Batch size for validation.
 # Smaller sizes can help with memory usage during validation. but larger sizes can speed up validation.
 val_batch_size = 64
+# Warmup steps: Gradually increase learning rate for the first N steps (helps stabilize transformer training)
+warmup_steps = 4000
+# Decay type: :step (decays every decay_step) or :exp (exponential decay)
+decay_type = :step # or :exp
+# Decay rate: multiply learning rate by this factor at each decay step
+decay_rate = 0.5
+# Decay step: how many steps between each decay (only for :step)
+decay_step = 1000
+# Accumulation steps: accumulate gradients over this many mini-batches before updating weights
+accumulation_steps = 4
 
 puts "Reading dataset from #{path}..."
 text = File.read(path)
@@ -68,6 +78,7 @@ puts "Tokenizer trained with #{tokenizer.vocab.size} tokens."
 puts "Dataset size: #{ids.size} tokens"
 
 puts "Building the network..."
+
 # Build the network with much smaller dimensions for fast debugging
 token_count = tokenizer.vocab.size
 net = SHAInet::Network.new
@@ -77,6 +88,11 @@ transformer_layers.times { net.add_layer(:transformer, d_model, SHAInet.gelu) }
 net.add_layer(:output, token_count, SHAInet.identity)
 net.fully_connect
 net.learning_rate = learning_rate
+net.warmup_steps = warmup_steps
+net.decay_type = decay_type
+net.decay_rate = decay_rate
+net.decay_step = decay_step
+net.accumulation_steps = accumulation_steps
 
 puts "Network built"
 puts "Output layer size: #{token_count}"
@@ -87,10 +103,10 @@ net.transformer_layers.first.positional_encoding = pos_enc
 
 # Causal mask so each position only attends to previous ones
 mask = if SHAInet::CUDA.fully_available?
-  SHAInet::GPUMemory.to_gpu(SHAInet::AttentionMask.causal(seq_len))
-else
-  SHAInet::AttentionMask.causal(seq_len)
-end
+         SHAInet::GPUMemory.to_gpu(SHAInet::AttentionMask.causal(seq_len))
+       else
+         SHAInet::AttentionMask.causal(seq_len)
+       end
 net.transformer_layers.each { |l| l.mask = mask }
 
 # Build training/validation splits and write pairs to disk for streaming
@@ -133,8 +149,6 @@ puts "Expected validation sequences: #{val_ids.size - seq_len}"
 # Data loader now expects {"input": [...], "target": ...} format.
 train_data = SHAInet::StreamingData.new(train_file, shuffle: true, gpu_batches: true)
 val_data = SHAInet::StreamingData.new(val_file, gpu_batches: true)
-
-
 
 puts "Training the network for #{epochs} epochs with batch size #{batch}..."
 # Train for all epochs at once with proper logging

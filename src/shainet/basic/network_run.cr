@@ -832,7 +832,6 @@ module SHAInet
           Log.info { "Training stopped early. Error threshold reached: #{avg_error} < #{error_threshold}" }
           break
         end
-
       end
 
       elapsed = Time.monotonic - start_time
