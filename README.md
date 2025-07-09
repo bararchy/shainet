@@ -14,8 +14,9 @@ SHAInet (Super Human Artificial Intelligence Network) is a neural network librar
 - Residual skip connections between layers
 - PyTorch and HuggingFace model import
 - Transformer and modern NLP support
-- Configurable precision (fp64/fp32/fp16/bf16)
+- Configurable precision (fp64/fp32/fp16/bf16/int8)
 - Includes lightweight Float16/BFloat16 wrappers for half precision
+- Supports INT8 quantization for efficient inference
 - Enable half precision by setting `net.precision = SHAInet::Precision::Fp16`
   or `SHAInet::Precision::Bf16`.
 
