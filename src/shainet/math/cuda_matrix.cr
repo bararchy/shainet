@@ -20,6 +20,9 @@ module SHAInet
     @rows : Int32
     @cols : Int32
     @data_f64 : Array(Float64)?
+    @data_f32_master : Array(Float32)?
+    @data_f16 : Array(Float16)?
+    @data_bf16 : Array(BFloat16)?
     @data_i8 : Array(Int8)?
     @gpu_memory_size : UInt64 = 0_u64 # Track our own GPU memory size
 
@@ -51,6 +54,19 @@ module SHAInet
     @@max_pool_size = 30_000
 
     getter rows, cols
+
+    private def element_size : Int32
+      case @precision
+      when Precision::Int8
+        1
+      when Precision::Fp16, Precision::Bf16
+        2
+      when Precision::Fp32
+        4
+      else
+        8
+      end
+    end
 
     def self.gpu_memory_stats
       {
@@ -109,9 +125,23 @@ module SHAInet
     def initialize(@rows : Int32, @cols : Int32, init : Float64 = 0.0,
                    precision : Precision = Precision::Fp64)
       @precision = precision
-      if precision == Precision::Int8
+      @data_f32_master = nil
+      @data_f16 = nil
+      @data_bf16 = nil
+      case precision
+      when Precision::Int8
         @data_i8 = Array(Int8).new(@rows * @cols, init.round.to_i8)
         @data_f64 = nil
+      when Precision::Fp16
+        @data_f16 = Array(Float16).new(@rows * @cols) { Float16.new(init.to_f32) }
+        @data_f32_master = Array(Float32).new(@rows * @cols, init.to_f32)
+        @data_f64 = nil
+        @data_i8 = nil
+      when Precision::Bf16
+        @data_bf16 = Array(BFloat16).new(@rows * @cols) { BFloat16.new(init.to_f32) }
+        @data_f32_master = Array(Float32).new(@rows * @cols, init.to_f32)
+        @data_f64 = nil
+        @data_i8 = nil
       else
         @data_f64 = Array(Float64).new(@rows * @cols, init)
         @data_i8 = nil
@@ -130,7 +160,7 @@ module SHAInet
       raise RuntimeError.new("CudaMatrix requires CUDA to be available") unless CUDA.fully_available?
       # Print the most frequent allocation sites
       size = @rows * @cols
-      elem_size = @precision == Precision::Int8 ? 1 : 8
+      elem_size = element_size
       bytes = (size * elem_size).to_u64
 
       # Check if we would exceed memory limits or are getting close
@@ -166,8 +196,11 @@ module SHAInet
       # If GPU data is newer, sync it to CPU first
       sync_from_device!("element_access") if device_dirty?
       idx = row * @cols + col
-      if @precision == Precision::Int8
+      case @precision
+      when Precision::Int8
         @data_i8.not_nil![idx].to_f64
+      when Precision::Fp16, Precision::Bf16
+        @data_f32_master.not_nil![idx].to_f64
       else
         @data_f64.not_nil![idx]
       end
@@ -175,8 +208,15 @@ module SHAInet
 
     def []=(row : Int32, col : Int32, value : Float64)
       idx = row * @cols + col
-      if @precision == Precision::Int8
+      case @precision
+      when Precision::Int8
         @data_i8.not_nil![idx] = value.round.clamp(-128, 127).to_i8
+      when Precision::Fp16
+        @data_f32_master.not_nil![idx] = value.to_f32
+        @data_f16.not_nil![idx] = Float16.new(value.to_f32)
+      when Precision::Bf16
+        @data_f32_master.not_nil![idx] = value.to_f32
+        @data_bf16.not_nil![idx] = BFloat16.new(value.to_f32)
       else
         @data_f64.not_nil![idx] = value
       end
@@ -187,8 +227,11 @@ module SHAInet
     # Provide a method to access values without syncing (for performance-critical code)
     def unsafe_get(row : Int32, col : Int32)
       idx = row * @cols + col
-      if @precision == Precision::Int8
+      case @precision
+      when Precision::Int8
         @data_i8.not_nil![idx].to_f64
+      when Precision::Fp16, Precision::Bf16
+        @data_f32_master.not_nil![idx].to_f64
       else
         @data_f64.not_nil![idx]
       end
@@ -197,8 +240,15 @@ module SHAInet
     # Provide a method to set values without affecting sync state
     def unsafe_set(row : Int32, col : Int32, value : Float64)
       idx = row * @cols + col
-      if @precision == Precision::Int8
+      case @precision
+      when Precision::Int8
         @data_i8.not_nil![idx] = value.round.clamp(-128, 127).to_i8
+      when Precision::Fp16
+        @data_f32_master.not_nil![idx] = value.to_f32
+        @data_f16.not_nil![idx] = Float16.new(value.to_f32)
+      when Precision::Bf16
+        @data_f32_master.not_nil![idx] = value.to_f32
+        @data_bf16.not_nil![idx] = BFloat16.new(value.to_f32)
       else
         @data_f64.not_nil![idx] = value
       end
@@ -307,7 +357,7 @@ module SHAInet
 
       begin
         size = @rows * @cols
-        elem_size = @precision == Precision::Int8 ? 1 : 8
+        elem_size = element_size
         bytes = (size * elem_size).to_u64
 
         # Track sync operations for performance monitoring
@@ -315,8 +365,19 @@ module SHAInet
         @@total_sync_bytes_to_device += bytes
         self.class.track_sync("to_device:#{source}")
 
-        ptr = if @precision == Precision::Int8
+        ptr = case @precision
+              when Precision::Int8
                 @data_i8.not_nil!.to_unsafe.as(Pointer(Void))
+              when Precision::Fp16
+                data_f32 = @data_f32_master.not_nil!
+                arr = @data_f16.not_nil!
+                arr.each_index { |i| arr[i] = Float16.new(data_f32[i]) }
+                arr.to_unsafe.as(Pointer(Void))
+              when Precision::Bf16
+                data_f32 = @data_f32_master.not_nil!
+                arr = @data_bf16.not_nil!
+                arr.each_index { |i| arr[i] = BFloat16.new(data_f32[i]) }
+                arr.to_unsafe.as(Pointer(Void))
               else
                 @data_f64.not_nil!.to_unsafe.as(Pointer(Void))
               end
@@ -341,7 +402,7 @@ module SHAInet
 
       begin
         size = @rows * @cols
-        elem_size = @precision == Precision::Int8 ? 1 : 8
+        elem_size = element_size
         bytes = (size * elem_size).to_u64
 
         # Track sync operations for performance monitoring
@@ -349,14 +410,28 @@ module SHAInet
         @@total_sync_bytes_from_device += bytes
         self.class.track_sync("from_device:#{source}")
 
-        ptr = if @precision == Precision::Int8
-                @data_i8.not_nil!.to_unsafe.as(Pointer(Void))
-              else
-                @data_f64.not_nil!.to_unsafe.as(Pointer(Void))
-              end
+        ptr, post = case @precision
+                    when Precision::Int8
+                      {@data_i8.not_nil!.to_unsafe.as(Pointer(Void)), -> { nil }}
+                    when Precision::Fp16
+                      arr_f16 = @data_f16.not_nil!
+                      arr_f32 = @data_f32_master.not_nil!
+                      {arr_f16.to_unsafe.as(Pointer(Void)), -> {
+                        arr_f16.each_index { |i| arr_f32[i] = arr_f16[i].to_f32 }
+                      }}
+                    when Precision::Bf16
+                      arr_bf16 = @data_bf16.not_nil!
+                      arr_f32 = @data_f32_master.not_nil!
+                      {arr_bf16.to_unsafe.as(Pointer(Void)), -> {
+                        arr_bf16.each_index { |i| arr_f32[i] = arr_bf16[i].to_f32 }
+                      }}
+                    else
+                      {@data_f64.not_nil!.to_unsafe.as(Pointer(Void)), -> { }}
+                    end
         copy_result = CUDA.memcpy(ptr, dptr.as(Pointer(Void)), bytes, CUDA::MemcpyKind::DeviceToHost)
 
         if copy_result == 0
+          post.call
           mark_device_clean!
         else
           @device_ptr = Pointer(Void).null
@@ -422,7 +497,7 @@ module SHAInet
       src_row_ptr = sptr + (source_row * other.cols)
 
       # Copy the row data taking element size into account
-      elem_size = @precision == Precision::Int8 ? 1 : 8
+      elem_size = element_size
       bytes = (@cols * elem_size).to_u64
       CUDA.copy_device_to_device(dest_row_ptr, src_row_ptr, bytes)
 
@@ -528,7 +603,7 @@ module SHAInet
       # If we have GPU data, copy it directly on GPU
       if device_dirty?
         # GPU -> GPU copy
-        elem_size = @precision == Precision::Int8 ? 1 : 8
+        elem_size = element_size
         bytes = (@rows * @cols * elem_size).to_u64
         result = CUDA.memcpy(dptr.as(Pointer(Void)), sptr.as(Pointer(Void)), bytes, CUDA::MemcpyKind::DeviceToDevice)
         raise RuntimeError.new("GPU-to-GPU memcpy failed") if result != 0
@@ -601,7 +676,7 @@ module SHAInet
 
     # Fill matrix with a constant value in-place.
     def fill!(value : Float64)
-      if CUDA.fully_available? && (dptr = device_ptr) && !dptr.null? && @precision != Precision::Int8
+      if CUDA.fully_available? && (dptr = device_ptr) && !dptr.null? && @precision == Precision::Fp64
         size = @rows * @cols
         if value == 0.0
           CUDA.zero_matrix(dptr.as(Pointer(Float64)), size)
@@ -777,8 +852,11 @@ module SHAInet
     # More efficient flat array conversion - avoids nested array creation
     def to_flat_array
       sync_from_device!("bulk_to_flat_array") if device_dirty?
-      if @precision == Precision::Int8
+      case @precision
+      when Precision::Int8
         @data_i8.not_nil!.dup.map(&.to_f64)
+      when Precision::Fp16, Precision::Bf16
+        @data_f32_master.not_nil!.dup.map(&.to_f64)
       else
         @data_f64.not_nil!.dup
       end
@@ -801,8 +879,11 @@ module SHAInet
 
     # Provide access to raw data for batch operations
     def raw_data
-      if @precision == Precision::Int8
+      case @precision
+      when Precision::Int8
         @data_i8.not_nil!.map(&.to_f64)
+      when Precision::Fp16, Precision::Bf16
+        @data_f32_master.not_nil!.map(&.to_f64)
       else
         @data_f64.not_nil!
       end
@@ -817,7 +898,7 @@ module SHAInet
       other.sync_to_device!("copy_from") unless other.device_dirty?
 
       # GPU -> GPU copy
-      elem_size = @precision == Precision::Int8 ? 1 : 8
+      elem_size = element_size
       bytes = (@rows * @cols * elem_size).to_u64
       result = CUDA.memcpy(dptr.as(Pointer(Void)), sptr.as(Pointer(Void)), bytes, CUDA::MemcpyKind::DeviceToDevice)
       raise RuntimeError.new("GPU-to-GPU memcpy failed") if result != 0
@@ -828,7 +909,7 @@ module SHAInet
 
     # In-place zeroing using GPU kernel
     def zero!
-      if CUDA.fully_available? && (dptr = device_ptr) && !dptr.null? && @precision != Precision::Int8
+      if CUDA.fully_available? && (dptr = device_ptr) && !dptr.null? && @precision == Precision::Fp64
         size = @rows * @cols
         CUDA.zero_matrix(dptr.as(Pointer(Float64)), size)
         mark_device_dirty!
