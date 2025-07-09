@@ -420,17 +420,17 @@ module SHAInet
       d_x
     end
 
-    def apply_gradients(lr : Float64)
+    def apply_gradients(lr : Float64, weight_decay : Float64 = 0.0)
       # Check device type and call appropriate method
       if @gamma.is_a?(CudaMatrix)
-        apply_gradients_gpu(lr)
+        apply_gradients_gpu(lr, weight_decay)
       else
-        apply_gradients_cpu(lr)
+        apply_gradients_cpu(lr, weight_decay)
       end
     end
 
     # GPU path gradient application - all CudaMatrix operations with in-place operations
-    private def apply_gradients_gpu(lr : Float64)
+    private def apply_gradients_gpu(lr : Float64, weight_decay : Float64)
       # Use CUDA AXPY to perform: gamma = gamma - lr * g_gamma (in-place)
       # Use CUDA AXPY to perform: beta = beta - lr * g_beta (in-place)
 
@@ -462,12 +462,14 @@ module SHAInet
       # Clear gradients in-place
       @g_gamma.as(CudaMatrix).zero!
       @g_beta.as(CudaMatrix).zero!
+      @gamma.as(CudaMatrix).scale!(1.0 - weight_decay) if weight_decay != 0.0
+      @beta.as(CudaMatrix).scale!(1.0 - weight_decay) if weight_decay != 0.0
     end
 
     # CPU path gradient application - all SimpleMatrix operations
-    private def apply_gradients_cpu(lr : Float64)
-      @gamma = @gamma.as(SimpleMatrix) - @g_gamma.as(SimpleMatrix) * lr
-      @beta = @beta.as(SimpleMatrix) - @g_beta.as(SimpleMatrix) * lr
+    private def apply_gradients_cpu(lr : Float64, weight_decay : Float64)
+      @gamma = (@gamma.as(SimpleMatrix) - @g_gamma.as(SimpleMatrix) * lr) * (1.0 - weight_decay)
+      @beta = (@beta.as(SimpleMatrix) - @g_beta.as(SimpleMatrix) * lr) * (1.0 - weight_decay)
       @g_gamma = SimpleMatrix.zeros(@gamma.rows, @gamma.cols)
       @g_beta = SimpleMatrix.zeros(@beta.rows, @beta.cols)
     end

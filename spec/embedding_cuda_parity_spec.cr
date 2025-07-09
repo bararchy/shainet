@@ -24,7 +24,7 @@ describe "Embedding GPU parity" do
     cpu_layer.embed(1)
     cpu_layer.gradients[1, 0] = 0.2
     cpu_layer.gradients[1, 1] = 0.2
-    cpu_layer.apply_gradients(lr)
+    cpu_layer.apply_gradients(lr, 0.0)
 
     # Now with GPU
     ENV.delete("SHAINET_DISABLE_CUDA")
@@ -50,7 +50,7 @@ describe "Embedding GPU parity" do
     if gpu_layer.gradients.is_a?(SHAInet::CudaMatrix)
       gpu_layer.gradients.as(SHAInet::CudaMatrix).sync_to_device!
     end
-    gpu_layer.apply_gradients(lr)
+    gpu_layer.apply_gradients(lr, 0.0)
 
     # Check results for updated values
     vocab_size.times do |r|

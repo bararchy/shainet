@@ -29,7 +29,7 @@ describe SHAInet::EmbeddingLayer do
     layer.gradients[1, 1] = 0.1
 
     # Apply gradients with a learning rate
-    layer.apply_gradients(0.1)
+    layer.apply_gradients(0.1, 0.0)
 
     after = layer.lookup(1)
     puts "After: #{after.inspect}, embeddings at 1: #{layer.embeddings[1, 0]}, #{layer.embeddings[1, 1]}"

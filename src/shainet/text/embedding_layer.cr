@@ -216,7 +216,7 @@ module SHAInet
     end
 
     # Update embeddings using stored gradients and clear them
-    def apply_gradients(lr : Float64)
+    def apply_gradients(lr : Float64, weight_decay : Float64 = 0.0)
       if CUDA.fully_available? && @embeddings.is_a?(CudaMatrix) && @gradients.is_a?(CudaMatrix)
         e_ptr = @embeddings.as(CudaMatrix).device_ptr
         g_ptr = @gradients.as(CudaMatrix).device_ptr
@@ -227,6 +227,7 @@ module SHAInet
           CUDA.destroy_handle(handle)
           zeros = Array(Float64).new(total, 0.0)
           CUDA.memcpy(g_ptr.as(Pointer(Void)), zeros.to_unsafe.as(Pointer(Void)), (total * 8).to_u64, CUDA::MemcpyKind::HostToDevice)
+          @embeddings.as(CudaMatrix).scale!(1.0 - weight_decay) if weight_decay != 0.0
           # Don't sync embeddings from device - keep them on GPU for performance
           @embeddings.as(CudaMatrix).mark_device_dirty!
           @gradients.as(CudaMatrix).mark_device_clean! # gradients were zeroed on GPU
@@ -245,6 +246,13 @@ module SHAInet
       if CUDA.fully_available? && @embeddings.is_a?(CudaMatrix)
         @embeddings.as(CudaMatrix).sync_to_device! unless @embeddings.as(CudaMatrix).device_dirty?
         @gradients.as(CudaMatrix).sync_to_device! unless @gradients.as(CudaMatrix).device_dirty?
+      end
+      if weight_decay != 0.0
+        if @embeddings.is_a?(CudaMatrix)
+          @embeddings.as(CudaMatrix).scale!(1.0 - weight_decay)
+        else
+          @embeddings = @embeddings.as(SimpleMatrix) * (1.0 - weight_decay)
+        end
       end
     end
 

@@ -300,29 +300,33 @@ module SHAInet
     end
 
     # Update weights using accumulated gradients - device-specific versions
-    def update_weights(learning_rate : Float64)
+    def update_weights(learning_rate : Float64, weight_decay : Float64 = 0.0)
       # Check device type and call appropriate method
       if @weights.is_a?(CudaMatrix)
-        update_weights_gpu(learning_rate)
+        update_weights_gpu(learning_rate, weight_decay)
       else
-        update_weights_cpu(learning_rate)
+        update_weights_cpu(learning_rate, weight_decay)
       end
     end
 
     # GPU path weight update - all CudaMatrix operations with in-place updates
-    private def update_weights_gpu(learning_rate : Float64)
-      # W := W - lr * ∂L/∂W (in-place using optimized AXPY)
-      # b := b - lr * ∂L/∂b (in-place using optimized AXPY)
+    private def update_weights_gpu(learning_rate : Float64, weight_decay : Float64)
+      # W := W - lr * ∂L/∂W - weight_decay * W
+      # b := b - lr * ∂L/∂b
 
-      @weights.as(CudaMatrix).weight_update!(@g_w.as(CudaMatrix), learning_rate)
+      w_cuda = @weights.as(CudaMatrix)
+      w_cuda.weight_update!(@g_w.as(CudaMatrix), learning_rate)
+      w_cuda.scale!(1.0 - weight_decay) if weight_decay != 0.0
       @biases.as(CudaMatrix).weight_update!(@g_b.as(CudaMatrix), learning_rate)
     end
 
     # CPU path weight update - all SimpleMatrix operations
-    private def update_weights_cpu(learning_rate : Float64)
-      # W := W - lr * ∂L/∂W
+    private def update_weights_cpu(learning_rate : Float64, weight_decay : Float64)
+      # W := W - lr * ∂L/∂W - weight_decay * W
       # b := b - lr * ∂L/∂b
-      @weights = @weights.as(SimpleMatrix) - @g_w.as(SimpleMatrix) * learning_rate
+      w = @weights.as(SimpleMatrix) - @g_w.as(SimpleMatrix) * learning_rate
+      w = w * (1.0 - weight_decay) if weight_decay != 0.0
+      @weights = w
       @biases = @biases.as(SimpleMatrix) - @g_b.as(SimpleMatrix) * learning_rate
     end
 

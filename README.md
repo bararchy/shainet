@@ -168,6 +168,12 @@ Set `accumulation_steps` to accumulate gradients across several mini-batches whe
 net.accumulation_steps = 2 # updates weights every 2 mini-batches
 ```
 
+Enable weight decay to shrink parameters on each update:
+
+```crystal
+net.weight_decay = 0.01
+```
+
 ---
 
 ## Advanced
