@@ -39,6 +39,7 @@ module SHAInet
     property warmup_steps : Int32
     property weight_decay : Float64
     property accumulation_steps : Int32
+    property accumulation_counter : Int32
     property mixed_precision : Bool
     # Map of destination layer index to array of source layer indices for residual connections
     getter :residual_edges
@@ -77,6 +78,7 @@ module SHAInet
       @warmup_steps = 0
       @weight_decay = 0.0
       @accumulation_steps = 1
+      @accumulation_counter = 0
       @mixed_precision = false
 
       # Gradient transformation caching for efficient transformer backward pass

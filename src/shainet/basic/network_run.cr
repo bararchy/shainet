@@ -750,6 +750,7 @@ module SHAInet
       start_time = Time.monotonic
 
       batch_size = stream ? mini_batch_size : mini_batch_size.clamp(1, raw_data.size)
+      @accumulation_counter = 0
 
       epochs.times do |epoch|
         # Reset sync counters at start of each epoch
@@ -842,12 +843,14 @@ module SHAInet
     private def process_batch(batch, cost_proc, training_type)
       batch_error = 0.0
 
-      # Zero gradients for all matrix layers
-      @hidden_layers.each do |layer|
-        layer.zero_gradients if layer.is_a?(MatrixLayer)
-      end
-      @output_layers.each do |layer|
-        layer.zero_gradients if layer.is_a?(MatrixLayer)
+      # Zero gradients only at the start of an accumulation cycle
+      if @accumulation_counter == 0
+        @hidden_layers.each do |layer|
+          layer.zero_gradients if layer.is_a?(MatrixLayer)
+        end
+        @output_layers.each do |layer|
+          layer.zero_gradients if layer.is_a?(MatrixLayer)
+        end
       end
 
       # Determine matrix dimensions from first sample for workspace allocation
@@ -1186,21 +1189,35 @@ module SHAInet
         end
       end
 
-      learning_rate = current_learning_rate
+      @accumulation_counter += 1
 
-      @hidden_layers.each do |layer|
-        if layer.is_a?(MatrixLayer)
-          layer.update_weights(learning_rate)
-        elsif layer.is_a?(EmbeddingLayer)
-          layer.apply_gradients(learning_rate)
+      if @accumulation_counter >= @accumulation_steps
+        learning_rate = current_learning_rate
+
+        @hidden_layers.each do |layer|
+          if layer.is_a?(MatrixLayer)
+            layer.update_weights(learning_rate)
+          elsif layer.is_a?(EmbeddingLayer)
+            layer.apply_gradients(learning_rate)
+          end
         end
-      end
 
-      @output_layers.each do |layer|
-        layer.update_weights(learning_rate) if layer.is_a?(MatrixLayer)
-      end
+        @output_layers.each do |layer|
+          layer.update_weights(learning_rate) if layer.is_a?(MatrixLayer)
+        end
 
-      update_transformer_layers if @transformer_layers.any?
+        update_transformer_layers if @transformer_layers.any?
+
+        # Reset gradients for next accumulation cycle
+        @hidden_layers.each do |layer|
+          layer.zero_gradients if layer.is_a?(MatrixLayer)
+        end
+        @output_layers.each do |layer|
+          layer.zero_gradients if layer.is_a?(MatrixLayer)
+        end
+
+        @accumulation_counter = 0
+      end
 
       batch_error
     end
