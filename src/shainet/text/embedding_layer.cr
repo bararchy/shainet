@@ -5,6 +5,9 @@ module SHAInet
   class EmbeddingLayer < MatrixLayer
     property embeddings : SimpleMatrix | CudaMatrix
     property gradients : SimpleMatrix | CudaMatrix
+    property q_embeddings : Array(Int8)?
+    property q_emb_scale : Float32?
+    property q_emb_zero_point : Int8?
     getter current_ids : Array(Int32)
 
     # Pre-allocated workspace matrices to avoid allocations during forward pass
@@ -23,6 +26,10 @@ module SHAInet
       end
       @gradients = mat_klass.zeros(vocab_size, l_size)
       @current_ids = [] of Int32
+
+      @q_embeddings = nil
+      @q_emb_scale = nil
+      @q_emb_zero_point = nil
 
       # Initialize workspace matrices
       @workspace_result = nil
