@@ -104,7 +104,7 @@ module SHAInet
           CUDA.malloc(pointerof(ids_dev).as(Pointer(Pointer(Void))), bytes)
           CUDA.memcpy(ids_dev.as(Pointer(Void)), ids.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
           begin
-            CUDA.gather_rows(r_ptr, e_ptr, ids_dev, ids.size, @l_size)
+          CUDA.gather_rows(r_ptr.as(Pointer(Float64)), e_ptr.as(Pointer(Float64)), ids_dev, ids.size, @l_size)
           rescue
             ids.each_with_index do |id, row|
               src = e_ptr + id*@l_size
@@ -230,7 +230,12 @@ module SHAInet
         if e_ptr && g_ptr && !e_ptr.null? && !g_ptr.null?
           handle = CUDA.create_handle
           total = @embeddings.rows * @embeddings.cols
-          CUDA.axpy(handle, -lr, g_ptr, e_ptr, total)
+          CUDA.axpy(
+            handle,
+            -lr,
+            g_ptr.as(Pointer(Float64)),
+            e_ptr.as(Pointer(Float64)),
+            total)
           CUDA.destroy_handle(handle)
           zeros = Array(Float64).new(total, 0.0)
           CUDA.memcpy(g_ptr.as(Pointer(Void)), zeros.to_unsafe.as(Pointer(Void)), (total * 8).to_u64, CUDA::MemcpyKind::HostToDevice)

@@ -166,12 +166,12 @@ module SHAInet
 
       case @activation_function
       when SHAInet.sigmoid
-        CUDA.sigmoid_forward(
-          activations_cuda.device_ptr.not_nil!,
-          sigma_primes_cuda.device_ptr.not_nil!,
-          linear_result.device_ptr.not_nil!,
-          size
-        )
+          CUDA.sigmoid_forward(
+            activations_cuda.device_ptr.not_nil!.as(Pointer(Float64)),
+            sigma_primes_cuda.device_ptr.not_nil!.as(Pointer(Float64)),
+            linear_result.device_ptr.not_nil!.as(Pointer(Float64)),
+            size
+          )
         # Mark results as dirty on device
         activations_cuda.mark_device_dirty!
         sigma_primes_cuda.mark_device_dirty!
@@ -247,12 +247,12 @@ module SHAInet
         sigma_primes.sync_to_device!("matrix_layer_backward") unless sigma_primes.device_dirty?
 
         size = local_grad.rows * local_grad.cols
-        CUDA.apply_gradient(
-          local_grad.device_ptr.not_nil!,
-          grad.device_ptr.not_nil!,
-          sigma_primes.device_ptr.not_nil!,
-          size
-        )
+          CUDA.apply_gradient(
+            local_grad.device_ptr.not_nil!.as(Pointer(Float64)),
+            grad.device_ptr.not_nil!.as(Pointer(Float64)),
+            sigma_primes.device_ptr.not_nil!.as(Pointer(Float64)),
+            size
+          )
 
         local_grad.mark_device_dirty!
 
@@ -273,8 +273,8 @@ module SHAInet
         g_b_cuda.sync_to_device!("matrix_layer_bias_grad") unless g_b_cuda.device_dirty?
 
         CUDA.accumulate_bias_grad(
-          g_b_cuda.device_ptr.not_nil!,
-          local_grad.device_ptr.not_nil!,
+          g_b_cuda.device_ptr.not_nil!.as(Pointer(Float64)),
+          local_grad.device_ptr.not_nil!.as(Pointer(Float64)),
           local_grad.rows,
           local_grad.cols
         )
@@ -363,12 +363,12 @@ module SHAInet
 
         # Zero weight gradients
         w_size = @g_w.rows * @g_w.cols
-        CUDA.zero_matrix(g_w_cuda.device_ptr.not_nil!, w_size)
+        CUDA.zero_matrix(g_w_cuda.device_ptr.not_nil!.as(Pointer(Float64)), w_size)
         g_w_cuda.mark_device_dirty!
 
         # Zero bias gradients
         b_size = @g_b.rows * @g_b.cols
-        CUDA.zero_matrix(g_b_cuda.device_ptr.not_nil!, b_size)
+        CUDA.zero_matrix(g_b_cuda.device_ptr.not_nil!.as(Pointer(Float64)), b_size)
         g_b_cuda.mark_device_dirty!
       else
         # CPU fallback - create new zero matrices

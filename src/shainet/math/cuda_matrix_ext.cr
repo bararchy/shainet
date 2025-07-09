@@ -70,7 +70,10 @@ module SHAInet
           # Ensure source has up-to-date GPU data
           self.sync_to_device! unless device_dirty?
 
-          CUDA.dropout(rptr, dptr, @rows, @cols, prob, seed)
+          CUDA.dropout(
+            rptr.as(Pointer(Float64)),
+            dptr.as(Pointer(Float64)),
+            @rows, @cols, prob, seed)
 
           # Mark result as having newer GPU data
           result.mark_device_dirty!

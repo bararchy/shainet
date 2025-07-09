@@ -478,8 +478,11 @@ module SHAInet
       # Use cuBLAS GEAM for element-wise addition as fallback
       handle = CUDA.create_handle
       begin
-        CUDA.geam(handle, a.device_ptr.not_nil!, b.device_ptr.not_nil!,
-          result.device_ptr.not_nil!, a.rows, a.cols, alpha, beta)
+        CUDA.geam(handle,
+          a.device_ptr.not_nil!.as(Pointer(Float64)),
+          b.device_ptr.not_nil!.as(Pointer(Float64)),
+          result.device_ptr.not_nil!.as(Pointer(Float64)),
+          a.rows, a.cols, alpha, beta)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -571,9 +574,9 @@ module SHAInet
 
       # Now compute cross-entropy on the probabilities in grad_output
       result = CUDA.cross_entropy_loss_gradient(
-        grad_output.device_ptr.not_nil!,
-        target.device_ptr.not_nil!,
-        grad_output.device_ptr.not_nil!,
+        grad_output.device_ptr.not_nil!.as(Pointer(Float64)),
+        target.device_ptr.not_nil!.as(Pointer(Float64)),
+        grad_output.device_ptr.not_nil!.as(Pointer(Float64)),
         loss,
         predicted.rows,
         predicted.cols
@@ -609,9 +612,9 @@ module SHAInet
 
         # Compute cross-entropy using CUDA kernel
         result = CUDA.softmax_cross_entropy_label(
-          grad_output.device_ptr.not_nil!,
+          predicted.device_ptr.not_nil!.as(Pointer(Float64)),
           labels_dev,
-          grad_output.device_ptr.not_nil!,
+          grad_output.device_ptr.not_nil!.as(Pointer(Float64)),
           loss,
           predicted.rows,
           predicted.cols
