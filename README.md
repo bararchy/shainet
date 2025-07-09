@@ -8,6 +8,7 @@ SHAInet (Super Human Artificial Intelligence Network) is a neural network librar
 
 - CPU and GPU (CUDA) support
 - Multiple layer types and activation functions
+- Includes ReLU, Sigmoid, GELU and more
 - Various training algorithms (SGD, Adam, iRprop+, etc.)
 - Streaming data support for large datasets
 - PyTorch and HuggingFace model import
@@ -134,7 +135,7 @@ stream = SHAInet::StreamingData.new(
 
 net = SHAInet::Network.new
 net.add_layer(:input, 2, :memory, SHAInet.sigmoid)
-net.add_layer(:hidden, 3, :memory, SHAInet.sigmoid)
+net.add_layer(:hidden, 3, :memory, SHAInet.gelu) # use GELU activation
 net.add_layer(:output, 1, :memory, SHAInet.sigmoid)
 net.fully_connect
 

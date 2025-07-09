@@ -1458,6 +1458,13 @@ module SHAInet
         rescue e
           Log.debug { "GPU ReLU failed: #{e}, falling back to CPU" }
         end
+      when SHAInet.gelu
+        begin
+          matrix.gelu!
+          return true
+        rescue e
+          Log.debug { "GPU GELU failed: #{e}, falling back to CPU" }
+        end
       end
 
       false

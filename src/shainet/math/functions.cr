@@ -33,6 +33,10 @@ module SHAInet
     ->(value : GenNum) { {_l_relu(value), _l_relu_prime(value)} }
   end
 
+  def self.gelu : ActivationFunction # Output range (-inf..inf)
+    ->(value : GenNum) { {_gelu(value), _gelu_prime(value)} }
+  end
+
   def self.identity : ActivationFunction # Output range (-inf..inf)
     ->(value : GenNum) { {value.to_f64, 1.0} }
   end
@@ -69,6 +73,11 @@ module SHAInet
     else
       value.to_f64
     end
+  end
+
+  def self._gelu(value : GenNum) : Float64
+    x = value.to_f64
+    0.5*x*(1.0 + Math.erf(x / Math.sqrt(2.0)))
   end
 
   def self.softmax(array : Array(GenNum)) : Array(Float64)
@@ -129,6 +138,11 @@ module SHAInet
     else
       (1).to_f64
     end
+  end
+
+  def self._gelu_prime(value : GenNum) : Float64
+    x = value.to_f64
+    0.5*(1.0 + Math.erf(x / Math.sqrt(2.0))) + x*Math.exp(-0.5*x*x)/Math.sqrt(2.0*Math::PI)
   end
 
   ##################################################################

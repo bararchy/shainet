@@ -652,6 +652,30 @@ module SHAInet
       self
     end
 
+    def gelu!
+      raise RuntimeError.new("GPU GELU requires valid device pointer") unless (dptr = self.device_ptr) && !dptr.null?
+
+      self.sync_to_device!("gelu_activation") unless device_dirty?
+
+      size = @rows * @cols
+      begin
+        CUDA.gelu_forward(dptr, dptr, dptr, size)
+      rescue e
+        Log.error { "CUDA GELU failed: #{e}, falling back to CPU" }
+        self.sync_from_device!("gelu_fallback")
+        @rows.times do |i|
+          @cols.times do |j|
+            x = unsafe_get(i, j)
+            unsafe_set(i, j, 0.5*x*(1.0 + Math.erf(x / Math.sqrt(2.0))))
+          end
+        end
+        self.sync_to_device!("gelu_fallback")
+      end
+
+      mark_device_dirty!
+      self
+    end
+
     # Multiply each column by the corresponding value in a row vector in-place.
     def mul_row_vector!(vec : CudaMatrix)
       raise ArgumentError.new("vector size mismatch") unless vec.rows == 1 && vec.cols == @cols
