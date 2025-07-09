@@ -73,10 +73,10 @@ module SHAInet
                        transa : Int32, transb : Int32,
                        m : Int32, n : Int32, k : Int32,
                        alpha : Void*,
-                       A : Void*, atype : Int32, lda : Int32,
-                       B : Void*, btype : Int32, ldb : Int32,
+                       a : Void*, atype : Int32, lda : Int32,
+                       b : Void*, btype : Int32, ldb : Int32,
                        beta : Void*,
-                       C : Void*, ctype : Int32, ldc : Int32,
+                       c : Void*, ctype : Int32, ldc : Int32,
                        computeType : Int32, algo : Int32) : Int32
     end
 
