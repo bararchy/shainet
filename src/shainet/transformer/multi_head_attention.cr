@@ -1,5 +1,7 @@
 module SHAInet
   class MultiHeadAttention
+    # Multi-head scaled dot-product attention layer. Use `TransformerMaskUtils.causal_mask` or `TransformerMaskUtils.padding_mask`
+    # to construct the optional attention mask passed to `forward`.
     getter num_heads, d_model, head_dim
     @head_dim : Int32
     @w_q : SimpleMatrix | CudaMatrix

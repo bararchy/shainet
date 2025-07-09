@@ -4,6 +4,7 @@ module SHAInet
   # TransformerBlock implements multi-head self-attention followed by a
   # position-wise feed forward network. LayerNorm and dropout are applied
   # with residual connections around each sub layer.
+  # Masks for the attention layer can be generated with TransformerMaskUtils.causal_mask or TransformerMaskUtils.padding_mask.
   class TransformerBlock < MatrixLayer
     getter mha : MultiHeadAttention
     getter ffn : PositionWiseFF

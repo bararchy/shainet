@@ -37,6 +37,7 @@ require "./shainet/transformer/layer_norm"
 require "./shainet/transformer/multi_head_attention"
 require "./shainet/transformer/positional_encoding"
 require "./shainet/transformer/positionwise_ff"
+require "./shainet/transformer/mask_utils"
 require "./shainet/transformer/transformer_block"
 require "./shainet/version"
 
