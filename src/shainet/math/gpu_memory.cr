@@ -71,7 +71,8 @@ module SHAInet
 
       # Keep CPU copy in sync
       dest_slice = Slice(Float64).new(dest.raw_data.to_unsafe, size)
-      src_slice = Slice(Float64).new(src.data.to_unsafe, size)
+      src_data = src.to_f64
+      src_slice = Slice(Float64).new(src_data.to_unsafe, size)
       dest_slice.copy_from(src_slice)
 
       if (dptr = dest.device_ptr) && !dptr.null?
@@ -94,7 +95,8 @@ module SHAInet
       bytes = (size * 8).to_u64
 
       dest_slice = Slice(Float64).new(dest.raw_data.to_unsafe, size)
-      src_slice = Slice(Float64).new(matrix.data.to_unsafe, size)
+      src_data = matrix.to_f64
+      src_slice = Slice(Float64).new(src_data.to_unsafe, size)
       dest_slice.copy_from(src_slice)
 
       if (dptr = dest.device_ptr) && !dptr.null?

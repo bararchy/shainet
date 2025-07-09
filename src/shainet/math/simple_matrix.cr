@@ -1,19 +1,34 @@
+require "../precision"
+
 module SHAInet
   class SimpleMatrix
     property rows : Int32
     property cols : Int32
-    getter data : Array(Float64)
+    getter precision : Precision
+    getter data : Array(Float64) | Array(Float32) | Array(Float16) | Array(BFloat16)
 
-    def initialize(@rows : Int32, @cols : Int32, init : Float64 = 0.0)
-      @data = Array(Float64).new(@rows * @cols, init)
+    def initialize(@rows : Int32, @cols : Int32, init : Float64 = 0.0, *, precision : Precision = Precision::Fp64)
+      @precision = precision
+      @data = case precision
+              when Precision::Fp64
+                Array(Float64).new(@rows * @cols, init)
+              when Precision::Fp32
+                Array(Float32).new(@rows * @cols, init.to_f32)
+              when Precision::Fp16
+                Array(Float16).new(@rows * @cols, Float16.new(init))
+              when Precision::Bf16
+                Array(BFloat16).new(@rows * @cols, BFloat16.new(init.to_f32))
+              else
+                Array(Float64).new(@rows * @cols, init)
+              end
     end
 
-    def self.zeros(rows : Int32, cols : Int32)
-      new(rows, cols, 0.0)
+    def self.zeros(rows : Int32, cols : Int32, precision : Precision = Precision::Fp64)
+      new(rows, cols, 0.0, precision: precision)
     end
 
-    def self.ones(rows : Int32, cols : Int32)
-      new(rows, cols, 1.0)
+    def self.ones(rows : Int32, cols : Int32, precision : Precision = Precision::Fp64)
+      new(rows, cols, 1.0, precision: precision)
     end
 
     def self.tensor(rows : Int32, cols : Int32)
@@ -21,16 +36,40 @@ module SHAInet
     end
 
     def [](r : Int32, c : Int32)
-      @data[r * @cols + c]
+      idx = r * @cols + c
+      case @precision
+      when Precision::Fp64
+        @data.as(Array(Float64))[idx]
+      when Precision::Fp32
+        @data.as(Array(Float32))[idx].to_f64
+      when Precision::Fp16
+        @data.as(Array(Float16))[idx].to_f64
+      when Precision::Bf16
+        @data.as(Array(BFloat16))[idx].to_f64
+      else
+        @data.as(Array(Float64))[idx]
+      end
     end
 
     def []=(r : Int32, c : Int32, v : Float64)
-      @data[r * @cols + c] = v
+      idx = r * @cols + c
+      case @precision
+      when Precision::Fp64
+        @data.as(Array(Float64))[idx] = v
+      when Precision::Fp32
+        @data.as(Array(Float32))[idx] = v.to_f32
+      when Precision::Fp16
+        @data.as(Array(Float16))[idx] = Float16.new(v)
+      when Precision::Bf16
+        @data.as(Array(BFloat16))[idx] = BFloat16.new(v.to_f32)
+      else
+        @data.as(Array(Float64))[idx] = v
+      end
     end
 
     def +(other : SimpleMatrix)
       raise ArgumentError.new("size mismatch") unless @rows == other.rows && @cols == other.cols
-      result = SimpleMatrix.new(@rows, @cols)
+      result = SimpleMatrix.new(@rows, @cols, 0.0, precision: @precision)
       @rows.times do |i|
         @cols.times do |j|
           result[i, j] = self[i, j] + other[i, j]
@@ -41,7 +80,7 @@ module SHAInet
 
     def -(other : SimpleMatrix)
       raise ArgumentError.new("size mismatch") unless @rows == other.rows && @cols == other.cols
-      result = SimpleMatrix.new(@rows, @cols)
+      result = SimpleMatrix.new(@rows, @cols, 0.0, precision: @precision)
       @rows.times do |i|
         @cols.times do |j|
           result[i, j] = self[i, j] - other[i, j]
@@ -52,7 +91,7 @@ module SHAInet
 
     def *(other : SimpleMatrix)
       raise ArgumentError.new("size mismatch") unless @cols == other.rows
-      result = SimpleMatrix.new(@rows, other.cols)
+      result = SimpleMatrix.new(@rows, other.cols, 0.0, precision: @precision)
       @rows.times do |i|
         other.cols.times do |j|
           sum = 0.0
@@ -66,7 +105,7 @@ module SHAInet
     end
 
     def *(scalar : Number)
-      result = SimpleMatrix.new(@rows, @cols)
+      result = SimpleMatrix.new(@rows, @cols, 0.0, precision: @precision)
       @rows.times do |i|
         @cols.times do |j|
           result[i, j] = self[i, j] * scalar.to_f64
@@ -76,7 +115,7 @@ module SHAInet
     end
 
     def transpose
-      result = SimpleMatrix.new(@cols, @rows)
+      result = SimpleMatrix.new(@cols, @rows, 0.0, precision: @precision)
       @rows.times do |i|
         @cols.times do |j|
           result[j, i] = self[i, j]
@@ -107,11 +146,43 @@ module SHAInet
       end
     end
 
+    # Retrieve matrix data as an Array of Float32
+    def to_f32 : Array(Float32)
+      case @precision
+      when Precision::Fp32
+        @data.as(Array(Float32)).dup
+      when Precision::Fp64
+        @data.as(Array(Float64)).map(&.to_f32)
+      when Precision::Fp16
+        @data.as(Array(Float16)).map(&.to_f32)
+      when Precision::Bf16
+        @data.as(Array(BFloat16)).map(&.to_f32)
+      else
+        raise "Unsupported precision"
+      end
+    end
+
+    # Retrieve matrix data as an Array of Float64
+    def to_f64 : Array(Float64)
+      case @precision
+      when Precision::Fp64
+        @data.as(Array(Float64)).dup
+      when Precision::Fp32
+        @data.as(Array(Float32)).map(&.to_f64)
+      when Precision::Fp16
+        @data.as(Array(Float16)).map(&.to_f64)
+      when Precision::Bf16
+        @data.as(Array(BFloat16)).map(&.to_f64)
+      else
+        raise "Unsupported precision"
+      end
+    end
+
     # Construct a matrix from a nested Array
-    def self.from_a(array : Array(Array(GenNum)))
+    def self.from_a(array : Array(Array(GenNum)), precision : Precision = Precision::Fp64)
       rows = array.size
       cols = array.first.size
-      m = SimpleMatrix.new(rows, cols)
+      m = SimpleMatrix.new(rows, cols, 0.0, precision: precision)
       rows.times do |i|
         cols.times do |j|
           m[i, j] = array[i][j].to_f64
@@ -143,7 +214,7 @@ module SHAInet
 
     # Slice a range of columns from the matrix
     def slice_cols(start_col : Int32, length : Int32)
-      result = SimpleMatrix.new(@rows, length)
+      result = SimpleMatrix.new(@rows, length, 0.0, precision: @precision)
       slice_cols_into!(result, start_col, length)
       result
     end
@@ -159,7 +230,7 @@ module SHAInet
     end
 
     def clone
-      dup = SimpleMatrix.new(@rows, @cols)
+      dup = SimpleMatrix.new(@rows, @cols, 0.0, precision: @precision)
       @rows.times do |i|
         @cols.times do |j|
           dup[i, j] = self[i, j]
