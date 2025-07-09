@@ -337,10 +337,11 @@ module SHAInet
       rows = x.rows
       cols = x.cols
 
-      # If all tensors are CUDA and kernels are available, use GPU computation
+      # Ensure workspaces exist (in case forward fell back to CPU earlier)
+      ensure_workspace_matrices(rows, cols) if @workspace_d_x.nil?
+
       if CUDA.fully_available? && @mean.is_a?(CudaMatrix) && @var.is_a?(CudaMatrix) && @norm.is_a?(CudaMatrix)
         begin
-          # Use pre-allocated workspace matrices instead of creating new ones
           d_x = @workspace_d_x.not_nil!
           d_gamma = @workspace_d_gamma.not_nil!
           d_beta = @workspace_d_beta.not_nil!
@@ -349,7 +350,6 @@ module SHAInet
           d_gamma.zero!
           d_beta.zero!
 
-          # Run CUDA kernel for backward pass
           CUDA.layer_norm_backward(
             d_x.device_ptr.not_nil!,
             d_gamma.device_ptr.not_nil!,
@@ -363,13 +363,10 @@ module SHAInet
             rows, cols, @epsilon
           )
 
-          # Mark results as dirty on device
           d_x.mark_device_dirty!
           d_gamma.mark_device_dirty!
           d_beta.mark_device_dirty!
 
-          # Keep gradient accumulation on GPU - avoid expensive CPU syncs
-          # Only accumulate to GPU gradient matrices, sync only when applying gradients
           if @g_gamma.is_a?(CudaMatrix) && @g_beta.is_a?(CudaMatrix)
             @g_gamma.as(CudaMatrix).add!(d_gamma)
             @g_beta.as(CudaMatrix).add!(d_beta)
@@ -377,11 +374,50 @@ module SHAInet
 
           return d_x
         rescue e : Exception
-          raise e
+          Log.error { "layer_norm_backward GPU failed: #{e}" }
+          # Fall through to CPU fallback below
         end
       end
 
-      raise "CUDA kernels not available for layer_norm backward"
+      # CPU fallback path when CUDA kernels fail
+      x_cpu = x.to_simple
+      dout_cpu = d_out.to_simple
+      gamma_cpu = @gamma.as(CudaMatrix).to_simple
+      mean_cpu = @mean.as(CudaMatrix).to_simple
+      var_cpu = @var.as(CudaMatrix).to_simple
+      norm_cpu = @norm.as(CudaMatrix).to_simple
+
+      d_gamma = SimpleMatrix.zeros(1, cols)
+      d_beta = SimpleMatrix.zeros(1, cols)
+      d_x_cpu = SimpleMatrix.new(rows, cols)
+
+      rows.times do |i|
+        denom = Math.sqrt(var_cpu[i, 0] + @epsilon)
+        inv = 1.0 / denom
+        col_f = cols.to_f64
+        sum_dout_gamma = 0.0
+        sum_dout_gamma_norm = 0.0
+        cols.times do |j|
+          doutg = dout_cpu[i, j] * gamma_cpu[0, j]
+          sum_dout_gamma += doutg
+          sum_dout_gamma_norm += doutg * (x_cpu[i, j] - mean_cpu[i, 0])
+          d_gamma[0, j] += dout_cpu[i, j] * norm_cpu[i, j]
+          d_beta[0, j] += dout_cpu[i, j]
+        end
+        cols.times do |j|
+          xm = x_cpu[i, j] - mean_cpu[i, 0]
+          doutg = dout_cpu[i, j] * gamma_cpu[0, j]
+          d_x_cpu[i, j] = inv * (doutg - sum_dout_gamma/col_f - xm * inv*inv / col_f * sum_dout_gamma_norm)
+        end
+      end
+
+      # Accumulate gradients back on GPU matrices
+      if @g_gamma.is_a?(CudaMatrix) && @g_beta.is_a?(CudaMatrix)
+        @g_gamma.as(CudaMatrix).add!(d_gamma.to_cuda)
+        @g_beta.as(CudaMatrix).add!(d_beta.to_cuda)
+      end
+
+      d_x_cpu.to_cuda
     end
 
     # CPU path backward - all SimpleMatrix operations
