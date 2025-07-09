@@ -2,6 +2,7 @@ require "log"
 require "json"
 require "../pytorch_import"
 require "../math/simple_matrix"
+require "../math/cuda_matrix"
 require "../precision"
 require "./matrix_layer"
 
@@ -119,7 +120,7 @@ module SHAInet
               else
                 # Use MatrixLayer for regular feedforward layers - it has proper GPU support and gradient computation
                 # Note: MatrixLayer will be properly connected with correct input size in connect_ltl
-                MatrixLayer.new(1, l_size) # Temporary size, will be updated during connection
+                MatrixLayer.new(1, l_size, activation_function, precision: @precision) # Temporary size, will be updated during connection
               end
 
       # Add layer to appropriate collections
@@ -185,27 +186,46 @@ module SHAInet
       case connection_type.to_s
       # Connect source layer to destination layer with full connections
       when "full"
-        # Matrix-based layers handle weight initialization internally
-        # Use SimpleMatrix for now to avoid CUDA type mismatches during debugging
-        mat_klass = SimpleMatrix
+        mat_klass = CUDA.fully_available? ? CudaMatrix : SimpleMatrix
+        prec = dest_layer.precision
         if src_layer.is_a?(TransformerLayer)
           # For transformer output, weights need to be (d_model, vocab_size) for correct matrix multiplication
           # (batch_size x d_model) * (d_model x vocab_size) = (batch_size x vocab_size)
-          dest_layer.weights = mat_klass.new(src_layer.size, dest_layer.size).random_fill!
-          dest_layer.biases = mat_klass.new(1, dest_layer.size).random_fill!
-          # Also reinitialize gradient matrices with correct dimensions
-          dest_layer.g_w = mat_klass.zeros(src_layer.size, dest_layer.size)
-          dest_layer.g_b = mat_klass.zeros(1, dest_layer.size)
+          if prec.in?({Precision::Fp16, Precision::Bf16})
+            master = mat_klass.new(src_layer.size, dest_layer.size, 0.0, Precision::Fp32).random_fill!
+            dest_layer.master_weights = master
+            dest_layer.weights = dest_layer.convert_matrix_precision(master, prec)
+          else
+            dest_layer.weights = mat_klass.new(src_layer.size, dest_layer.size, 0.0, prec).random_fill!
+            dest_layer.master_weights = nil
+          end
+          dest_layer.biases = mat_klass.new(1, dest_layer.size, 0.0, prec).random_fill!
+          dest_layer.g_w = mat_klass.zeros(src_layer.size, dest_layer.size, prec)
+          dest_layer.g_b = mat_klass.zeros(1, dest_layer.size, prec)
         elsif dest_layer.is_a?(MatrixLayer)
           # For MatrixLayer, reinitialize with correct dimensions
-          dest_layer.weights = mat_klass.new(src_layer.size, dest_layer.size).random_fill!
-          dest_layer.biases = mat_klass.new(1, dest_layer.size).random_fill!
-          dest_layer.g_w = mat_klass.zeros(src_layer.size, dest_layer.size)
-          dest_layer.g_b = mat_klass.zeros(1, dest_layer.size)
+          if prec.in?({Precision::Fp16, Precision::Bf16})
+            master = mat_klass.new(src_layer.size, dest_layer.size, 0.0, Precision::Fp32).random_fill!
+            dest_layer.master_weights = master
+            dest_layer.weights = dest_layer.convert_matrix_precision(master, prec)
+          else
+            dest_layer.weights = mat_klass.new(src_layer.size, dest_layer.size, 0.0, prec).random_fill!
+            dest_layer.master_weights = nil
+          end
+          dest_layer.biases = mat_klass.new(1, dest_layer.size, 0.0, prec).random_fill!
+          dest_layer.g_w = mat_klass.zeros(src_layer.size, dest_layer.size, prec)
+          dest_layer.g_b = mat_klass.zeros(1, dest_layer.size, prec)
         else
           # Initialize weights randomly for all layer types
-          dest_layer.weights = mat_klass.new(dest_layer.size, src_layer.size).random_fill!
-          dest_layer.biases = mat_klass.new(dest_layer.size, 1).random_fill!
+          if prec.in?({Precision::Fp16, Precision::Bf16})
+            master = mat_klass.new(dest_layer.size, src_layer.size, 0.0, Precision::Fp32).random_fill!
+            dest_layer.master_weights = master
+            dest_layer.weights = dest_layer.convert_matrix_precision(master, prec)
+          else
+            dest_layer.weights = mat_klass.new(dest_layer.size, src_layer.size, 0.0, prec).random_fill!
+            dest_layer.master_weights = nil
+          end
+          dest_layer.biases = mat_klass.new(dest_layer.size, 1, 0.0, prec).random_fill!
         end
       end
     rescue e : Exception
