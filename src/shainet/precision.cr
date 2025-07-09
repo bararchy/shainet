@@ -7,5 +7,6 @@ module SHAInet
     Fp32
     Fp16
     Bf16
+    Int8
   end
 end

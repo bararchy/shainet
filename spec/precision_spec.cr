@@ -25,4 +25,10 @@ describe "Precision enum" do
     h = SHAInet::Float16.new(1.5_f32)
     (h.to_f32 - 1.5_f32).abs.should be < 0.01
   end
+
+  it "quantizes and dequantizes int8 values" do
+    scale, zp = SHAInet.compute_int8_scale_zero_point(-1.0_f32, 1.0_f32)
+    q = SHAInet::Int8Value.from_f32(0.5_f32, scale, zp)
+    (q.to_f32(scale, zp) - 0.5_f32).abs.should be < scale
+  end
 end
