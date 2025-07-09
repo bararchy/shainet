@@ -222,8 +222,6 @@ module SHAInet
 
       d_input = CudaMatrix.get_workspace(drelu.rows, w1_gpu.rows, "pw_d_input")
       d_input.gemm!(drelu, @w1_t.as(CudaMatrix))
-      CudaMatrix.return_workspace(drelu)
-
       d_input
     end
 
