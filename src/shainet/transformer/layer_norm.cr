@@ -176,8 +176,8 @@ module SHAInet
     private def ensure_workspace_matrices(batch_size : Int32, d_model : Int32)
       return unless CUDA.fully_available?
 
-      # Only reallocate if batch size changed
-      if @last_batch_size != batch_size
+      # Reallocate workspaces when batch size or model dimension changes
+      if @last_batch_size != batch_size || @d_model != d_model
         if ws = @workspace_mean
           CudaMatrix.return_workspace(ws)
         end
@@ -212,6 +212,7 @@ module SHAInet
         @workspace_d_beta.not_nil!.zero!
 
         @last_batch_size = batch_size
+        @d_model = d_model
       end
     end
 
