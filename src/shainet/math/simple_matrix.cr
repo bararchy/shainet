@@ -17,6 +17,11 @@ module SHAInet
     @data_bf16 : Array(BFloat16)?
     @data_i8 : Array(Int8)?
 
+    # Access the underlying Int8 buffer when precision is Int8
+    def raw_i8_data
+      @data_i8.not_nil!
+    end
+
     # Return the matrix data as an `Array(Float64)` regardless of the
     # underlying storage type.  This keeps compatibility with older
     # code which accessed `matrix.data` directly.
@@ -354,9 +359,10 @@ module SHAInet
       a.rows.times do |i|
         b.cols.times do |j|
           sum = 0_i32
+          a_data = a.raw_i8_data
+          b_data = b.raw_i8_data
           a.cols.times do |k|
-            sum += a.instance_variable_get("@data_i8").as(Array(Int8))[i * a.cols + k].to_i32 *
-                   b.instance_variable_get("@data_i8").as(Array(Int8))[k * b.cols + j].to_i32
+            sum += a_data[i * a.cols + k].to_i32 * b_data[k * b.cols + j].to_i32
           end
           result[i, j] = sum.to_f64
         end

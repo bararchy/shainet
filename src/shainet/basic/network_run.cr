@@ -9,6 +9,7 @@ require "json"
 require "../math/simple_matrix"
 require "../math/cuda_matrix"
 require "../precision"
+require "../int8"
 
 module SHAInet
   class Network
@@ -53,7 +54,11 @@ module SHAInet
       # Convert to matrix and use core matrix method
       processed = convert_array(input)
       matrix = GPUMemory.to_gpu(SimpleMatrix.from_a([processed]))
-      result_matrix = run(matrix, stealth: stealth)
+      result_matrix = if @precision == Precision::Int8
+                        run_int8(matrix.is_a?(CudaMatrix) ? matrix.to_simple : matrix)
+                      else
+                        run(matrix, stealth: stealth)
+                      end
 
       # Efficient array extraction - only sync once if needed
       output = if result_matrix.is_a?(CudaMatrix)
@@ -80,7 +85,11 @@ module SHAInet
 
       processed = convert_array(input)
       matrix = GPUMemory.to_gpu(SimpleMatrix.from_a([processed]))
-      result_matrix = run(matrix, stealth: stealth)
+      result_matrix = if @precision == Precision::Int8
+                        run_int8(matrix.is_a?(CudaMatrix) ? matrix.to_simple : matrix)
+                      else
+                        run(matrix, stealth: stealth)
+                      end
 
       if return_matrix
         result_matrix
@@ -102,6 +111,10 @@ module SHAInet
     # GPU path - all CudaMatrix operations
     def run(input : CudaMatrix, stealth : Bool = false) : CudaMatrix
       verify_net_before_train
+
+      if @precision == Precision::Int8
+        return run_int8(input.to_simple).to_cuda
+      end
 
       matrix = input
 
@@ -211,6 +224,8 @@ module SHAInet
     # CPU path - all SimpleMatrix operations
     def run(input : SimpleMatrix, stealth : Bool = false) : SimpleMatrix
       verify_net_before_train
+
+      return run_int8(input) if @precision == Precision::Int8
 
       matrix = input
 
@@ -324,6 +339,67 @@ module SHAInet
     def run(input : Array(Int32), *, return_matrix : Bool, stealth : Bool = false) : Array(Float64) | CudaMatrix | SimpleMatrix
       float_in = input.map(&.to_f64)
       run(float_in, stealth: stealth, return_matrix: return_matrix)
+    end
+
+    # Execute a forward pass using INT8 quantized weights and biases.
+    # Each layer's quantized weights are multiplied using `gemm_int8` and the
+    # result is dequantized using the stored scale and zero‑point values.
+    private def run_int8(input : SimpleMatrix) : SimpleMatrix
+      raise NeuralNetRunError.new("INT8 path not supported with transformers or embeddings") if @hidden_layers.any?(&.is_a?(TransformerLayer)) || @hidden_layers.any?(&.is_a?(EmbeddingLayer))
+
+      current = input
+      layers = @hidden_layers + [@output_layers.last]
+
+      layers.each do |layer|
+        raise NeuralNetRunError.new("Layer not quantized") unless layer.q_weights && layer.q_biases
+
+        q_in_buf, in_scale, _in_zp = Quantization.quantize_tensor(current)
+        q_in = SimpleMatrix.new(current.rows, current.cols, 0.0, Precision::Int8)
+        idx = 0
+        current.rows.times do |r|
+          current.cols.times do |c|
+            q_in[r, c] = q_in_buf[idx].to_f64
+            idx += 1
+          end
+        end
+
+        q_w = SimpleMatrix.new(layer.weights.rows, layer.weights.cols, 0.0, Precision::Int8)
+        idx = 0
+        layer.q_weights.not_nil!.each do |v|
+          row = (idx / layer.weights.cols).to_i
+          col = (idx % layer.weights.cols).to_i
+          q_w[row, col] = v.to_f64
+          idx += 1
+        end
+
+        prod = SimpleMatrix.gemm_int8(q_in, q_w)
+        mult = in_scale * layer.q_w_scale.not_nil!
+
+        bias_vals = layer.q_biases.not_nil!
+        b_scale = layer.q_b_scale.not_nil!
+        b_zp = layer.q_b_zero_point.not_nil!
+
+        prod.rows.times do |i|
+          prod.cols.times do |j|
+            val = prod[i, j] * mult
+            bias = Int8Value.new(bias_vals[j]).to_f32(b_scale, b_zp).to_f64
+            prod[i, j] = val + bias
+          end
+        end
+
+        unless layer.activation_function == SHAInet.identity
+          prod.rows.times do |r|
+            prod.cols.times do |c|
+              act, _sig = layer.activation_function.call(prod[r, c])
+              prod[r, c] = act
+            end
+          end
+        end
+
+        current = prod
+      end
+
+      current
     end
 
     # Run a single token (or sequence of tokens) using cached KV states for all
