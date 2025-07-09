@@ -166,12 +166,12 @@ module SHAInet
 
       case @activation_function
       when SHAInet.sigmoid
-          CUDA.sigmoid_forward(
-            activations_cuda.device_ptr.not_nil!.as(Pointer(Float64)),
-            sigma_primes_cuda.device_ptr.not_nil!.as(Pointer(Float64)),
-            linear_result.device_ptr.not_nil!.as(Pointer(Float64)),
-            size
-          )
+        CUDA.sigmoid_forward(
+          activations_cuda.device_ptr.not_nil!.as(Pointer(Float64)),
+          sigma_primes_cuda.device_ptr.not_nil!.as(Pointer(Float64)),
+          linear_result.device_ptr.not_nil!.as(Pointer(Float64)),
+          size
+        )
         # Mark results as dirty on device
         activations_cuda.mark_device_dirty!
         sigma_primes_cuda.mark_device_dirty!
@@ -247,12 +247,12 @@ module SHAInet
         sigma_primes.sync_to_device!("matrix_layer_backward") unless sigma_primes.device_dirty?
 
         size = local_grad.rows * local_grad.cols
-          CUDA.apply_gradient(
-            local_grad.device_ptr.not_nil!.as(Pointer(Float64)),
-            grad.device_ptr.not_nil!.as(Pointer(Float64)),
-            sigma_primes.device_ptr.not_nil!.as(Pointer(Float64)),
-            size
-          )
+        CUDA.apply_gradient(
+          local_grad.device_ptr.not_nil!.as(Pointer(Float64)),
+          grad.device_ptr.not_nil!.as(Pointer(Float64)),
+          sigma_primes.device_ptr.not_nil!.as(Pointer(Float64)),
+          size
+        )
 
         local_grad.mark_device_dirty!
 

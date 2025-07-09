@@ -450,10 +450,10 @@ module SHAInet
       # Ensure source data is on the GPU
       self.sync_to_device!("slice_cols_into") unless device_dirty?
 
-        CUDA.slice_cols(
-          dptr.as(Pointer(Float64)),
-          sptr.as(Pointer(Float64)),
-          @rows, @cols, start_col, length)
+      CUDA.slice_cols(
+        dptr.as(Pointer(Float64)),
+        sptr.as(Pointer(Float64)),
+        @rows, @cols, start_col, length)
 
       dest.mark_device_dirty!
       dest
@@ -473,11 +473,10 @@ module SHAInet
       self.sync_to_device!("set_cols") unless device_dirty?
       other.sync_to_device!("set_cols") unless other.device_dirty?
 
-        CUDA.set_cols(
-          dptr.as(Pointer(Float64)),
-          sptr.as(Pointer(Float64)),
-          @rows, @cols, start_col, other.cols)
-
+      CUDA.set_cols(
+        dptr.as(Pointer(Float64)),
+        sptr.as(Pointer(Float64)),
+        @rows, @cols, start_col, other.cols)
 
       # Mark self as having newer GPU data
       mark_device_dirty!
@@ -501,16 +500,16 @@ module SHAInet
 
       # Calculate pointers to the specific rows
       dest_row_ptr = (dptr + (row_idx * @cols)).as(Pointer(Float64))
-      src_row_ptr  = (sptr + (source_row * other.cols)).as(Pointer(Float64))
+      src_row_ptr = (sptr + (source_row * other.cols)).as(Pointer(Float64))
 
       # Copy the row data taking element size into account
       elem_size = element_size
       bytes = (@cols * elem_size).to_u64
 
-        CUDA.copy_device_to_device(
-          dest_row_ptr.as(Pointer(Float64)),
-          src_row_ptr.as(Pointer(Float64)),
-          bytes)
+      CUDA.copy_device_to_device(
+        dest_row_ptr.as(Pointer(Float64)),
+        src_row_ptr.as(Pointer(Float64)),
+        bytes)
 
       mark_device_dirty!
       self
@@ -785,7 +784,6 @@ module SHAInet
         bptr.as(Pointer(Float64)),
         @rows, @cols)
 
-
       # Mark self as having newer GPU data
       mark_device_dirty!
       self
@@ -809,10 +807,9 @@ module SHAInet
       # Ensure self has up-to-date GPU data
       self.sync_to_device!("relu_activation") unless device_dirty?
 
-        CUDA.relu(
-          dptr.as(Pointer(Float64)),
-          (@rows*@cols))
-
+      CUDA.relu(
+        dptr.as(Pointer(Float64)),
+        (@rows*@cols))
 
       # Mark self as having newer GPU data
       mark_device_dirty!
@@ -826,13 +823,12 @@ module SHAInet
 
       size = @rows * @cols
 
-        begin
-          CUDA.gelu_forward(
-            dptr.as(Pointer(Float64)),
-            dptr.as(Pointer(Float64)),
-            dptr.as(Pointer(Float64)),
-            size)
-
+      begin
+        CUDA.gelu_forward(
+          dptr.as(Pointer(Float64)),
+          dptr.as(Pointer(Float64)),
+          dptr.as(Pointer(Float64)),
+          size)
       rescue e
         Log.error { "CUDA GELU failed: #{e}, falling back to CPU" }
         self.sync_from_device!("gelu_fallback")
@@ -1005,12 +1001,11 @@ module SHAInet
       # Apply sigmoid in-place - use same pointer for all three parameters
       size = @rows * @cols
 
-        CUDA.sigmoid_forward(
-          dptr.as(Pointer(Float64)),
-          dptr.as(Pointer(Float64)),
-          dptr.as(Pointer(Float64)),
-          size)
-
+      CUDA.sigmoid_forward(
+        dptr.as(Pointer(Float64)),
+        dptr.as(Pointer(Float64)),
+        dptr.as(Pointer(Float64)),
+        size)
 
       # Mark self as having newer GPU data
       mark_device_dirty!
@@ -1026,12 +1021,10 @@ module SHAInet
 
       handle = CUDA.create_handle
       begin
-
-          CUDA.scal(
-            handle,
-            dptr.as(Pointer(Float64)),
-            (@rows*@cols), scalar)
-
+        CUDA.scal(
+          handle,
+          dptr.as(Pointer(Float64)),
+          (@rows*@cols), scalar)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -1054,9 +1047,9 @@ module SHAInet
 
         size = @rows * @cols
         CUDA.element_div(dptr.as(Pointer(Float64)),
-                         sptr.as(Pointer(Float64)),
-                         optr.as(Pointer(Float64)),
-                         size)
+          sptr.as(Pointer(Float64)),
+          optr.as(Pointer(Float64)),
+          size)
 
         result.mark_device_dirty!
       else
@@ -1185,9 +1178,9 @@ module SHAInet
     # In-place matrix multiplication with accumulation: self = alpha * A * B + beta * self
     def gemm!(a : CudaMatrix, b : CudaMatrix, alpha : Float64 = 1.0, beta : Float64 = 0.0)
       raise ArgumentError.new("size mismatch for in-place GEMM") unless a.cols == b.rows && @rows == a.rows && @cols == b.cols
-      ptr_a = a.device_ptr.as(Pointer(Float64))
-      ptr_b = b.device_ptr.as(Pointer(Float64))
-      ptr_c = self.device_ptr.as(Pointer(Float64))
+      ptr_a = a.device_ptr
+      ptr_b = b.device_ptr
+      ptr_c = self.device_ptr
       if !ptr_a || !ptr_b || !ptr_c || ptr_a.null? || ptr_b.null? || ptr_c.null?
         raise RuntimeError.new("GPU in-place GEMM requires valid device pointers")
       end
@@ -1199,7 +1192,6 @@ module SHAInet
 
       handle = CUDA.create_handle
       begin
-
         if a.precision == b.precision && a.precision == self.precision &&
            (a.precision == Precision::Fp16 || a.precision == Precision::Bf16) &&
            CUDA.gemm_ex_available?
@@ -1234,7 +1226,7 @@ module SHAInet
           # transpose trick used in `*` by swapping operands and dimensions.
           # Treating row-major A,B as column-major A^T,B^T results in:
           # C^T = B^T * A^T
-          CUDA.gemm_accumulate(handle, ptr_b, ptr_a, ptr_c,
+          CUDA.gemm_accumulate(handle, ptr_b.as(Pointer(Float64)), ptr_a.as(Pointer(Float64)), ptr_c.as(Pointer(Float64)),
             b.cols, a.rows, b.rows,
             b.cols, a.cols, @cols, alpha, beta)
         end
@@ -1302,13 +1294,12 @@ module SHAInet
         # Use AXPY: weights = weights - lr * gradients
         total_elements = @rows * @cols
 
-          CUDA.axpy(
-            handle,
-            -learning_rate,
-            grad_ptr.as(Pointer(Float64)),
-            weight_ptr.as(Pointer(Float64)),
-            total_elements)
-
+        CUDA.axpy(
+          handle,
+          -learning_rate,
+          grad_ptr.as(Pointer(Float64)),
+          weight_ptr.as(Pointer(Float64)),
+          total_elements)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -1354,9 +1345,9 @@ module SHAInet
         begin
           self.sync_to_device!("dropout_kernel") unless device_dirty?
 
-            result = CUDA.dropout(
-              dptr.as(Pointer(Float64)),
-              (@rows * @cols), prob.to_f32, seed)
+          result = CUDA.dropout(
+            dptr.as(Pointer(Float64)),
+            (@rows * @cols), prob.to_f32, seed)
 
           if result == 0
             mark_device_dirty!

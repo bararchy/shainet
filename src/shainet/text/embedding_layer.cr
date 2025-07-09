@@ -104,7 +104,7 @@ module SHAInet
           CUDA.malloc(pointerof(ids_dev).as(Pointer(Pointer(Void))), bytes)
           CUDA.memcpy(ids_dev.as(Pointer(Void)), ids.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
           begin
-          CUDA.gather_rows(r_ptr.as(Pointer(Float64)), e_ptr.as(Pointer(Float64)), ids_dev, ids.size, @l_size)
+            CUDA.gather_rows(r_ptr.as(Pointer(Float64)), e_ptr.as(Pointer(Float64)), ids_dev, ids.size, @l_size)
           rescue
             ids.each_with_index do |id, row|
               src = e_ptr + id*@l_size
