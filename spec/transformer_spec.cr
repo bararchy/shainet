@@ -114,7 +114,7 @@ end
 describe SHAInet::TransformerLayer do
   it "overfits a tiny sequence" do
     Random::DEFAULT.new_seed(42_u64, 54_u64)
-    layer = SHAInet::TransformerLayer.new(2, 1, 4)
+    layer = SHAInet::TransformerLayer.new(2, 1, 4, 0, false, SHAInet.relu)
     input = if SHAInet::CUDA.fully_available?
               SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[1.0, 0.0], [0.0, 1.0]]))
             else
@@ -144,7 +144,7 @@ describe SHAInet::TransformerLayer do
 
   it "overfits with positional encoding" do
     Random::DEFAULT.new_seed(42_u64, 54_u64)
-    layer = SHAInet::TransformerLayer.new(2, 1, 4)
+    layer = SHAInet::TransformerLayer.new(2, 1, 4, 0, false, SHAInet.relu)
     input = if SHAInet::CUDA.fully_available?
               SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[1.0, 0.0], [0.0, 1.0]]))
             else
