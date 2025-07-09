@@ -147,6 +147,10 @@ module SHAInet
       raise "CUDA kernels not available"
     end
 
+    def gelu_forward(*args)
+      raise "CUDA kernels not available"
+    end
+
     def apply_gradient(*args)
       raise "CUDA kernels not available"
     end

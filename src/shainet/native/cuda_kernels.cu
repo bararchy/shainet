@@ -1,5 +1,6 @@
 #include <curand_kernel.h>
 #include <cstdio>
+#include <math.h>
 
 // Device kernels
 // Simple row-wise softmax kernel. This version runs one thread per row and
@@ -301,6 +302,27 @@ __global__ void sigmoid_forward_kernel(double* activations, double* derivatives,
     activations[idx] = sigmoid_val;
     // Sigmoid derivative: σ(x) * (1 - σ(x))
     derivatives[idx] = sigmoid_val * (1.0 - sigmoid_val);
+}
+
+__global__ void gelu_forward_kernel(double* activations, double* derivatives, const double* linear, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= size) return;
+
+    double x = linear[idx];
+    double cdf = 0.5 * (1.0 + erfc(-x / sqrt(2.0)));
+    activations[idx] = x * cdf;
+    derivatives[idx] = cdf + x * exp(-0.5 * x * x) / sqrt(2.0 * M_PI);
+}
+
+void gelu_forward(double* activations, double* derivatives, const double* linear, int size) {
+    int threads_per_block = 256;
+    int blocks = (size + threads_per_block - 1) / threads_per_block;
+
+    gelu_forward_kernel<<<blocks, threads_per_block>>>(activations, derivatives, linear, size);
+    cudaError_t err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        printf("CUDA Error in gelu_forward: %s\n", cudaGetErrorString(err));
+    }
 }
 
 void sigmoid_forward(double* activations, double* derivatives, const double* linear, int size) {
