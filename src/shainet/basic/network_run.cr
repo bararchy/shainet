@@ -326,6 +326,50 @@ module SHAInet
       run(float_in, stealth: stealth, return_matrix: return_matrix)
     end
 
+    # Run a single token (or sequence of tokens) using cached KV states for all
+    # transformer layers. Useful for autoregressive generation where each step
+    # processes one new token while reusing the previously computed keys and
+    # values. Pass `reset_cache: true` at the start of a new sequence to clear
+    # any stored caches.
+    def run_cached(token : Int32, *, reset_cache : Bool = false) : Array(Float64)
+      results = run_cached([token], reset_cache: reset_cache)
+      results.last
+    end
+
+    def run_cached(tokens : Array(Int32), *, reset_cache : Bool = false) : Array(Array(Float64))
+      verify_net_before_train
+
+      # Allocate caches for transformer layers if needed or when resetting.
+      @hidden_layers.each do |layer|
+        next unless layer.is_a?(TransformerLayer)
+        tl = layer.as(TransformerLayer)
+        if reset_cache
+          if cache = tl.kv_cache
+            cache.clear!
+          else
+            tl.kv_cache = KVCache.new(1, tl.mha.num_heads)
+          end
+        elsif tl.kv_cache.nil?
+          tl.kv_cache = KVCache.new(1, tl.mha.num_heads)
+        end
+      end
+
+      outputs = [] of Array(Float64)
+      tokens.each do |t|
+        matrix = GPUMemory.to_gpu(SimpleMatrix.from_a([[t.to_f64]]))
+        out_matrix = run(matrix, stealth: true)
+        if out_matrix.is_a?(CudaMatrix)
+          out_matrix.sync_from_device!("cached_run") if out_matrix.device_dirty?
+          outputs << out_matrix.to_a.first
+        else
+          outputs << out_matrix.to_a.first
+        end
+      end
+      outputs
+    rescue e : Exception
+      raise NeuralNetRunError.new("Error running with cache: #{e} #{e.inspect_with_backtrace}")
+    end
+
     # Accept sequence input - converts to matrix and calls core matrix method
     def run(input : Array(Array(GenNum)), stealth : Bool = false) : Array(Array(Float64))
       verify_net_before_train
