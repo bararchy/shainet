@@ -61,6 +61,13 @@ decay_rate = 0.5
 decay_step = 1000
 # Accumulation steps: accumulate gradients over this many mini-batches before updating weights
 accumulation_steps = 4
+# weight_decay: Apply weight decay to shrink parameters on each update
+weight_decay = 0.01
+# Use top-k and top-p sampling for more diverse generation
+# Top-k: sample from the 10 most likely tokens
+tk = 10
+# Top-p: sample from the smallest set of tokens with cumulative probability >= 0.9
+tp = 0.9
 
 puts "Reading dataset from #{path}..."
 text = File.read(path)
@@ -93,6 +100,7 @@ net.decay_type = decay_type
 net.decay_rate = decay_rate
 net.decay_step = decay_step
 net.accumulation_steps = accumulation_steps
+net.weight_decay = weight_decay
 
 puts "Network built"
 puts "Output layer size: #{token_count}"
@@ -228,5 +236,11 @@ puts "Final validation loss: #{val_loss.round(4)}"
 # Predict the token following a sequence from the dataset
 test_seq = ids[0, seq_len].map { |id| [id] }
 output = net.run(test_seq, return_matrix: true).as(SHAInet::CudaMatrix).to_a.last
-pred_id = output.index(output.max) || 0
-puts "Prediction -> #{tokenizer.decode([pred_id])}"
+
+# You can choose which sampling method to use:
+pred_id_topk = SHAInet.top_k_sample(output, tk)
+pred_id_topp = SHAInet.top_p_sample(output, tp)
+
+puts "Prediction (greedy) -> #{tokenizer.decode([output.index(output.max) || 0])}"
+puts "Prediction (top-k, k=#{tk}) -> #{tokenizer.decode([pred_id_topk])}"
+puts "Prediction (top-p, p=#{tp}) -> #{tokenizer.decode([pred_id_topp])}"
