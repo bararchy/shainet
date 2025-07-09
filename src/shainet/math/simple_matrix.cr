@@ -9,6 +9,13 @@ module SHAInet
     property cols : Int32
     property precision : Precision
 
+    private def compute_in_f32?(other_precision : Precision? = nil)
+      p1 = @precision
+      p2 = other_precision || @precision
+      return false if p1 == Precision::Fp64 && p2 == Precision::Fp64
+      true
+    end
+
     # Backing storage for the matrix.  Depending on the precision we
     # allocate arrays of different element types.
     @data_f64 : Array(Float64)?
@@ -93,9 +100,18 @@ module SHAInet
     def +(other : SimpleMatrix)
       raise ArgumentError.new("size mismatch") unless @rows == other.rows && @cols == other.cols
       result = SimpleMatrix.new(@rows, @cols, 0.0, @precision)
-      @rows.times do |i|
-        @cols.times do |j|
-          result[i, j] = self[i, j] + other[i, j]
+      if compute_in_f32?(other.precision)
+        @rows.times do |i|
+          @cols.times do |j|
+            val = self[i, j].to_f32 + other[i, j].to_f32
+            result[i, j] = val.to_f64
+          end
+        end
+      else
+        @rows.times do |i|
+          @cols.times do |j|
+            result[i, j] = self[i, j] + other[i, j]
+          end
         end
       end
       result
@@ -104,9 +120,18 @@ module SHAInet
     def -(other : SimpleMatrix)
       raise ArgumentError.new("size mismatch") unless @rows == other.rows && @cols == other.cols
       result = SimpleMatrix.new(@rows, @cols, 0.0, @precision)
-      @rows.times do |i|
-        @cols.times do |j|
-          result[i, j] = self[i, j] - other[i, j]
+      if compute_in_f32?(other.precision)
+        @rows.times do |i|
+          @cols.times do |j|
+            val = self[i, j].to_f32 - other[i, j].to_f32
+            result[i, j] = val.to_f64
+          end
+        end
+      else
+        @rows.times do |i|
+          @cols.times do |j|
+            result[i, j] = self[i, j] - other[i, j]
+          end
         end
       end
       result
@@ -115,13 +140,25 @@ module SHAInet
     def *(other : SimpleMatrix)
       raise ArgumentError.new("size mismatch") unless @cols == other.rows
       result = SimpleMatrix.new(@rows, other.cols, 0.0, @precision)
-      @rows.times do |i|
-        other.cols.times do |j|
-          sum = 0.0
-          @cols.times do |k|
-            sum += self[i, k] * other[k, j]
+      if compute_in_f32?(other.precision)
+        @rows.times do |i|
+          other.cols.times do |j|
+            sum = 0.0_f32
+            @cols.times do |k|
+              sum += self[i, k].to_f32 * other[k, j].to_f32
+            end
+            result[i, j] = sum.to_f64
           end
-          result[i, j] = sum
+        end
+      else
+        @rows.times do |i|
+          other.cols.times do |j|
+            sum = 0.0
+            @cols.times do |k|
+              sum += self[i, k] * other[k, j]
+            end
+            result[i, j] = sum
+          end
         end
       end
       result
@@ -129,9 +166,19 @@ module SHAInet
 
     def *(scalar : Number)
       result = SimpleMatrix.new(@rows, @cols, 0.0, @precision)
-      @rows.times do |i|
-        @cols.times do |j|
-          result[i, j] = self[i, j] * scalar.to_f64
+      if compute_in_f32?
+        s = scalar.to_f32
+        @rows.times do |i|
+          @cols.times do |j|
+            val = self[i, j].to_f32 * s
+            result[i, j] = val.to_f64
+          end
+        end
+      else
+        @rows.times do |i|
+          @cols.times do |j|
+            result[i, j] = self[i, j] * scalar.to_f64
+          end
         end
       end
       result
@@ -271,9 +318,18 @@ module SHAInet
     # In-place element-wise addition.
     def add!(other : SimpleMatrix)
       raise ArgumentError.new("size mismatch") unless other.rows == @rows && other.cols == @cols
-      @rows.times do |i|
-        @cols.times do |j|
-          self[i, j] += other[i, j]
+      if compute_in_f32?(other.precision)
+        @rows.times do |i|
+          @cols.times do |j|
+            val = self[i, j].to_f32 + other[i, j].to_f32
+            self[i, j] = val.to_f64
+          end
+        end
+      else
+        @rows.times do |i|
+          @cols.times do |j|
+            self[i, j] += other[i, j]
+          end
         end
       end
       self
@@ -282,9 +338,18 @@ module SHAInet
     # Add a bias row vector to each row of the matrix in-place.
     def add_bias!(bias : SimpleMatrix)
       raise ArgumentError.new("bias size mismatch") unless bias.rows == 1 && bias.cols == @cols
-      @rows.times do |i|
-        @cols.times do |j|
-          self[i, j] += bias[0, j]
+      if compute_in_f32?(bias.precision)
+        @rows.times do |i|
+          @cols.times do |j|
+            val = self[i, j].to_f32 + bias[0, j].to_f32
+            self[i, j] = val.to_f64
+          end
+        end
+      else
+        @rows.times do |i|
+          @cols.times do |j|
+            self[i, j] += bias[0, j]
+          end
         end
       end
       self
@@ -292,20 +357,39 @@ module SHAInet
 
     # Element-wise ReLU activation in-place.
     def relu!
-      @rows.times do |i|
-        @cols.times do |j|
-          v = self[i, j]
-          self[i, j] = v > 0 ? v : 0.0
+      if compute_in_f32?
+        @rows.times do |i|
+          @cols.times do |j|
+            v = self[i, j].to_f32
+            self[i, j] = (v > 0 ? v : 0.0_f32).to_f64
+          end
+        end
+      else
+        @rows.times do |i|
+          @cols.times do |j|
+            v = self[i, j]
+            self[i, j] = v > 0 ? v : 0.0
+          end
         end
       end
       self
     end
 
     def gelu!
-      @rows.times do |i|
-        @cols.times do |j|
-          x = self[i, j]
-          self[i, j] = 0.5*x*(1.0 + Math.erf(x / Math.sqrt(2.0)))
+      if compute_in_f32?
+        @rows.times do |i|
+          @cols.times do |j|
+            x = self[i, j].to_f32
+            val = 0.5_f32*x*(1.0_f32 + Math.erf(x / Math.sqrt(2.0_f32)))
+            self[i, j] = val.to_f64
+          end
+        end
+      else
+        @rows.times do |i|
+          @cols.times do |j|
+            x = self[i, j]
+            self[i, j] = 0.5*x*(1.0 + Math.erf(x / Math.sqrt(2.0)))
+          end
         end
       end
       self
@@ -315,9 +399,18 @@ module SHAInet
     def dropout!(prob : Float64)
       raise ArgumentError.new("prob must be between 0 and 1") unless 0.0 <= prob && prob <= 1.0
 
-      @rows.times do |i|
-        @cols.times do |j|
-          self[i, j] = Random.rand < prob ? 0.0 : self[i, j]
+      if compute_in_f32?
+        @rows.times do |i|
+          @cols.times do |j|
+            v = self[i, j].to_f32
+            self[i, j] = (Random.rand < prob ? 0.0_f32 : v).to_f64
+          end
+        end
+      else
+        @rows.times do |i|
+          @cols.times do |j|
+            self[i, j] = Random.rand < prob ? 0.0 : self[i, j]
+          end
         end
       end
 
@@ -327,9 +420,18 @@ module SHAInet
     # Multiply each column by the corresponding value in a row vector in-place.
     def mul_row_vector!(vec : SimpleMatrix)
       raise ArgumentError.new("vector size mismatch") unless vec.rows == 1 && vec.cols == @cols
-      @rows.times do |i|
-        @cols.times do |j|
-          self[i, j] *= vec[0, j]
+      if compute_in_f32?(vec.precision)
+        @rows.times do |i|
+          @cols.times do |j|
+            val = self[i, j].to_f32 * vec[0, j].to_f32
+            self[i, j] = val.to_f64
+          end
+        end
+      else
+        @rows.times do |i|
+          @cols.times do |j|
+            self[i, j] *= vec[0, j]
+          end
         end
       end
       self
@@ -372,19 +474,37 @@ module SHAInet
 
     # Apply softmax to each row in-place.
     def softmax_rows!
-      @rows.times do |i|
-        row_max = -Float64::INFINITY
-        @cols.times { |j| row_max = Math.max(row_max, self[i, j]) }
+      if compute_in_f32?
+        @rows.times do |i|
+          row_max = -Float32::INFINITY
+          @cols.times { |j| row_max = Math.max(row_max, self[i, j].to_f32) }
 
-        row_sum = 0.0
-        @cols.times do |j|
-          val = Math.exp(self[i, j] - row_max)
-          self[i, j] = val
-          row_sum += val
+          row_sum = 0.0_f32
+          @cols.times do |j|
+            val = Math.exp(self[i, j].to_f32 - row_max)
+            self[i, j] = val.to_f64
+            row_sum += val
+          end
+
+          @cols.times do |j|
+            self[i, j] = (self[i, j].to_f32 / row_sum).to_f64
+          end
         end
+      else
+        @rows.times do |i|
+          row_max = -Float64::INFINITY
+          @cols.times { |j| row_max = Math.max(row_max, self[i, j]) }
 
-        @cols.times do |j|
-          self[i, j] = self[i, j] / row_sum
+          row_sum = 0.0
+          @cols.times do |j|
+            val = Math.exp(self[i, j] - row_max)
+            self[i, j] = val
+            row_sum += val
+          end
+
+          @cols.times do |j|
+            self[i, j] = self[i, j] / row_sum
+          end
         end
       end
       self
