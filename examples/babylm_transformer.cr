@@ -6,7 +6,7 @@ require "../src/shainet"
 # To enable full GPU acceleration:
 # 1. Build CUDA kernels: ./build_cuda_kernels.sh
 # 2. Set library path: export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(pwd)
-# 3. Monitor GPU usage: nvidia-smi
+# 3. Monitor GPU usage: nvidia-smi or nvtop
 #
 # 1. Download the BabyLM training set from the following URL:
 #    https://osf.io/ryjfm/files/osfstorage/6819fdbfbecda878d4c61566 (train_100M.zip)
@@ -18,7 +18,40 @@ require "../src/shainet"
 # 5. Predict the next token for a sample input.
 
 # Path to the unzipped training text
-path = "data_train.txt"
+path = if ARGV[0]?
+  ARGV[0]
+else
+  puts "Usage: #{__FILE__} <path_to_train.txt>"
+  exit 1
+end
+
+#### Example Control Parameters
+# You can adjust these parameters to control the training process.
+# vocab_size: Size of the tokenizer vocabulary.
+vocab_size = 10_000
+# text_sample_size: How much of the dataset to use for training.
+# Use -1 for the full dataset, or a smaller number for quick testing.
+text_sample_size = 1_000_000
+# d_model: Dimension of the model (embedding size).
+d_model = 512
+# seq_len: Length of input sequences for the Transformer. this is the context length.
+seq_len = 128
+# transformer_layers: Number of Transformer layers in the model.
+transformer_layers = 4
+# epochs: Number of training epochs.
+# Larger epochs will take longer but may improve performance.
+epochs = 100
+# batch: Batch size for training. Larger sizes can improve GPU utilization.
+batch = 800
+# Learning rate for the AdamW optimizer.
+# A smaller learning rate can help with stability, especially for larger models.
+learning_rate = 0.0005
+# log_each: How often to log training progress.
+log_each = 1
+# val_batch_size: Batch size for validation.
+# Smaller sizes can help with memory usage during validation. but larger sizes can speed up validation.
+val_batch_size = 64
+
 puts "Reading dataset from #{path}..."
 text = File.read(path)
 puts "Dataset loaded, size: #{text.size} characters."
@@ -27,25 +60,23 @@ puts "Using the GPU? #{SHAInet::CUDA.available? ? "Yes" : "No"}"
 puts "Kernels available? #{SHAInet::CUDA.kernels_available? ? "Yes" : "No"}"
 puts "Training the tokenizer on the dataset..."
 # Train tokenizer and encode text
-vocab_size = 10000 # Much smaller vocab for faster training
 tokenizer = SHAInet::BPETokenizer.new
-tokenizer.train(text[0..1_000_000], vocab_size) # Much smaller dataset
-ids = tokenizer.encode(text[0..1_000_000])
+tokenizer.train(text[0..text_sample_size], vocab_size) # Much smaller dataset
+ids = tokenizer.encode(text[0..text_sample_size])
 
 puts "Tokenizer trained with #{tokenizer.vocab.size} tokens."
 puts "Dataset size: #{ids.size} tokens"
 
 puts "Building the network..."
 # Build the network with much smaller dimensions for fast debugging
-d_model = 264
-seq_len = 128
 token_count = tokenizer.vocab.size
 net = SHAInet::Network.new
 net.add_layer(:input, 1, SHAInet.none)
 net.add_layer(:embedding, d_model, SHAInet.none, vocab_size: token_count)
-4.times { net.add_layer(:transformer, d_model, SHAInet.gelu) }
+transformer_layers.times { net.add_layer(:transformer, d_model, SHAInet.gelu) }
 net.add_layer(:output, token_count, SHAInet.identity)
 net.fully_connect
+net.learning_rate = learning_rate
 
 puts "Network built"
 puts "Output layer size: #{token_count}"
@@ -103,9 +134,7 @@ puts "Expected validation sequences: #{val_ids.size - seq_len}"
 train_data = SHAInet::StreamingData.new(train_file, shuffle: true, gpu_batches: true)
 val_data = SHAInet::StreamingData.new(val_file, gpu_batches: true)
 
-epochs = 100
-batch = 300 # Larger batch size for better GPU utilization
-net.learning_rate = 0.0005
+
 
 puts "Training the network for #{epochs} epochs with batch size #{batch}..."
 # Train for all epochs at once with proper logging
@@ -114,15 +143,13 @@ net.train(data: train_data,
   cost_function: :c_ent_sm,
   epochs: epochs,
   mini_batch_size: batch,
-  log_each: 1) # Log every 5 epochs instead of every 100 samples
+  log_each: log_each)
 
 # Validation after training is complete
 puts "Training complete. Running validation..."
 val_loss = 0.0
 count = 0
 
-# Process validation in larger batches for better GPU utilization
-val_batch_size = 64
 while (val_batch = val_data.next_batch(val_batch_size)).size > 0
   total_batch_loss = 0.0
 
