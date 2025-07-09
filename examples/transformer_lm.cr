@@ -25,6 +25,7 @@ net.add_layer(:output, token_count, :memory, SHAInet.sigmoid)
 net.fully_connect
 net.warmup_steps = 10
 net.weight_decay = 0.01
+# Accumulate gradients over 2 batches before updating weights
 net.accumulation_steps = 2
 net.mixed_precision = true
 

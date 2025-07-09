@@ -148,6 +148,12 @@ net.train(
   log_each: 1000)
 ```
 
+Set `accumulation_steps` to accumulate gradients across several mini-batches when memory is limited:
+
+```crystal
+net.accumulation_steps = 2 # updates weights every 2 mini-batches
+```
+
 ---
 
 ## Advanced
