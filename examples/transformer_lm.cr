@@ -64,3 +64,26 @@ pred_id = SHAInet.top_k_sample(output, 5)
 #   SHAInet.top_k_sample(output, k = 10, temperature = 0.8)
 #   SHAInet.top_p_sample(output, p = 0.9, temperature = 0.8)
 puts "Prediction for 'hello' -> #{tokenizer.decode([pred_id])}"
+
+# ------------------------------------------------------------
+# Generating text with KV cache
+# ------------------------------------------------------------
+
+# Feed an initial prompt token-by-token while reusing previously
+# computed attention keys and values. The cache is reset before
+# the first token so subsequent calls only process the new token.
+prompt = tokenizer.encode("hello")
+prompt.each_with_index do |id, idx|
+  net.run_cached(id, reset_cache: idx.zero?)
+end
+
+# Generate three additional tokens using cached inference
+generated = [] of Int32
+last_id = prompt.last
+3.times do
+  logits = net.run_cached(last_id)
+  last_id = SHAInet.top_k_sample(logits, 5)
+  generated << last_id
+end
+
+puts "Generated -> #{tokenizer.decode(generated)}"
