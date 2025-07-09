@@ -233,13 +233,16 @@ module SHAInet
 
       begin
         # Try to use CUDA kernels - if they fail, fallback to CPU
-        CUDA.row_mean_var(x.device_ptr.not_nil!,
-          cuda_mean.device_ptr.not_nil!,
-          cuda_var.device_ptr.not_nil!, rows, cols)
-        CUDA.layer_norm(cuda_norm.device_ptr.not_nil!,
-          x.device_ptr.not_nil!,
-          cuda_mean.device_ptr.not_nil!,
-          cuda_var.device_ptr.not_nil!,
+        CUDA.row_mean_var(
+          x.device_ptr.not_nil!.as(Pointer(Float64)),
+          cuda_mean.device_ptr.not_nil!.as(Pointer(Float64)),
+          cuda_var.device_ptr.not_nil!.as(Pointer(Float64)),
+          rows, cols)
+        CUDA.layer_norm(
+          cuda_norm.device_ptr.not_nil!.as(Pointer(Float64)),
+          x.device_ptr.not_nil!.as(Pointer(Float64)),
+          cuda_mean.device_ptr.not_nil!.as(Pointer(Float64)),
+          cuda_var.device_ptr.not_nil!.as(Pointer(Float64)),
           rows, cols, @epsilon)
 
         # Don't sync from device - keep data on GPU for performance
@@ -356,15 +359,15 @@ module SHAInet
           d_beta.zero!
 
           CUDA.layer_norm_backward(
-            d_x.device_ptr.not_nil!,
-            d_gamma.device_ptr.not_nil!,
-            d_beta.device_ptr.not_nil!,
-            d_out.device_ptr.not_nil!,
-            x.device_ptr.not_nil!,
-            @gamma.as(CudaMatrix).device_ptr.not_nil!,
-            @mean.as(CudaMatrix).device_ptr.not_nil!,
-            @var.as(CudaMatrix).device_ptr.not_nil!,
-            @norm.as(CudaMatrix).device_ptr.not_nil!,
+            d_x.device_ptr.not_nil!.as(Pointer(Float64)),
+            d_gamma.device_ptr.not_nil!.as(Pointer(Float64)),
+            d_beta.device_ptr.not_nil!.as(Pointer(Float64)),
+            d_out.device_ptr.not_nil!.as(Pointer(Float64)),
+            x.device_ptr.not_nil!.as(Pointer(Float64)),
+            @gamma.as(CudaMatrix).device_ptr.not_nil!.as(Pointer(Float64)),
+            @mean.as(CudaMatrix).device_ptr.not_nil!.as(Pointer(Float64)),
+            @var.as(CudaMatrix).device_ptr.not_nil!.as(Pointer(Float64)),
+            @norm.as(CudaMatrix).device_ptr.not_nil!.as(Pointer(Float64)),
             rows, cols, @epsilon
           )
 
@@ -492,11 +495,17 @@ module SHAInet
 
           # gamma := gamma - lr * g_gamma (using axpy with negative lr)
           gamma_size = @gamma.rows * @gamma.cols
-          CUDA.axpy(handle, -lr, gg_ptr, g_ptr, gamma_size)
+          CUDA.axpy(handle, -lr,
+            gg_ptr.as(Pointer(Float64)),
+            g_ptr.as(Pointer(Float64)),
+            gamma_size)
 
           # beta := beta - lr * g_beta (using axpy with negative lr)
           beta_size = @beta.rows * @beta.cols
-          CUDA.axpy(handle, -lr, gb_ptr, b_ptr, beta_size)
+          CUDA.axpy(handle, -lr,
+            gb_ptr.as(Pointer(Float64)),
+            b_ptr.as(Pointer(Float64)),
+            beta_size)
 
           CUDA.destroy_handle(handle)
 

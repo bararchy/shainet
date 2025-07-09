@@ -1501,11 +1501,11 @@ module SHAInet
                            result = CudaMatrix.new(1, matrix.cols)
                            # Copy last row using GPU memory copy
                            last_row_offset = (matrix.rows - 1) * matrix.cols
-                           CUDA.copy_device_to_device(
-                             result.device_ptr.not_nil!,
-                             mptr + last_row_offset,
-                             (matrix.cols * 8).to_u64
-                           )
+                             CUDA.copy_device_to_device(
+                               result.device_ptr.not_nil!.as(Pointer(Float64)),
+                               (mptr + last_row_offset).as(Pointer(Float64)),
+                               (matrix.cols * 8).to_u64
+                             )
                            result.mark_device_dirty!
                            result
                          rescue e

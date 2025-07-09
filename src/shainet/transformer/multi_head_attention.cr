@@ -300,7 +300,10 @@ module SHAInet
             output_h.sync_to_device!("mha_concat_prep") unless output_h.device_dirty?
 
             # Direct GPU memory copy for each column block
-            CUDA.set_cols(concat_ptr, output_ptr, concat.rows, concat.cols, start_col, @head_dim)
+            CUDA.set_cols(
+              concat_ptr.as(Pointer(Float64)),
+              output_ptr.as(Pointer(Float64)),
+              concat.rows, concat.cols, start_col, @head_dim)
             concat.mark_device_dirty!
           else
             # Fallback to standard set_cols
@@ -752,7 +755,11 @@ module SHAInet
 
     # GPU version of softmax backward
     private def softmax_backward(d_out : CudaMatrix, softmax_out : CudaMatrix, dest : CudaMatrix) : CudaMatrix
-      CUDA.softmax_backward(dest.device_ptr.not_nil!, d_out.device_ptr.not_nil!, softmax_out.device_ptr.not_nil!, d_out.rows, d_out.cols)
+      CUDA.softmax_backward(
+        dest.device_ptr.not_nil!.as(Pointer(Float64)),
+        d_out.device_ptr.not_nil!.as(Pointer(Float64)),
+        softmax_out.device_ptr.not_nil!.as(Pointer(Float64)),
+        d_out.rows, d_out.cols)
       dest.mark_device_dirty!
       dest
     end

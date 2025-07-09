@@ -358,7 +358,11 @@ module SHAInet
         if CUDA.fully_available?
           begin
             dest.copy_from!(grad) unless dest.object_id == grad.object_id
-            CUDA.relu_backward(dest.device_ptr.not_nil!, m.device_ptr.not_nil!, grad.device_ptr.not_nil!, m.rows * m.cols)
+            CUDA.relu_backward(
+              dest.device_ptr.not_nil!.as(Pointer(Float64)),
+              m.device_ptr.not_nil!.as(Pointer(Float64)),
+              grad.device_ptr.not_nil!.as(Pointer(Float64)),
+              m.rows * m.cols)
             dest.mark_device_dirty!
             return dest
           rescue e : Exception
@@ -414,7 +418,10 @@ module SHAInet
     private def accumulate_bias_gradient(bias_grad : SimpleMatrix | CudaMatrix, d_out : CudaMatrix)
       if CUDA.fully_available? && bias_grad.is_a?(CudaMatrix)
         begin
-          CUDA.accumulate_bias_grad(bias_grad.as(CudaMatrix).device_ptr.not_nil!, d_out.device_ptr.not_nil!, d_out.rows, d_out.cols)
+          CUDA.accumulate_bias_grad(
+            bias_grad.as(CudaMatrix).device_ptr.not_nil!.as(Pointer(Float64)),
+            d_out.device_ptr.not_nil!.as(Pointer(Float64)),
+            d_out.rows, d_out.cols)
           bias_grad.as(CudaMatrix).mark_device_dirty!
           return
         rescue e : Exception
