@@ -1,34 +1,43 @@
 module SHAInet
   # Minimal matrix implementation used as the CPU fallback for
   # CudaMatrix.  Originally this class only supported `Float64`
-  # storage.  To support INT8 quantised models we extend it with a
-  # `precision` flag and optionally store values as `Int8`.
+  # storage.  To support additional precisions we extend it with a
+  # `precision` flag and optionally store values as `Float32`,
+  # `Float16`, `BFloat16` or `Int8`.
   class SimpleMatrix
     property rows : Int32
     property cols : Int32
     property precision : Precision
 
     # Backing storage for the matrix.  Depending on the precision we
-    # either allocate a `Float64` array or an `Int8` array.
+    # allocate arrays of different element types.
     @data_f64 : Array(Float64)?
+    @data_f32 : Array(Float32)?
+    @data_f16 : Array(Float16)?
+    @data_bf16 : Array(BFloat16)?
     @data_i8 : Array(Int8)?
 
-    # Provide access to the underlying Float64 array when in floating
-    # point mode. This keeps compatibility with older code which
-    # accessed `matrix.data` directly.
+    # Return the matrix data as an `Array(Float64)` regardless of the
+    # underlying storage type.  This keeps compatibility with older
+    # code which accessed `matrix.data` directly.
     def data
-      @data_f64.not_nil!
+      to_f64
     end
 
     def initialize(@rows : Int32, @cols : Int32,
                    init : Float64 = 0.0,
                    @precision : Precision = Precision::Fp64)
-      if @precision == Precision::Int8
-        @data_i8 = Array(Int8).new(@rows * @cols, init.round.to_i8)
-        @data_f64 = nil
-      else
+      case @precision
+      when Precision::Fp64
         @data_f64 = Array(Float64).new(@rows * @cols, init)
-        @data_i8 = nil
+      when Precision::Fp32
+        @data_f32 = Array(Float32).new(@rows * @cols, init.to_f32)
+      when Precision::Fp16
+        @data_f16 = Array(Float16).new(@rows * @cols, Float16.new(init))
+      when Precision::Bf16
+        @data_bf16 = Array(BFloat16).new(@rows * @cols, BFloat16.new(init.to_f32))
+      when Precision::Int8
+        @data_i8 = Array(Int8).new(@rows * @cols, init.round.to_i8)
       end
     end
 
@@ -46,8 +55,15 @@ module SHAInet
 
     def [](r : Int32, c : Int32)
       idx = r * @cols + c
-      if @precision == Precision::Int8
+      case @precision
+      when Precision::Int8
         @data_i8.not_nil![idx].to_f64
+      when Precision::Fp32
+        @data_f32.not_nil![idx].to_f64
+      when Precision::Fp16
+        @data_f16.not_nil![idx].to_f64
+      when Precision::Bf16
+        @data_bf16.not_nil![idx].to_f64
       else
         @data_f64.not_nil![idx]
       end
@@ -55,8 +71,15 @@ module SHAInet
 
     def []=(r : Int32, c : Int32, v : Float64)
       idx = r * @cols + c
-      if @precision == Precision::Int8
+      case @precision
+      when Precision::Int8
         @data_i8.not_nil![idx] = v.round.clamp(-128, 127).to_i8
+      when Precision::Fp32
+        @data_f32.not_nil![idx] = v.to_f32
+      when Precision::Fp16
+        @data_f16.not_nil![idx] = Float16.new(v)
+      when Precision::Bf16
+        @data_bf16.not_nil![idx] = BFloat16.new(v.to_f32)
       else
         @data_f64.not_nil![idx] = v
       end
@@ -64,7 +87,7 @@ module SHAInet
 
     def +(other : SimpleMatrix)
       raise ArgumentError.new("size mismatch") unless @rows == other.rows && @cols == other.cols
-      result = SimpleMatrix.new(@rows, @cols)
+      result = SimpleMatrix.new(@rows, @cols, 0.0, @precision)
       @rows.times do |i|
         @cols.times do |j|
           result[i, j] = self[i, j] + other[i, j]
@@ -75,7 +98,7 @@ module SHAInet
 
     def -(other : SimpleMatrix)
       raise ArgumentError.new("size mismatch") unless @rows == other.rows && @cols == other.cols
-      result = SimpleMatrix.new(@rows, @cols)
+      result = SimpleMatrix.new(@rows, @cols, 0.0, @precision)
       @rows.times do |i|
         @cols.times do |j|
           result[i, j] = self[i, j] - other[i, j]
@@ -86,7 +109,7 @@ module SHAInet
 
     def *(other : SimpleMatrix)
       raise ArgumentError.new("size mismatch") unless @cols == other.rows
-      result = SimpleMatrix.new(@rows, other.cols)
+      result = SimpleMatrix.new(@rows, other.cols, 0.0, @precision)
       @rows.times do |i|
         other.cols.times do |j|
           sum = 0.0
@@ -100,7 +123,7 @@ module SHAInet
     end
 
     def *(scalar : Number)
-      result = SimpleMatrix.new(@rows, @cols)
+      result = SimpleMatrix.new(@rows, @cols, 0.0, @precision)
       @rows.times do |i|
         @cols.times do |j|
           result[i, j] = self[i, j] * scalar.to_f64
@@ -110,7 +133,7 @@ module SHAInet
     end
 
     def transpose
-      result = SimpleMatrix.new(@cols, @rows)
+      result = SimpleMatrix.new(@cols, @rows, 0.0, @precision)
       @rows.times do |i|
         @cols.times do |j|
           result[j, i] = self[i, j]
@@ -154,6 +177,44 @@ module SHAInet
       m
     end
 
+    # Return the underlying data as `Array(Float32)` regardless of
+    # storage precision.
+    def to_f32 : Array(Float32)
+      case @precision
+      when Precision::Fp64
+        @data_f64.not_nil!.map(&.to_f32)
+      when Precision::Fp32
+        @data_f32.not_nil!
+      when Precision::Fp16
+        @data_f16.not_nil!.map(&.to_f32)
+      when Precision::Bf16
+        @data_bf16.not_nil!.map(&.to_f32)
+      when Precision::Int8
+        @data_i8.not_nil!.map(&.to_f32)
+      else
+        raise "Unknown precision #{precision}"
+      end
+    end
+
+    # Return the underlying data as `Array(Float64)` regardless of
+    # storage precision.
+    def to_f64 : Array(Float64)
+      case @precision
+      when Precision::Fp64
+        @data_f64.not_nil!
+      when Precision::Fp32
+        @data_f32.not_nil!.map(&.to_f64)
+      when Precision::Fp16
+        @data_f16.not_nil!.map(&.to_f64)
+      when Precision::Bf16
+        @data_bf16.not_nil!.map(&.to_f64)
+      when Precision::Int8
+        @data_i8.not_nil!.map(&.to_f64)
+      else
+        raise "Unknown precision #{precision}"
+      end
+    end
+
     # Fill the matrix with random values in the given range
     def random_fill!(min : Float64 = -0.1, max : Float64 = 0.1)
       @rows.times do |i|
@@ -177,7 +238,7 @@ module SHAInet
 
     # Slice a range of columns from the matrix
     def slice_cols(start_col : Int32, length : Int32)
-      result = SimpleMatrix.new(@rows, length)
+      result = SimpleMatrix.new(@rows, length, 0.0, @precision)
       slice_cols_into!(result, start_col, length)
       result
     end
@@ -193,7 +254,7 @@ module SHAInet
     end
 
     def clone
-      dup = SimpleMatrix.new(@rows, @cols)
+      dup = SimpleMatrix.new(@rows, @cols, 0.0, @precision)
       @rows.times do |i|
         @cols.times do |j|
           dup[i, j] = self[i, j]
@@ -289,7 +350,7 @@ module SHAInet
       raise ArgumentError.new("precision mismatch") unless a.precision == Precision::Int8 && b.precision == Precision::Int8
       raise ArgumentError.new("size mismatch") unless a.cols == b.rows
 
-      result = SimpleMatrix.new(a.rows, b.cols)
+      result = SimpleMatrix.new(a.rows, b.cols, 0.0, Precision::Fp64)
       a.rows.times do |i|
         b.cols.times do |j|
           sum = 0_i32
