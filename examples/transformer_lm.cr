@@ -18,10 +18,10 @@ ids = tokenizer.encode(text)
 token_count = tokenizer.vocab.size
 
 net = SHAInet::Network.new
-net.add_layer(:input, 1, :memory, SHAInet.none)
-net.add_layer(:embedding, 8, :memory, SHAInet.none, vocab_size: token_count)
+net.add_layer(:input, 1, SHAInet.none)
+net.add_layer(:embedding, 8, SHAInet.none, vocab_size: token_count)
 net.add_layer(:transformer, 8)
-net.add_layer(:output, token_count, :memory, SHAInet.sigmoid)
+net.add_layer(:output, token_count, SHAInet.sigmoid)
 net.fully_connect
 net.warmup_steps = 10
 net.weight_decay = 0.01
@@ -37,9 +37,9 @@ one_hot = ->(id : Int32, size : Int32) do
 end
 
 # Each token predicts the next token
-training = [] of Tuple(Array(Array(Int32)), Array(Float64))
+training = [] of Tuple(Array(Array(Float64)), Array(Float64))
 (0...ids.size - 1).each do |i|
-  input = [[ids[i]]]
+  input = [[ids[i].to_f64]]
   expected = one_hot.call(ids[i + 1], token_count)
   training << {input, expected}
 end
@@ -57,6 +57,9 @@ net.train(data: train_data,
 
 # Predict the token following "hello"
 hello_id = tokenizer.encode("hello").first
-output = net.run([[hello_id]], return_matrix: true).as(SHAInet::CudaMatrix).to_a.last
-pred_id = output.index(output.max) || 0
+output = net.run([[hello_id]], return_matrix: true).to_a.last
+pred_id = SHAInet.top_k_sample(output, 5)
+# To adjust k, p or temperature you could use e.g.:
+#   SHAInet.top_k_sample(output, k = 10, temperature = 0.8)
+#   SHAInet.top_p_sample(output, p = 0.9, temperature = 0.8)
 puts "Prediction for 'hello' -> #{tokenizer.decode([pred_id])}"

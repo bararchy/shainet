@@ -1,4 +1,4 @@
-## SHAInet - A neural network in pure [Crystal](https://crystal-lang.org/)
+# SHAInet - A neural network in pure [Crystal](https://crystal-lang.org/)
 
 SHAInet (Super Human Artificial Intelligence Network) is a neural network library written in pure [Crystal](https://crystal-lang.org/). Originally created for biologically inspired neural network research, it has evolved into a general-purpose library for training and running neural networks, with a focus on simplicity and ease of use.
 
@@ -173,6 +173,7 @@ Enable weight decay to shrink parameters on each update:
 ```crystal
 net.weight_decay = 0.01
 ```
+
 ---
 
 ## Advanced
