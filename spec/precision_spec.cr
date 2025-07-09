@@ -31,7 +31,25 @@ describe "Precision enum" do
     q = SHAInet::Int8Value.from_f32(0.5_f32, scale, zp)
     (q.to_f32(scale, zp) - 0.5_f32).abs.should be < scale
   end
-  
+
+  it "quantizes tensors and network weights" do
+    m = SHAInet::SimpleMatrix.new(1, 3)
+    m[0, 0] = -1.0
+    m[0, 1] = 0.0
+    m[0, 2] = 1.0
+    buf, scale, zp = SHAInet::Quantization.quantize_tensor(m)
+    buf.size.should eq(3)
+    SHAInet::Int8Value.new(buf[2]).to_f32(scale, zp).should be_close(1.0, scale)
+
+    net = SHAInet::Network.new
+    net.add_layer(:input, 1, SHAInet.none)
+    net.add_layer(:output, 1, SHAInet.sigmoid)
+    net.fully_connect
+    net.quantize_int8!
+    first = net.output_layers.first
+    first.q_weights.not_nil!.size.should be > 0
+  end
+
   it "roundtrips Float32 values" do
     v = 3.1415_f32
     h = SHAInet::Float16.new(v)

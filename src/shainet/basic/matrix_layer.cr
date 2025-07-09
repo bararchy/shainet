@@ -9,6 +9,12 @@ module SHAInet
     property biases : SimpleMatrix | CudaMatrix
     property g_w : SimpleMatrix | CudaMatrix
     property g_b : SimpleMatrix | CudaMatrix
+    property q_weights : Array(Int8)?
+    property q_biases : Array(Int8)?
+    property q_w_scale : Float32?
+    property q_w_zero_point : Int8?
+    property q_b_scale : Float32?
+    property q_b_zero_point : Int8?
     getter size : Int32
 
     # Stored forward pass data for backpropagation
@@ -27,6 +33,12 @@ module SHAInet
       @biases = mat_klass.new(1, @size).random_fill!
       @g_w = mat_klass.zeros(in_size, @size)
       @g_b = mat_klass.zeros(1, @size)
+      @q_weights = nil
+      @q_biases = nil
+      @q_w_scale = nil
+      @q_w_zero_point = nil
+      @q_b_scale = nil
+      @q_b_zero_point = nil
       @input = nil
       @activations = nil
       @sigma_primes = nil
@@ -43,6 +55,12 @@ module SHAInet
       @biases = mat_klass.new(1, @size).random_fill!
       @g_w = mat_klass.zeros(1, @size)
       @g_b = mat_klass.zeros(1, @size)
+      @q_weights = nil
+      @q_biases = nil
+      @q_w_scale = nil
+      @q_w_zero_point = nil
+      @q_b_scale = nil
+      @q_b_zero_point = nil
       @input = nil
       @activations = nil
       @sigma_primes = nil
@@ -59,6 +77,12 @@ module SHAInet
       @biases = mat_klass.new(1, @size).random_fill!
       @g_w = mat_klass.zeros(in_size, @size)
       @g_b = mat_klass.zeros(1, @size)
+      @q_weights = nil
+      @q_biases = nil
+      @q_w_scale = nil
+      @q_w_zero_point = nil
+      @q_b_scale = nil
+      @q_b_zero_point = nil
       @input = nil
       @activations = nil
       @sigma_primes = nil

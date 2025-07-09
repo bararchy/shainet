@@ -439,5 +439,29 @@ module SHAInet
 
     # Dummy layers property for compatibility with the matrix-based Network class
     getter layers : Array(MatrixLayer) { [] of MatrixLayer }
+
+    # Quantize all matrix weights and biases of the network to INT8.
+    # Quantization parameters are stored with each layer for later use.
+    def quantize_int8!
+      @all_layers.each do |layer|
+        if layer.is_a?(EmbeddingLayer)
+          buf, scale, zp = Quantization.quantize_tensor(layer.embeddings)
+          layer.q_embeddings = buf
+          layer.q_emb_scale = scale
+          layer.q_emb_zero_point = zp
+        end
+
+        buf_w, scale_w, zp_w = Quantization.quantize_tensor(layer.weights)
+        layer.q_weights = buf_w
+        layer.q_w_scale = scale_w
+        layer.q_w_zero_point = zp_w
+
+        buf_b, scale_b, zp_b = Quantization.quantize_tensor(layer.biases)
+        layer.q_biases = buf_b
+        layer.q_b_scale = scale_b
+        layer.q_b_zero_point = zp_b
+      end
+      self
+    end
   end
 end

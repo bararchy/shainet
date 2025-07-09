@@ -8,6 +8,7 @@ require "log"
 {% end %}
 require "./shainet/precision"
 require "./shainet/int8"
+require "./shainet/quantization"
 
 require "./shainet/autograd/tensor"
 require "./shainet/basic/exceptions"
