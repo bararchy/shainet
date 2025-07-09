@@ -21,6 +21,21 @@ module SHAInet
     lib LibCUBLAS
       type Handle = Void*
 
+      # Additional datatypes for half precision routines
+      enum DataType
+        CUDA_R_32F  = 0
+        CUDA_R_64F  = 1
+        CUDA_R_16F  = 2
+        CUDA_R_16BF = 14
+      end
+
+      enum ComputeType
+        CUBLAS_COMPUTE_16F  = 64
+        CUBLAS_COMPUTE_32F  = 68
+        CUBLAS_COMPUTE_64F  = 70
+        CUBLAS_COMPUTE_16BF = 119
+      end
+
       fun cublasCreate_v2(handle : Pointer(Handle)) : Int32
       fun cublasDestroy_v2(handle : Handle) : Int32
       fun cublasDgemm_v2(handle : Handle, transa : Int32, transb : Int32,
@@ -53,6 +68,16 @@ module SHAInet
       fun cublasDcopy_v2(handle : Handle, n : Int32,
                          x : Pointer(Float64), incx : Int32,
                          y : Pointer(Float64), incy : Int32) : Int32
+
+      fun cublasGemmEx(handle : Handle,
+                       transa : Int32, transb : Int32,
+                       m : Int32, n : Int32, k : Int32,
+                       alpha : Void*,
+                       A : Void*, atype : Int32, lda : Int32,
+                       B : Void*, btype : Int32, ldb : Int32,
+                       beta : Void*,
+                       C : Void*, ctype : Int32, ldc : Int32,
+                       computeType : Int32, algo : Int32) : Int32
     end
 
     enum MemcpyKind
@@ -255,6 +280,24 @@ module SHAInet
         pointerof(alpha), a, lda,
         b, ldb,
         pointerof(beta), c, ldc)
+    end
+
+    # Wrapper for cublasGemmEx to handle half precision inputs when available
+    def gemm_ex(handle : LibCUBLAS::Handle, a : Pointer(Void), b : Pointer(Void), c : Pointer(Void),
+                m : Int32, n : Int32, k : Int32, lda : Int32, ldb : Int32, ldc : Int32,
+                atype : LibCUBLAS::DataType, btype : LibCUBLAS::DataType, ctype : LibCUBLAS::DataType,
+                compute_type : LibCUBLAS::ComputeType)
+      alpha = 1.0_f32
+      beta = 0.0_f32
+      LibCUBLAS.cublasGemmEx(handle,
+        Operation::N.value, Operation::N.value,
+        m, n, k,
+        pointerof(alpha).as(Void*),
+        a, atype.value, lda,
+        b, btype.value, ldb,
+        pointerof(beta).as(Void*),
+        c, ctype.value, ldc,
+        compute_type.value, 0)
     end
 
     def gemm_accumulate(handle : LibCUBLAS::Handle, a : Pointer(Float64), b : Pointer(Float64), c : Pointer(Float64),

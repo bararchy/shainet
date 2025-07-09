@@ -27,7 +27,8 @@ net.warmup_steps = 10
 net.weight_decay = 0.01
 # Accumulate gradients over 2 batches before updating weights
 net.accumulation_steps = 2
-net.precision = SHAInet::Precision::Fp16
+# Use reduced precision for faster training
+net.precision = SHAInet::Precision::Fp16 # or SHAInet::Precision::Bf16
 
 # Helper to create one-hot vectors
 one_hot = ->(id : Int32, size : Int32) do
