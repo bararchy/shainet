@@ -1152,7 +1152,7 @@ module SHAInet
 
             # Get the transformer's d_model dimension from layer size
             d_model = @transformer_layers.first.size
-            seq_len = 16 # hardcoded for now, should be dynamic
+            seq_len = input_matrix.rows
 
             if grad.rows == 1 && grad.cols != d_model
               # We have output gradients (1 x vocab_size), need to transform to (seq_len x d_model)
