@@ -43,7 +43,7 @@ token_count = tokenizer.vocab.size
 net = SHAInet::Network.new
 net.add_layer(:input, 1, SHAInet.none)
 net.add_layer(:embedding, d_model, SHAInet.none, vocab_size: token_count)
-4.times { net.add_layer(:transformer, d_model) }
+4.times { net.add_layer(:transformer, d_model, SHAInet.gelu) }
 net.add_layer(:output, token_count, SHAInet.identity)
 net.fully_connect
 
@@ -53,6 +53,14 @@ puts "Embedding vocab size: #{token_count}"
 # Positional encoding for the transformer layer
 pos_enc = SHAInet::PositionalEncoding.sinusoidal(seq_len, d_model)
 net.transformer_layers.first.positional_encoding = pos_enc
+
+# Causal mask so each position only attends to previous ones
+mask = if SHAInet::CUDA.fully_available?
+  SHAInet::GPUMemory.to_gpu(SHAInet::AttentionMask.causal(seq_len))
+else
+  SHAInet::AttentionMask.causal(seq_len)
+end
+net.transformer_layers.each { |l| l.mask = mask }
 
 # Build training/validation splits and write pairs to disk for streaming
 

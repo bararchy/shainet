@@ -162,6 +162,11 @@ net.decay_step = 100      # only for :step decay
 
 The scheduler takes effect after the warmup period and updates every batch.
 
+Set `accumulation_steps` to accumulate gradients across several mini-batches when memory is limited:
+
+```crystal
+net.accumulation_steps = 2 # updates weights every 2 mini-batches
+```
 ---
 
 ## Advanced

@@ -39,6 +39,7 @@ module SHAInet
     property warmup_steps : Int32
     property weight_decay : Float64
     property accumulation_steps : Int32
+    property accumulation_counter : Int32
     property mixed_precision : Bool
     property decay_type : Symbol?
     property decay_rate : Float64
@@ -80,6 +81,7 @@ module SHAInet
       @warmup_steps = 0
       @weight_decay = 0.0
       @accumulation_steps = 1
+      @accumulation_counter = 0
       @mixed_precision = false
       @decay_type = nil
       @decay_rate = 0.0
@@ -112,7 +114,7 @@ module SHAInet
                 raise NeuralNetRunError.new("vocab_size required for embedding layer") if vocab_size <= 0
                 EmbeddingLayer.new(vocab_size, l_size, activation_function)
               when "transformer"
-                TransformerLayer.new(l_size, num_heads, ff_hidden, drop_percent, pre_norm)
+                TransformerLayer.new(l_size, num_heads, ff_hidden, drop_percent, pre_norm, activation_function)
               else
                 # Use MatrixLayer for regular feedforward layers - it has proper GPU support and gradient computation
                 # Note: MatrixLayer will be properly connected with correct input size in connect_ltl

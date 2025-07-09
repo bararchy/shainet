@@ -3,7 +3,7 @@ require "../src/shainet"
 # Simple demonstration of using a Transformer layer with sinusoidal positional encoding.
 
 # Create a tiny Transformer layer
-layer = SHAInet::TransformerLayer.new(2, 1, 4)
+layer = SHAInet::TransformerLayer.new(2, 1, 4, 0, false, SHAInet.relu)
 
 # Two-step input sequence (2 x 2 matrix)
 input = SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[1.0, 0.0], [0.0, 1.0]]))

@@ -13,17 +13,21 @@ module SHAInet
     getter pre_norm : Bool
     property positional_encoding : SimpleMatrix | CudaMatrix | Nil
     property drop_percent : Int32
+    # Optional attention mask used if none is provided to `forward`
+    property mask : SimpleMatrix | CudaMatrix | Nil
 
     def initialize(d_model : Int32, num_heads : Int32, ff_hidden : Int32,
-                   drop_percent : Int32 = 0, pre_norm : Bool = false)
+                   drop_percent : Int32 = 0, pre_norm : Bool = false,
+                   ff_activation : ActivationFunction = SHAInet.relu)
       super(d_model, SHAInet.none)
       @mha = MultiHeadAttention.new(d_model, num_heads)
-      @ffn = PositionWiseFF.new(d_model, ff_hidden)
+      @ffn = PositionWiseFF.new(d_model, ff_hidden, ff_activation)
       @norm1 = LayerNorm.new(d_model)
       @norm2 = LayerNorm.new(d_model)
       @positional_encoding = nil
       @drop_percent = drop_percent
       @pre_norm = pre_norm
+      @mask = nil
     end
 
     # Convert all internal matrices to GPU
@@ -42,6 +46,7 @@ module SHAInet
 
     # GPU path - all CudaMatrix operations
     def forward(x : CudaMatrix, pe : CudaMatrix | Nil = nil, mask : CudaMatrix | Nil = nil) : CudaMatrix
+      mask ||= @mask
       input = if enc = (pe || (@positional_encoding ? @positional_encoding.as(CudaMatrix) : nil))
                 # Check dimensions and provide better error message
                 if enc.cols != x.cols
@@ -61,7 +66,8 @@ module SHAInet
 
       if @pre_norm
         normed_in = @norm1.forward(input).as(CudaMatrix)
-        attn = @mha.forward(normed_in, mask)
+        attn_mask = mask.as?(CudaMatrix)
+        attn = @mha.forward(normed_in, attn_mask)
         TransformerDropout.apply!(attn, @drop_percent) if @drop_percent > 0
         attn.add!(input)
         normed_ff = @norm2.forward(attn).as(CudaMatrix)
@@ -70,7 +76,8 @@ module SHAInet
         ff.add!(normed_ff)
         ff.as(CudaMatrix)
       else
-        attn = @mha.forward(input, mask)
+        attn_mask = mask.as?(CudaMatrix)
+        attn = @mha.forward(input, attn_mask)
         TransformerDropout.apply!(attn, @drop_percent) if @drop_percent > 0
         attn.add!(input)
         normed = @norm1.forward(attn).as(CudaMatrix)
@@ -83,6 +90,7 @@ module SHAInet
 
     # CPU path - all SimpleMatrix operations
     def forward(x : SimpleMatrix, pe : SimpleMatrix | Nil = nil, mask : SimpleMatrix | Nil = nil) : SimpleMatrix
+      mask ||= @mask
       input = if enc = (pe || (@positional_encoding ? @positional_encoding.as(SimpleMatrix) : nil))
                 # Check dimensions and provide better error message
                 if enc.cols != x.cols
@@ -103,7 +111,8 @@ module SHAInet
 
       if @pre_norm
         normed_in = @norm1.forward(input).as(SimpleMatrix)
-        attn = @mha.forward(normed_in, mask)
+        attn_mask = mask.as?(SimpleMatrix)
+        attn = @mha.forward(normed_in, attn_mask)
         TransformerDropout.apply!(attn, @drop_percent) if @drop_percent > 0
         attn.add!(input)
         normed_ff = @norm2.forward(attn).as(SimpleMatrix)
@@ -112,7 +121,8 @@ module SHAInet
         ff.add!(normed_ff)
         ff.as(SimpleMatrix)
       else
-        attn = @mha.forward(input, mask)
+        attn_mask = mask.as?(SimpleMatrix)
+        attn = @mha.forward(input, attn_mask)
         TransformerDropout.apply!(attn, @drop_percent) if @drop_percent > 0
         attn.add!(input)
         normed = @norm1.forward(attn).as(SimpleMatrix)
