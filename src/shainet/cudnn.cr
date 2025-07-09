@@ -692,7 +692,7 @@ module SHAInet
           input.sync_to_device!("cudnn_element_log_in") unless input.device_dirty?
           output.sync_to_device!("cudnn_element_log_out") unless output.device_dirty?
           size = input.rows * input.cols
-          CUDA.element_log(out_ptr, in_ptr, size)
+          CUDA.element_log(out_ptr.as(Pointer(Float64)), in_ptr.as(Pointer(Float64)), size)
           output.mark_device_dirty!
           return
         rescue e
