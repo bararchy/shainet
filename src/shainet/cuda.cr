@@ -83,6 +83,59 @@ module SHAInet
                        computeType : Int32, algo : Int32) : Int32
     end
 
+    # Map SHAInet precision values to cuBLAS data and compute types
+    def data_type_for(p : Precision) : LibCUBLAS::DataType
+      case p
+      when Precision::Fp64
+        LibCUBLAS::DataType::CUDA_R_64F
+      when Precision::Fp32
+        LibCUBLAS::DataType::CUDA_R_32F
+      when Precision::Fp16
+        LibCUBLAS::DataType::CUDA_R_16F
+      when Precision::Bf16
+        LibCUBLAS::DataType::CUDA_R_16BF
+      when Precision::Int8
+        LibCUBLAS::DataType::CUDA_R_8I
+      else
+        LibCUBLAS::DataType::CUDA_R_64F
+      end
+    end
+
+    def compute_type_for(p : Precision) : LibCUBLAS::ComputeType
+      case p
+      when Precision::Fp64
+        LibCUBLAS::ComputeType::CUBLAS_COMPUTE_64F
+      when Precision::Fp32
+        LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F
+      when Precision::Fp16
+        LibCUBLAS::ComputeType::CUBLAS_COMPUTE_16F
+      when Precision::Bf16
+        LibCUBLAS::ComputeType::CUBLAS_COMPUTE_16BF
+      when Precision::Int8
+        LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32I
+      else
+        LibCUBLAS::ComputeType::CUBLAS_COMPUTE_64F
+      end
+    end
+
+    @@gemm_ex_available : Bool? = nil
+
+    # Check if cublasGemmEx is available at runtime
+    def gemm_ex_available?
+      @@gemm_ex_available ||= begin
+        handle = LibC.dlopen("libcublas.so", LibC::RTLD_LAZY)
+        if handle.null?
+          false
+        else
+          sym = LibC.dlsym(handle, "cublasGemmEx")
+          LibC.dlclose(handle)
+          !sym.null?
+        end
+      rescue
+        false
+      end
+    end
+
     enum MemcpyKind
       HostToHost     = 0
       HostToDevice   = 1
