@@ -27,8 +27,9 @@ module SHAInet
     end
 
     # Preallocate +count+ buffers of given shape
-    def preallocate!(rows : Int32, cols : Int32, count : Int32)
+    def preallocate!(rows : Int32, cols : Int32, count : Int32, device_id : Int32 = CUDA.current_device || 0)
       return unless CUDA.fully_available?
+      CUDA.set_device(device_id)
       size = rows * cols
       count.times do
         ptr = Pointer(Float64).null
@@ -58,7 +59,7 @@ module SHAInet
     def to_gpu(matrix : SimpleMatrix, dest : CudaMatrix? = nil)
       return matrix if matrix.is_a?(CudaMatrix) || !CUDA.fully_available?
 
-      target = dest || CudaMatrix.new(matrix.rows, matrix.cols)
+      target = dest || CudaMatrix.new(matrix.rows, matrix.cols, device_id: CUDA.current_device || 0)
       to_gpu!(matrix, target)
     end
 
@@ -167,7 +168,7 @@ module SHAInet
     # Create a new matrix of the same type as the input
     def like(matrix : SimpleMatrix | CudaMatrix, rows : Int32, cols : Int32, init : Float64 = 0.0)
       if matrix.is_a?(CudaMatrix) && CUDA.fully_available?
-        result = CudaMatrix.new(rows, cols, init)
+        result = CudaMatrix.new(rows, cols, init, device_id: matrix.device_id)
         result.sync_to_device!("gpu_memory_zeros_like")
         result
       else

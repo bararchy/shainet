@@ -47,6 +47,10 @@ module SHAInet
       raise "CUDA disabled"
     end
 
+    def current_device
+      0
+    end
+
     def gemm_ex_available? : Bool
       false
     end

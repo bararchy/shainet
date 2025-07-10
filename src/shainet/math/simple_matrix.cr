@@ -439,7 +439,7 @@ module SHAInet
 
     # Convert SimpleMatrix to CudaMatrix for GPU operations
     def to_cuda : CudaMatrix
-      result = CudaMatrix.new(@rows, @cols, precision: @precision)
+      result = CudaMatrix.new(@rows, @cols, precision: @precision, device_id: CUDA.current_device || 0)
       # Use batch copy through raw data for better performance
       @rows.times do |i|
         @cols.times do |j|
