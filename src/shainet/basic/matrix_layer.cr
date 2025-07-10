@@ -412,15 +412,9 @@ module SHAInet
         g_w_cuda = @g_w.as(CudaMatrix)
         g_b_cuda = @g_b.as(CudaMatrix)
 
-        # Zero weight gradients
-        w_size = @g_w.rows * @g_w.cols
-        CUDA.zero_matrix(g_w_cuda.device_ptr.not_nil!.as(Pointer(Float64)), w_size)
-        g_w_cuda.mark_device_dirty!
-
-        # Zero bias gradients
-        b_size = @g_b.rows * @g_b.cols
-        CUDA.zero_matrix(g_b_cuda.device_ptr.not_nil!.as(Pointer(Float64)), b_size)
-        g_b_cuda.mark_device_dirty!
+        # Use CudaMatrix's zero! which handles different precisions safely
+        g_w_cuda.zero!
+        g_b_cuda.zero!
       else
         # CPU fallback - create new zero matrices
         @g_w = SimpleMatrix.zeros(@g_w.rows, @g_w.cols, @precision)
