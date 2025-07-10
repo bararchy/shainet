@@ -878,7 +878,7 @@ module SHAInet
 
       stream = data.is_a?(SHAInet::StreamingData) ? data : nil
       if data.is_a?(SHAInet::TrainingData) && data.preload_gpu? && CUDA.fully_available?
-        data.preload_gpu!
+        data.preload_gpu!(self.precision)
       end
       # Convert TrainingData to raw data array
       raw_data = if data.is_a?(SHAInet::TrainingData)

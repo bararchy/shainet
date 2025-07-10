@@ -21,22 +21,30 @@ module SHAInet
       super(@inputs, @outputs)
     end
 
-    # Convert all normalized data to CudaMatrix and store it. This
-    # should be called after the data has been normalized.
-    def preload_gpu!
+    # Convert all normalized data to `CudaMatrix` and store it. This
+    # should be called after the data has been normalized. When a
+    # precision is provided, the resulting GPU matrices will use that
+    # precision. Existing cached matrices are reused when the size and
+    # precision already match.
+    def preload_gpu!(precision : Precision = Precision::Fp64)
       return unless CUDA.fully_available?
-      return if @gpu_inputs.size == @normalized_inputs.size && @gpu_outputs.size == @normalized_outputs.size
+      if @gpu_inputs.size == @normalized_inputs.size &&
+         @gpu_outputs.size == @normalized_outputs.size &&
+         @gpu_inputs.first?.try(&.precision) == precision &&
+         @gpu_outputs.first?.try(&.precision) == precision
+        return
+      end
 
       @gpu_inputs = Array(CudaMatrix).new(@normalized_inputs.size) do |idx|
         row = @normalized_inputs[idx]
-        mat = CudaMatrix.new(1, row.size)
+        mat = CudaMatrix.new(1, row.size, precision: precision)
         GPUMemory.to_gpu!(row, mat)
         mat
       end
 
       @gpu_outputs = Array(CudaMatrix).new(@normalized_outputs.size) do |idx|
         row = @normalized_outputs[idx]
-        mat = CudaMatrix.new(1, row.size)
+        mat = CudaMatrix.new(1, row.size, precision: precision)
         GPUMemory.to_gpu!(row, mat)
         mat
       end
