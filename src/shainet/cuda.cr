@@ -59,6 +59,8 @@ module SHAInet
                       c : Pointer(Float64), ldc : Int32) : Int32
       fun cublasDscal_v2(handle : Handle, n : Int32,
                          alpha : Pointer(Float64), x : Pointer(Float64), incx : Int32) : Int32
+      fun cublasSscal_v2(handle : Handle, n : Int32,
+                         alpha : Pointer(Float32), x : Pointer(Float32), incx : Int32) : Int32
       fun cublasDger_v2(handle : Handle,
                         m : Int32, n : Int32,
                         alpha : Pointer(Float64),
@@ -435,6 +437,10 @@ module SHAInet
       LibCUBLAS.cublasDscal_v2(handle, n, pointerof(alpha), x, 1)
     end
 
+    def scal_s(handle : LibCUBLAS::Handle, x : Pointer(Float32), n : Int32, alpha : Float32)
+      LibCUBLAS.cublasSscal_v2(handle, n, pointerof(alpha), x, 1)
+    end
+
     def ger(handle : LibCUBLAS::Handle, x : Pointer(Float64), y : Pointer(Float64), a : Pointer(Float64), m : Int32, n : Int32, lda : Int32, alpha : Float64 = 1.0)
       LibCUBLAS.cublasDger_v2(handle, m, n, pointerof(alpha), x, 1, y, 1, a, lda)
     end
@@ -482,6 +488,8 @@ module SHAInet
     @@row_sum_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
     @@zero_matrix_proc : Proc(Pointer(Float64), Int32, Void)? = nil
     @@fill_matrix_proc : Proc(Pointer(Float64), Float64, Int32, Void)? = nil
+    @@scale_fp16_proc : Proc(Pointer(UInt16), Float32, Int32, Void)? = nil
+    @@scale_bf16_proc : Proc(Pointer(UInt16), Float32, Int32, Void)? = nil
     @@element_div_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Void)? = nil
     @@count_pairs_proc : Proc(Pointer(Int32), Pointer(Int32), Pointer(Int32), Pointer(Int32), Int32, Int32, Void)? = nil
     @@relu_backward_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Void)? = nil
@@ -653,6 +661,40 @@ module SHAInet
       end
       raise "CUDA kernels not available" unless fn
       fn.call(dst, src, ids, rows, cols)
+    end
+
+    def scale_fp16(ptr : UInt16Ptr, alpha : Float32, size : Int32)
+      unless fn = @@scale_fp16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "scale_fp16")
+          unless sym.null?
+            @@scale_fp16_proc = Proc(UInt16Ptr, Float32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@scale_fp16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(ptr, alpha, size)
+    end
+
+    def scale_bf16(ptr : UInt16Ptr, alpha : Float32, size : Int32)
+      unless fn = @@scale_bf16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "scale_bf16")
+          unless sym.null?
+            @@scale_bf16_proc = Proc(UInt16Ptr, Float32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@scale_bf16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(ptr, alpha, size)
     end
 
     def slice_cols(dst : Pointer(Float64), src : Pointer(Float64), rows : Int32, src_cols : Int32, start_col : Int32, len : Int32)
