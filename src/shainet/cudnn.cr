@@ -221,8 +221,24 @@ module SHAInet
       end
     end
 
+    # Map SHAInet precision to cuDNN data type
+    private def self.data_type_for(p : Precision)
+      case p
+      when Precision::Fp32
+        LibCUDNN::CudnnDataType::CUDNN_DATA_FLOAT
+      when Precision::Fp16
+        LibCUDNN::CudnnDataType::CUDNN_DATA_HALF
+      when Precision::Bf16
+        LibCUDNN::CudnnDataType::CUDNN_DATA_BFLOAT16
+      when Precision::Int8
+        LibCUDNN::CudnnDataType::CUDNN_DATA_INT8
+      else
+        LibCUDNN::CudnnDataType::CUDNN_DATA_DOUBLE
+      end
+    end
+
     # Helper function to create 2D tensor descriptors for matrices
-    private def self.create_tensor_descriptor_2d(rows : Int32, cols : Int32)
+    private def self.create_tensor_descriptor_2d(rows : Int32, cols : Int32, precision : Precision = Precision::Fp64)
       # Create the descriptor first
       CUDNN.check_status(LibCUDNN.cudnnCreateTensorDescriptor(out desc))
 
@@ -231,7 +247,7 @@ module SHAInet
       strides = [cols, 1, cols, cols] # Row-major ordering
       CUDNN.check_status(LibCUDNN.cudnnSetTensorNdDescriptor(
         desc,
-        LibCUDNN::CudnnDataType::CUDNN_DATA_DOUBLE,
+        data_type_for(precision),
         4,
         dims.to_unsafe,
         strides.to_unsafe
@@ -254,11 +270,11 @@ module SHAInet
       CUDNN.check_status(LibCUDNN.cudnnCreateTensorDescriptor(out output_desc))
 
       CUDNN.check_status(LibCUDNN.cudnnSetTensorNdDescriptor(
-        input_desc, LibCUDNN::CudnnDataType::CUDNN_DATA_DOUBLE, 4,
+        input_desc, data_type_for(input.precision), 4,
         dims.to_unsafe, strides.to_unsafe))
 
       CUDNN.check_status(LibCUDNN.cudnnSetTensorNdDescriptor(
-        output_desc, LibCUDNN::CudnnDataType::CUDNN_DATA_DOUBLE, 4,
+        output_desc, data_type_for(output.precision), 4,
         dims.to_unsafe, strides.to_unsafe))
 
       # Create activation descriptor for ReLU
@@ -310,12 +326,14 @@ module SHAInet
       CUDNN.check_status(LibCUDNN.cudnnCreateTensorDescriptor(out input_desc))
       CUDNN.check_status(LibCUDNN.cudnnCreateTensorDescriptor(out grad_desc))
 
+      dtype = data_type_for(input.precision)
+
       CUDNN.check_status(LibCUDNN.cudnnSetTensorNdDescriptor(
-        input_desc, LibCUDNN::CudnnDataType::CUDNN_DATA_DOUBLE, 4,
+        input_desc, dtype, 4,
         dims.to_unsafe, strides.to_unsafe))
 
       CUDNN.check_status(LibCUDNN.cudnnSetTensorNdDescriptor(
-        grad_desc, LibCUDNN::CudnnDataType::CUDNN_DATA_DOUBLE, 4,
+        grad_desc, dtype, 4,
         dims.to_unsafe, strides.to_unsafe))
 
       # Create activation descriptor for ReLU
@@ -380,12 +398,14 @@ module SHAInet
       CUDNN.check_status(LibCUDNN.cudnnCreateTensorDescriptor(out matrix_desc))
       CUDNN.check_status(LibCUDNN.cudnnCreateTensorDescriptor(out bias_desc))
 
+      dtype = data_type_for(matrix.precision)
+
       CUDNN.check_status(LibCUDNN.cudnnSetTensorNdDescriptor(
-        matrix_desc, LibCUDNN::CudnnDataType::CUDNN_DATA_DOUBLE, 4,
+        matrix_desc, dtype, 4,
         matrix_dims.to_unsafe, matrix_strides.to_unsafe))
 
       CUDNN.check_status(LibCUDNN.cudnnSetTensorNdDescriptor(
-        bias_desc, LibCUDNN::CudnnDataType::CUDNN_DATA_DOUBLE, 4,
+        bias_desc, dtype, 4,
         bias_dims.to_unsafe, bias_strides.to_unsafe))
 
       alpha = 1.0
@@ -428,12 +448,14 @@ module SHAInet
       CUDNN.check_status(LibCUDNN.cudnnCreateTensorDescriptor(out output_desc))
 
       begin
+        dtype = data_type_for(input.precision)
+
         CUDNN.check_status(LibCUDNN.cudnnSetTensorNdDescriptor(
-          input_desc, LibCUDNN::CudnnDataType::CUDNN_DATA_DOUBLE, 4,
+          input_desc, dtype, 4,
           dims.to_unsafe, strides.to_unsafe))
 
         CUDNN.check_status(LibCUDNN.cudnnSetTensorNdDescriptor(
-          output_desc, LibCUDNN::CudnnDataType::CUDNN_DATA_DOUBLE, 4,
+          output_desc, dtype, 4,
           dims.to_unsafe, strides.to_unsafe))
 
         alpha = 1.0
@@ -637,18 +659,20 @@ module SHAInet
       CUDNN.check_status(LibCUDNN.cudnnCreateOpTensorDescriptor(out op_desc))
 
       begin
+        dtype = data_type_for(output.precision)
+
         # Set up for element-wise multiplication
         CUDNN.check_status(LibCUDNN.cudnnSetOpTensorDescriptor(
           op_desc,
           LibCUDNN::CudnnOpTensorOp::CUDNN_OP_TENSOR_MUL,
-          LibCUDNN::CudnnDataType::CUDNN_DATA_DOUBLE,
+          dtype,
           0 # NaN propagation option
         ))
 
         # Create tensor descriptors
-        a_desc = create_tensor_descriptor_2d(a.rows, a.cols)
-        b_desc = create_tensor_descriptor_2d(b.rows, b.cols)
-        c_desc = create_tensor_descriptor_2d(output.rows, output.cols)
+        a_desc = create_tensor_descriptor_2d(a.rows, a.cols, a.precision)
+        b_desc = create_tensor_descriptor_2d(b.rows, b.cols, b.precision)
+        c_desc = create_tensor_descriptor_2d(output.rows, output.cols, output.precision)
 
         begin
           # Ensure matrices are on device
@@ -727,18 +751,20 @@ module SHAInet
       CUDNN.check_status(LibCUDNN.cudnnCreateOpTensorDescriptor(out op_desc))
 
       begin
+        dtype = data_type_for(output.precision)
+
         # Set up for element-wise addition
         CUDNN.check_status(LibCUDNN.cudnnSetOpTensorDescriptor(
           op_desc,
           LibCUDNN::CudnnOpTensorOp::CUDNN_OP_TENSOR_ADD,
-          LibCUDNN::CudnnDataType::CUDNN_DATA_DOUBLE,
+          dtype,
           0 # NaN propagation option
         ))
 
         # Create tensor descriptors
-        a_desc = create_tensor_descriptor_2d(a.rows, a.cols)
-        b_desc = create_tensor_descriptor_2d(b.rows, b.cols)
-        c_desc = create_tensor_descriptor_2d(output.rows, output.cols)
+        a_desc = create_tensor_descriptor_2d(a.rows, a.cols, a.precision)
+        b_desc = create_tensor_descriptor_2d(b.rows, b.cols, b.precision)
+        c_desc = create_tensor_descriptor_2d(output.rows, output.cols, output.precision)
 
         begin
           # Ensure matrices are on device
@@ -802,8 +828,8 @@ module SHAInet
         ))
 
         # Create tensor descriptors
-        input_desc = create_tensor_descriptor_2d(input.rows, input.cols)
-        output_desc = create_tensor_descriptor_2d(output.rows, output.cols)
+        input_desc = create_tensor_descriptor_2d(input.rows, input.cols, input.precision)
+        output_desc = create_tensor_descriptor_2d(output.rows, output.cols, output.precision)
 
         begin
           # Ensure matrices are on device
@@ -866,8 +892,8 @@ module SHAInet
           ))
 
           # Create tensor descriptors
-          input_desc = create_tensor_descriptor_2d(input.rows, input.cols)
-          output_desc = create_tensor_descriptor_2d(output.rows, output.cols)
+          input_desc = create_tensor_descriptor_2d(input.rows, input.cols, input.precision)
+          output_desc = create_tensor_descriptor_2d(output.rows, output.cols, output.precision)
 
           begin
             # Ensure matrices are on device
