@@ -6,6 +6,16 @@ describe "Embedding GPU lookup" do
 
     # Create a simple embedding layer with fixed values
     layer = SHAInet::EmbeddingLayer.new(5, 4)
+    if layer.embeddings.is_a?(SHAInet::CudaMatrix)
+      fp16 = SHAInet::CudaMatrix.new(5, 4, 0.0, SHAInet::Precision::Fp16)
+      5.times do |r|
+        4.times do |c|
+          fp16[r, c] = layer.embeddings[r, c]
+        end
+      end
+      layer.embeddings = fp16
+      layer.gradients = SHAInet::CudaMatrix.zeros(5, 4, SHAInet::Precision::Fp16)
+    end
 
     # Set the embedding values
     token_id = 1

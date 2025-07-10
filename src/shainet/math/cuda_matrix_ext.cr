@@ -3,7 +3,7 @@ require "./cuda_matrix"
 module SHAInet
   class CudaMatrix
     def softmax_rows
-      result = CudaMatrix.new(@rows, @cols)
+      result = CudaMatrix.new(@rows, @cols, 0.0, @precision)
       if CUDA.fully_available? && (dptr = self.device_ptr) && !dptr.null? && (rptr = result.device_ptr) && !rptr.null?
         begin
           # Ensure source has up-to-date GPU data
@@ -24,10 +24,37 @@ module SHAInet
             CUDA::MemcpyKind::HostToDevice)
 
           # Run the kernel
-          CUDA.softmax_rows(rptr.as(Pointer(Float64)),
-            dptr.as(Pointer(Float64)),
-            @rows,
-            @cols)
+          case @precision
+          when Precision::Fp16
+            {% if flag?(:cuda_fp16) %}
+              CUDA.softmax_rows_fp16(rptr.as(Pointer(UInt16)),
+                dptr.as(Pointer(UInt16)),
+                @rows,
+                @cols)
+            {% else %}
+              CUDA.softmax_rows(rptr.as(Pointer(Float64)),
+                dptr.as(Pointer(Float64)),
+                @rows,
+                @cols)
+            {% end %}
+          when Precision::Bf16
+            {% if flag?(:cuda_bf16) %}
+              CUDA.softmax_rows_bf16(rptr.as(Pointer(UInt16)),
+                dptr.as(Pointer(UInt16)),
+                @rows,
+                @cols)
+            {% else %}
+              CUDA.softmax_rows(rptr.as(Pointer(Float64)),
+                dptr.as(Pointer(Float64)),
+                @rows,
+                @cols)
+            {% end %}
+          else
+            CUDA.softmax_rows(rptr.as(Pointer(Float64)),
+              dptr.as(Pointer(Float64)),
+              @rows,
+              @cols)
+          end
 
           # Check result data
           test_result = Array(Float64).new(@rows * @cols, 0.0)
@@ -65,7 +92,7 @@ module SHAInet
 
     def dropout(drop_percent : Int32)
       raise ArgumentError.new("drop_percent must be between 0 and 100") unless 0 <= drop_percent <= 100
-      result = CudaMatrix.new(@rows, @cols)
+      result = CudaMatrix.new(@rows, @cols, 0.0, @precision)
       prob = drop_percent.to_f / 100.0
       if CUDA.fully_available? && (dptr = self.device_ptr) && !dptr.null? && (rptr = result.device_ptr) && !rptr.null?
         seed = Random.rand(UInt64)
@@ -73,10 +100,37 @@ module SHAInet
           # Ensure source has up-to-date GPU data
           self.sync_to_device! unless device_dirty?
 
-          CUDA.dropout(
-            rptr.as(Pointer(Float64)),
-            dptr.as(Pointer(Float64)),
-            @rows, @cols, prob, seed)
+          case @precision
+          when Precision::Fp16
+            {% if flag?(:cuda_fp16) %}
+              CUDA.dropout_fp16(
+                rptr.as(Pointer(UInt16)),
+                dptr.as(Pointer(UInt16)),
+                @rows, @cols, prob, seed)
+            {% else %}
+              CUDA.dropout(
+                rptr.as(Pointer(Float64)),
+                dptr.as(Pointer(Float64)),
+                @rows, @cols, prob, seed)
+            {% end %}
+          when Precision::Bf16
+            {% if flag?(:cuda_bf16) %}
+              CUDA.dropout_bf16(
+                rptr.as(Pointer(UInt16)),
+                dptr.as(Pointer(UInt16)),
+                @rows, @cols, prob, seed)
+            {% else %}
+              CUDA.dropout(
+                rptr.as(Pointer(Float64)),
+                dptr.as(Pointer(Float64)),
+                @rows, @cols, prob, seed)
+            {% end %}
+          else
+            CUDA.dropout(
+              rptr.as(Pointer(Float64)),
+              dptr.as(Pointer(Float64)),
+              @rows, @cols, prob, seed)
+          end
 
           # Mark result as having newer GPU data
           result.mark_device_dirty!

@@ -173,7 +173,7 @@ module SHAInet
     end
 
     # Pre-allocate or reuse workspace matrices based on input dimensions
-    private def ensure_workspace_matrices(batch_size : Int32, d_model : Int32)
+    private def ensure_workspace_matrices(batch_size : Int32, d_model : Int32, precision : Precision = Precision::Fp64)
       return unless CUDA.fully_available?
 
       # Reallocate workspaces when batch size or model dimension changes
@@ -200,11 +200,31 @@ module SHAInet
           CudaMatrix.return_workspace(ws)
         end
 
-        @workspace_mean = CudaMatrix.get_workspace(batch_size, 1, "ln_mean")
-        @workspace_var = CudaMatrix.get_workspace(batch_size, 1, "ln_var")
-        @workspace_norm = CudaMatrix.get_workspace(batch_size, d_model, "ln_norm")
-        @workspace_result = CudaMatrix.get_workspace(batch_size, d_model, "ln_result")
-        @workspace_d_x = CudaMatrix.get_workspace(batch_size, d_model, "ln_d_x")
+        @workspace_mean = if precision == Precision::Fp64
+                            CudaMatrix.get_workspace(batch_size, 1, "ln_mean")
+                          else
+                            CudaMatrix.new(batch_size, 1, 0.0, Precision::Fp32)
+                          end
+        @workspace_var = if precision == Precision::Fp64
+                           CudaMatrix.get_workspace(batch_size, 1, "ln_var")
+                         else
+                           CudaMatrix.new(batch_size, 1, 0.0, Precision::Fp32)
+                         end
+        @workspace_norm = if precision == Precision::Fp64
+                             CudaMatrix.get_workspace(batch_size, d_model, "ln_norm")
+                           else
+                             CudaMatrix.new(batch_size, d_model, 0.0, precision)
+                           end
+        @workspace_result = if precision == Precision::Fp64
+                               CudaMatrix.get_workspace(batch_size, d_model, "ln_result")
+                             else
+                               CudaMatrix.new(batch_size, d_model, 0.0, precision)
+                             end
+        @workspace_d_x = if precision == Precision::Fp64
+                            CudaMatrix.get_workspace(batch_size, d_model, "ln_d_x")
+                          else
+                            CudaMatrix.new(batch_size, d_model, 0.0, precision)
+                          end
         @workspace_d_gamma = CudaMatrix.get_workspace(1, d_model, "ln_d_gamma")
         @workspace_d_beta = CudaMatrix.get_workspace(1, d_model, "ln_d_beta")
 
@@ -223,7 +243,7 @@ module SHAInet
       cols = x.cols
 
       # Ensure workspace matrices are allocated for this batch size
-      ensure_workspace_matrices(rows, cols)
+      ensure_workspace_matrices(rows, cols, x.precision)
 
       # Use pre-allocated workspace matrices instead of creating new ones
       cuda_mean = @workspace_mean.not_nil!
@@ -233,17 +253,72 @@ module SHAInet
 
       begin
         # Try to use CUDA kernels - if they fail, fallback to CPU
-        CUDA.row_mean_var(
-          x.device_ptr.not_nil!.as(Pointer(Float64)),
-          cuda_mean.device_ptr.not_nil!.as(Pointer(Float64)),
-          cuda_var.device_ptr.not_nil!.as(Pointer(Float64)),
-          rows, cols)
-        CUDA.layer_norm(
-          cuda_norm.device_ptr.not_nil!.as(Pointer(Float64)),
-          x.device_ptr.not_nil!.as(Pointer(Float64)),
-          cuda_mean.device_ptr.not_nil!.as(Pointer(Float64)),
-          cuda_var.device_ptr.not_nil!.as(Pointer(Float64)),
-          rows, cols, @epsilon)
+        case x.precision
+        when Precision::Fp16
+          {% if flag?(:cuda_fp16) %}
+            CUDA.row_mean_var_fp16(
+              x.device_ptr.not_nil!.as(Pointer(UInt16)),
+              cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
+              cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
+              rows, cols)
+            CUDA.layer_norm_fp16(
+              cuda_norm.device_ptr.not_nil!.as(Pointer(UInt16)),
+              x.device_ptr.not_nil!.as(Pointer(UInt16)),
+              cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
+              cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
+              rows, cols, @epsilon.to_f32)
+          {% else %}
+            CUDA.row_mean_var(
+              x.device_ptr.not_nil!.as(Pointer(Float64)),
+              cuda_mean.device_ptr.not_nil!.as(Pointer(Float64)),
+              cuda_var.device_ptr.not_nil!.as(Pointer(Float64)),
+              rows, cols)
+            CUDA.layer_norm(
+              cuda_norm.device_ptr.not_nil!.as(Pointer(Float64)),
+              x.device_ptr.not_nil!.as(Pointer(Float64)),
+              cuda_mean.device_ptr.not_nil!.as(Pointer(Float64)),
+              cuda_var.device_ptr.not_nil!.as(Pointer(Float64)),
+              rows, cols, @epsilon)
+          {% end %}
+        when Precision::Bf16
+          {% if flag?(:cuda_bf16) %}
+            CUDA.row_mean_var_bf16(
+              x.device_ptr.not_nil!.as(Pointer(UInt16)),
+              cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
+              cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
+              rows, cols)
+            CUDA.layer_norm_bf16(
+              cuda_norm.device_ptr.not_nil!.as(Pointer(UInt16)),
+              x.device_ptr.not_nil!.as(Pointer(UInt16)),
+              cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
+              cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
+              rows, cols, @epsilon.to_f32)
+          {% else %}
+            CUDA.row_mean_var(
+              x.device_ptr.not_nil!.as(Pointer(Float64)),
+              cuda_mean.device_ptr.not_nil!.as(Pointer(Float64)),
+              cuda_var.device_ptr.not_nil!.as(Pointer(Float64)),
+              rows, cols)
+            CUDA.layer_norm(
+              cuda_norm.device_ptr.not_nil!.as(Pointer(Float64)),
+              x.device_ptr.not_nil!.as(Pointer(Float64)),
+              cuda_mean.device_ptr.not_nil!.as(Pointer(Float64)),
+              cuda_var.device_ptr.not_nil!.as(Pointer(Float64)),
+              rows, cols, @epsilon)
+          {% end %}
+        else
+          CUDA.row_mean_var(
+            x.device_ptr.not_nil!.as(Pointer(Float64)),
+            cuda_mean.device_ptr.not_nil!.as(Pointer(Float64)),
+            cuda_var.device_ptr.not_nil!.as(Pointer(Float64)),
+            rows, cols)
+          CUDA.layer_norm(
+            cuda_norm.device_ptr.not_nil!.as(Pointer(Float64)),
+            x.device_ptr.not_nil!.as(Pointer(Float64)),
+            cuda_mean.device_ptr.not_nil!.as(Pointer(Float64)),
+            cuda_var.device_ptr.not_nil!.as(Pointer(Float64)),
+            rows, cols, @epsilon)
+        end
 
         # Don't sync from device - keep data on GPU for performance
         # Only sync the intermediate results when actually needed for backward pass
@@ -346,7 +421,7 @@ module SHAInet
       raise ArgumentError.new("size mismatch") unless d_out.rows == rows && d_out.cols == cols
 
       # Ensure workspaces exist (in case forward fell back to CPU earlier)
-      ensure_workspace_matrices(rows, cols) if @workspace_d_x.nil?
+      ensure_workspace_matrices(rows, cols, x.precision) if @workspace_d_x.nil?
 
       if CUDA.fully_available? && @mean.is_a?(CudaMatrix) && @var.is_a?(CudaMatrix) && @norm.is_a?(CudaMatrix)
         begin

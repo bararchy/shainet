@@ -1108,10 +1108,37 @@ module SHAInet
         begin
           self.sync_to_device!("softmax_kernel") unless device_dirty?
 
-          CUDA.softmax_rows(
-            dptr.as(Pointer(Float64)),
-            dptr.as(Pointer(Float64)),
-            @rows, @cols)
+          case @precision
+          when Precision::Fp16
+            {% if flag?(:cuda_fp16) %}
+              CUDA.softmax_rows_fp16(
+                dptr.as(Pointer(UInt16)),
+                dptr.as(Pointer(UInt16)),
+                @rows, @cols)
+            {% else %}
+              CUDA.softmax_rows(
+                dptr.as(Pointer(Float64)),
+                dptr.as(Pointer(Float64)),
+                @rows, @cols)
+            {% end %}
+          when Precision::Bf16
+            {% if flag?(:cuda_bf16) %}
+              CUDA.softmax_rows_bf16(
+                dptr.as(Pointer(UInt16)),
+                dptr.as(Pointer(UInt16)),
+                @rows, @cols)
+            {% else %}
+              CUDA.softmax_rows(
+                dptr.as(Pointer(Float64)),
+                dptr.as(Pointer(Float64)),
+                @rows, @cols)
+            {% end %}
+          else
+            CUDA.softmax_rows(
+              dptr.as(Pointer(Float64)),
+              dptr.as(Pointer(Float64)),
+              @rows, @cols)
+          end
 
           mark_device_dirty!
           return self
@@ -1370,14 +1397,40 @@ module SHAInet
         begin
           self.sync_to_device!("dropout_kernel") unless device_dirty?
 
-          result = CUDA.dropout(
-            dptr.as(Pointer(Float64)),
-            (@rows * @cols), prob.to_f32, seed)
-
-          if result == 0
-            mark_device_dirty!
-            return self
+          case @precision
+          when Precision::Fp16
+            {% if flag?(:cuda_fp16) %}
+              CUDA.dropout_fp16(
+                dptr.as(Pointer(UInt16)),
+                dptr.as(Pointer(UInt16)),
+                @rows, @cols, prob, seed)
+            {% else %}
+              CUDA.dropout(
+                dptr.as(Pointer(Float64)),
+                dptr.as(Pointer(Float64)),
+                @rows, @cols, prob, seed)
+            {% end %}
+          when Precision::Bf16
+            {% if flag?(:cuda_bf16) %}
+              CUDA.dropout_bf16(
+                dptr.as(Pointer(UInt16)),
+                dptr.as(Pointer(UInt16)),
+                @rows, @cols, prob, seed)
+            {% else %}
+              CUDA.dropout(
+                dptr.as(Pointer(Float64)),
+                dptr.as(Pointer(Float64)),
+                @rows, @cols, prob, seed)
+            {% end %}
+          else
+            CUDA.dropout(
+              dptr.as(Pointer(Float64)),
+              dptr.as(Pointer(Float64)),
+              @rows, @cols, prob, seed)
           end
+
+          mark_device_dirty!
+          return self
         rescue e : Exception
           Log.error { "CUDA dropout kernel failed: #{e}, falling back to CPU" }
         end
