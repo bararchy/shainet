@@ -870,7 +870,10 @@ module SHAInet
               log_each : Int32 = 1,
               show_slice : Bool = false,
               autosave_path : String | Nil = nil,
-              autosave_freq : Int32 = 1)
+              autosave_freq : Int32 = 1,
+              *,
+              training_mode : Symbol | String? = nil,
+              devices : Array(Int32) = [] of Int32)
       verify_net_before_train
 
       stream = data.is_a?(SHAInet::StreamingData) ? data : nil
@@ -892,6 +895,18 @@ module SHAInet
         cost_proc = get_cost_proc(cost_function.to_s)
       else
         cost_proc = cost_function
+      end
+
+      if training_mode && training_mode.to_s == "data_parallel"
+        trainer = SHAInet::DataParallelTrainer.new(self, devices)
+        trainer.train(raw_data,
+          training_type: training_type,
+          cost_function: cost_proc,
+          epochs: epochs,
+          mini_batch_size: mini_batch_size,
+          log_each: log_each,
+          error_threshold: error_threshold)
+        return
       end
 
       if stream
