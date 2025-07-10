@@ -899,7 +899,7 @@ module SHAInet
           @num_heads.times do |h|
             @workspace_scores[h] = CudaMatrix.new(batch_size, batch_size)     # scores matrix
             @workspace_attn_output[h] = CudaMatrix.new(batch_size, @head_dim) # attn * vs result
-          @workspace_head_out[h] = CudaMatrix.get_workspace(batch_size, @head_dim, "mha_head_out_ws", precision)
+            @workspace_head_out[h] = CudaMatrix.get_workspace(batch_size, @head_dim, "mha_head_out_ws", precision)
             @workspace_k_transposed[h] = CudaMatrix.new(@head_dim, batch_size)
             @workspace_q_transposed[h] = CudaMatrix.new(@head_dim, batch_size)
             @q_head_ws[h] = CudaMatrix.new(batch_size, @head_dim)

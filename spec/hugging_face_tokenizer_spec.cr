@@ -4,25 +4,25 @@ describe SHAInet::HuggingFaceTokenizer do
   it "loads tokenizer.json and encodes text" do
     json = {
       "model" => {
-        "type" => "BPE",
+        "type"  => "BPE",
         "vocab" => {
-          "h" => 0,
-          "e" => 1,
-          "l" => 2,
-          "o" => 3,
-          "w" => 4,
-          "r" => 5,
-          "d" => 6,
-          "</w>" => 7,
-          "he" => 8,
-          "hel" => 9,
-          "hell" => 10,
-          "hello" => 11,
+          "h"         => 0,
+          "e"         => 1,
+          "l"         => 2,
+          "o"         => 3,
+          "w"         => 4,
+          "r"         => 5,
+          "d"         => 6,
+          "</w>"      => 7,
+          "he"        => 8,
+          "hel"       => 9,
+          "hell"      => 10,
+          "hello"     => 11,
           "hello</w>" => 12,
-          "wo" => 13,
-          "wor" => 14,
-          "worl" => 15,
-          "world" => 16,
+          "wo"        => 13,
+          "wor"       => 14,
+          "worl"      => 15,
+          "world"     => 16,
           "world</w>" => 17,
         },
         "merges" => [
@@ -35,9 +35,9 @@ describe SHAInet::HuggingFaceTokenizer do
           "wo r",
           "wor l",
           "worl d",
-          "world </w>"
-        ]
-      }
+          "world </w>",
+        ],
+      },
     }.to_json
 
     path = "spec/tmp_tokenizer.json"
@@ -52,4 +52,3 @@ describe SHAInet::HuggingFaceTokenizer do
     end
   end
 end
-

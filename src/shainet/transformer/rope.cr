@@ -30,9 +30,9 @@ module SHAInet
           q1 = q[r, 2 * i + 1]
           k0 = k[r, 2 * i]
           k1 = k[r, 2 * i + 1]
-          q[r, 2 * i]     = q0 * cos - q1 * sin
+          q[r, 2 * i] = q0 * cos - q1 * sin
           q[r, 2 * i + 1] = q0 * sin + q1 * cos
-          k[r, 2 * i]     = k0 * cos - k1 * sin
+          k[r, 2 * i] = k0 * cos - k1 * sin
           k[r, 2 * i + 1] = k0 * sin + k1 * cos
         end
       end
@@ -49,9 +49,9 @@ module SHAInet
           q1 = q[r, 2 * i + 1]
           k0 = k[r, 2 * i]
           k1 = k[r, 2 * i + 1]
-          q[r, 2 * i]     = q0 * cos - q1 * sin
+          q[r, 2 * i] = q0 * cos - q1 * sin
           q[r, 2 * i + 1] = q0 * sin + q1 * cos
-          k[r, 2 * i]     = k0 * cos - k1 * sin
+          k[r, 2 * i] = k0 * cos - k1 * sin
           k[r, 2 * i + 1] = k0 * sin + k1 * cos
         end
       end

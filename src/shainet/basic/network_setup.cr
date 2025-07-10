@@ -488,11 +488,11 @@ module SHAInet
         add_layer(:input, 1)
         add_layer(:embedding, d_model, vocab_size: emb_w.size)
         ff_hidden = if first = blocks.first?
-                        key = lookup["#{first}.mlp.down_proj"]?
-                        key ? key["weight"].as_a.first.as_a.size : d_model*4
-                      else
-                        d_model*4
-                      end
+                      key = lookup["#{first}.mlp.down_proj"]?
+                      key ? key["weight"].as_a.first.as_a.size : d_model*4
+                    else
+                      d_model*4
+                    end
         blocks.each do
           add_layer(:transformer, d_model, SHAInet.swiglu, 1, ff_hidden)
         end
@@ -531,19 +531,19 @@ module SHAInet
             gate = lookup["#{prefix}.mlp.gate_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }
             up = lookup["#{prefix}.mlp.up_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }
             down = lookup["#{prefix}.mlp.down_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }
-          w1 = gate.zip(up).map { |g,u| g + u }
-          ffn.w1 = SimpleMatrix.from_a(w1).transpose
-          ffn.w2 = SimpleMatrix.from_a(down).transpose
-          ffn.b1 = SimpleMatrix.zeros(1, w1.first.size)
-          ffn.b2 = SimpleMatrix.zeros(1, down.size)
-          ffn.refresh_transposes!
-        else
-          ffn.w1 = SimpleMatrix.from_a(lookup["#{prefix}.mlp.dense_h_to_4h"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
-          ffn.w2 = SimpleMatrix.from_a(lookup["#{prefix}.mlp.dense_4h_to_h"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
-          ffn.b1 = SimpleMatrix.from_a([lookup["#{prefix}.mlp.dense_h_to_4h"]["bias"].as_a.map(&.as_f)]) if lookup["#{prefix}.mlp.dense_h_to_4h"]["bias"]?
-          ffn.b2 = SimpleMatrix.from_a([lookup["#{prefix}.mlp.dense_4h_to_h"]["bias"].as_a.map(&.as_f)]) if lookup["#{prefix}.mlp.dense_4h_to_h"]["bias"]?
-          ffn.refresh_transposes!
-        end
+            w1 = gate.zip(up).map { |g, u| g + u }
+            ffn.w1 = SimpleMatrix.from_a(w1).transpose
+            ffn.w2 = SimpleMatrix.from_a(down).transpose
+            ffn.b1 = SimpleMatrix.zeros(1, w1.first.size)
+            ffn.b2 = SimpleMatrix.zeros(1, down.size)
+            ffn.refresh_transposes!
+          else
+            ffn.w1 = SimpleMatrix.from_a(lookup["#{prefix}.mlp.dense_h_to_4h"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
+            ffn.w2 = SimpleMatrix.from_a(lookup["#{prefix}.mlp.dense_4h_to_h"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
+            ffn.b1 = SimpleMatrix.from_a([lookup["#{prefix}.mlp.dense_h_to_4h"]["bias"].as_a.map(&.as_f)]) if lookup["#{prefix}.mlp.dense_h_to_4h"]["bias"]?
+            ffn.b2 = SimpleMatrix.from_a([lookup["#{prefix}.mlp.dense_4h_to_h"]["bias"].as_a.map(&.as_f)]) if lookup["#{prefix}.mlp.dense_4h_to_h"]["bias"]?
+            ffn.refresh_transposes!
+          end
 
           n1 = t_layer.norm1
           if lookup["#{prefix}.input_layernorm"]?

@@ -26,7 +26,7 @@ describe "Data parallel trainer" do
     net2.add_layer(:hidden, 2)
     net2.add_layer(:output, 1)
     net2.fully_connect
-    net2.train(data: data, training_type: :sgd, cost_function: :mse, epochs: 2, mini_batch_size: 2, log_each: 10, training_mode: :data_parallel, devices: [0,1])
+    net2.train(data: data, training_type: :sgd, cost_function: :mse, epochs: 2, mini_batch_size: 2, log_each: 10, training_mode: :data_parallel, devices: [0, 1])
     res2 = net2.run([0.0, 1.0])[0]
 
     (res1 - res2).abs.should be < 1e-5

@@ -96,10 +96,10 @@ module SHAInet
 
         @replicas.each do |rep|
           rep_layer = if idx < rep.hidden_layers.size
-                         rep.hidden_layers[idx]
-                       else
-                         rep.output_layers[idx - rep.hidden_layers.size]
-                       end
+                        rep.hidden_layers[idx]
+                      else
+                        rep.output_layers[idx - rep.hidden_layers.size]
+                      end
           next unless rep_layer.is_a?(MatrixLayer)
           gw = rep_layer.g_w
           gb = rep_layer.g_b

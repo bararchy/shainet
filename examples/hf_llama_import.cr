@@ -12,4 +12,3 @@ net = SHAInet::Network.new
 net.load_from_pt(ARGV[0])
 
 puts "Loaded #{net.transformer_layers.size} transformer blocks"
-
