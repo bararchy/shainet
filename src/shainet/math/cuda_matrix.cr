@@ -1174,10 +1174,12 @@ module SHAInet
     end
 
     # Get a matrix from the pool or create a new one
-    def self.get_workspace(rows : Int32, cols : Int32, source : String = "workspace") : CudaMatrix
-      return new(rows, cols) unless @@pool_enabled
+    def self.get_workspace(rows : Int32, cols : Int32,
+                           source : String = "workspace",
+                           precision : Precision = Precision::Fp64) : CudaMatrix
+      return new(rows, cols, precision: precision) unless @@pool_enabled
 
-      key = "#{rows}x#{cols}"
+      key = "#{rows}x#{cols}_#{precision}"
       pool = @@matrix_pool[key]
 
       if matrix = pool.pop?
@@ -1186,7 +1188,7 @@ module SHAInet
         matrix
       else
         # Create new matrix
-        new(rows, cols)
+        new(rows, cols, precision: precision)
       end
     end
 
@@ -1194,7 +1196,7 @@ module SHAInet
     def self.return_workspace(matrix : CudaMatrix)
       return unless @@pool_enabled
 
-      key = "#{matrix.rows}x#{matrix.cols}"
+      key = "#{matrix.rows}x#{matrix.cols}_#{matrix.precision}"
       pool = @@matrix_pool[key]
 
       # Only pool if we haven't exceeded the limit

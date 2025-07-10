@@ -572,7 +572,7 @@ module SHAInet
       x = @x.not_nil!.as(CudaMatrix)
 
       temp_grad_o = @workspace_temp_grad_o.not_nil!
-      d_concat = CudaMatrix.get_workspace(x.rows, @d_model, "mha_d_concat")
+      d_concat = CudaMatrix.get_workspace(x.rows, @d_model, "mha_d_concat", x.precision)
 
       begin
         concat = @workspace_concat.not_nil!
@@ -783,6 +783,7 @@ module SHAInet
     # Pre-allocate or reuse workspace matrices based on input dimensions
     private def ensure_workspace_matrices(batch_size : Int32)
       if CUDA.fully_available?
+        precision = @w_q.is_a?(CudaMatrix) ? @w_q.as(CudaMatrix).precision : Precision::Fp64
         # Only reallocate if batch size changed
         if @last_batch_size != batch_size
           # Return previous workspaces to pool if they exist
@@ -854,25 +855,25 @@ module SHAInet
           @d_concat_slices_ws.each { |ws| CudaMatrix.return_workspace(ws.not_nil!) } if @d_concat_slices_ws.any?
 
           # Allocate new workspaces for current batch size
-          @workspace_concat = CudaMatrix.get_workspace(batch_size, @d_model, "mha_concat_ws")
-          @workspace_d_q_concat = CudaMatrix.get_workspace(batch_size, @d_model, "mha_d_q_concat_ws")
-          @workspace_d_k_concat = CudaMatrix.get_workspace(batch_size, @d_model, "mha_d_k_concat_ws")
-          @workspace_d_v_concat = CudaMatrix.get_workspace(batch_size, @d_model, "mha_d_v_concat_ws")
-          @workspace_d_x_q = CudaMatrix.get_workspace(batch_size, @d_model, "mha_d_x_q_ws")
-          @workspace_d_x_k = CudaMatrix.get_workspace(batch_size, @d_model, "mha_d_x_k_ws")
-          @workspace_d_x_v = CudaMatrix.get_workspace(batch_size, @d_model, "mha_d_x_v_ws")
-          @workspace_x_t = CudaMatrix.get_workspace(@d_model, batch_size, "mha_x_t_ws")
-          @workspace_q = CudaMatrix.get_workspace(batch_size, @d_model, "mha_q_ws")
-          @workspace_k = CudaMatrix.get_workspace(batch_size, @d_model, "mha_k_ws")
-          @workspace_v = CudaMatrix.get_workspace(batch_size, @d_model, "mha_v_ws")
+          @workspace_concat = CudaMatrix.get_workspace(batch_size, @d_model, "mha_concat_ws", precision)
+          @workspace_d_q_concat = CudaMatrix.get_workspace(batch_size, @d_model, "mha_d_q_concat_ws", precision)
+          @workspace_d_k_concat = CudaMatrix.get_workspace(batch_size, @d_model, "mha_d_k_concat_ws", precision)
+          @workspace_d_v_concat = CudaMatrix.get_workspace(batch_size, @d_model, "mha_d_v_concat_ws", precision)
+          @workspace_d_x_q = CudaMatrix.get_workspace(batch_size, @d_model, "mha_d_x_q_ws", precision)
+          @workspace_d_x_k = CudaMatrix.get_workspace(batch_size, @d_model, "mha_d_x_k_ws", precision)
+          @workspace_d_x_v = CudaMatrix.get_workspace(batch_size, @d_model, "mha_d_x_v_ws", precision)
+          @workspace_x_t = CudaMatrix.get_workspace(@d_model, batch_size, "mha_x_t_ws", precision)
+          @workspace_q = CudaMatrix.get_workspace(batch_size, @d_model, "mha_q_ws", precision)
+          @workspace_k = CudaMatrix.get_workspace(batch_size, @d_model, "mha_k_ws", precision)
+          @workspace_v = CudaMatrix.get_workspace(batch_size, @d_model, "mha_v_ws", precision)
 
-          @workspace_concat_t = CudaMatrix.get_workspace(@d_model, batch_size, "mha_concat_t_ws")
-          @workspace_w_o_t = CudaMatrix.get_workspace(@d_model, @d_model, "mha_w_o_t_ws")
-          @workspace_temp_grad_o = CudaMatrix.get_workspace(@d_model, @d_model, "mha_temp_grad_o_ws")
-          @workspace_temp_grad_q = CudaMatrix.get_workspace(@d_model, @d_model, "mha_temp_grad_q_ws")
-          @workspace_temp_grad_k = CudaMatrix.get_workspace(@d_model, @d_model, "mha_temp_grad_k_ws")
-          @workspace_temp_grad_v = CudaMatrix.get_workspace(@d_model, @d_model, "mha_temp_grad_v_ws")
-          @workspace_d_x = CudaMatrix.get_workspace(batch_size, @d_model, "mha_d_x_ws")
+          @workspace_concat_t = CudaMatrix.get_workspace(@d_model, batch_size, "mha_concat_t_ws", precision)
+          @workspace_w_o_t = CudaMatrix.get_workspace(@d_model, @d_model, "mha_w_o_t_ws", precision)
+          @workspace_temp_grad_o = CudaMatrix.get_workspace(@d_model, @d_model, "mha_temp_grad_o_ws", precision)
+          @workspace_temp_grad_q = CudaMatrix.get_workspace(@d_model, @d_model, "mha_temp_grad_q_ws", precision)
+          @workspace_temp_grad_k = CudaMatrix.get_workspace(@d_model, @d_model, "mha_temp_grad_k_ws", precision)
+          @workspace_temp_grad_v = CudaMatrix.get_workspace(@d_model, @d_model, "mha_temp_grad_v_ws", precision)
+          @workspace_d_x = CudaMatrix.get_workspace(batch_size, @d_model, "mha_d_x_ws", precision)
 
           @workspace_head_out = Array(CudaMatrix | Nil).new(@num_heads, nil)
 
@@ -898,21 +899,21 @@ module SHAInet
           @num_heads.times do |h|
             @workspace_scores[h] = CudaMatrix.new(batch_size, batch_size)     # scores matrix
             @workspace_attn_output[h] = CudaMatrix.new(batch_size, @head_dim) # attn * vs result
-            @workspace_head_out[h] = CudaMatrix.get_workspace(batch_size, @head_dim, "mha_head_out_ws")
+          @workspace_head_out[h] = CudaMatrix.get_workspace(batch_size, @head_dim, "mha_head_out_ws", precision)
             @workspace_k_transposed[h] = CudaMatrix.new(@head_dim, batch_size)
             @workspace_q_transposed[h] = CudaMatrix.new(@head_dim, batch_size)
             @q_head_ws[h] = CudaMatrix.new(batch_size, @head_dim)
             @k_head_ws[h] = CudaMatrix.new(batch_size, @head_dim)
             @v_head_ws[h] = CudaMatrix.new(batch_size, @head_dim)
-            @d_v_temp_ws[h] = CudaMatrix.get_workspace(batch_size, @head_dim, "mha_d_v_temp_ws")
-            @d_attn_temp_ws[h] = CudaMatrix.get_workspace(batch_size, batch_size, "mha_d_attn_temp_ws")
-            @d_scores_temp_ws[h] = CudaMatrix.get_workspace(batch_size, batch_size, "mha_d_scores_temp_ws")
-            @d_q_temp_ws[h] = CudaMatrix.get_workspace(batch_size, @head_dim, "mha_d_q_temp_ws")
-            @d_k_temp_ws[h] = CudaMatrix.get_workspace(batch_size, @head_dim, "mha_d_k_temp_ws")
-            @attn_t_ws[h] = CudaMatrix.get_workspace(batch_size, batch_size, "mha_attn_t_ws")
-            @v_t_ws[h] = CudaMatrix.get_workspace(@head_dim, batch_size, "mha_v_t_ws")
-            @scores_t_ws[h] = CudaMatrix.get_workspace(batch_size, batch_size, "mha_scores_t_ws")
-            @d_concat_slices_ws[h] = CudaMatrix.get_workspace(batch_size, @head_dim, "mha_d_concat_slice_ws")
+            @d_v_temp_ws[h] = CudaMatrix.get_workspace(batch_size, @head_dim, "mha_d_v_temp_ws", precision)
+            @d_attn_temp_ws[h] = CudaMatrix.get_workspace(batch_size, batch_size, "mha_d_attn_temp_ws", precision)
+            @d_scores_temp_ws[h] = CudaMatrix.get_workspace(batch_size, batch_size, "mha_d_scores_temp_ws", precision)
+            @d_q_temp_ws[h] = CudaMatrix.get_workspace(batch_size, @head_dim, "mha_d_q_temp_ws", precision)
+            @d_k_temp_ws[h] = CudaMatrix.get_workspace(batch_size, @head_dim, "mha_d_k_temp_ws", precision)
+            @attn_t_ws[h] = CudaMatrix.get_workspace(batch_size, batch_size, "mha_attn_t_ws", precision)
+            @v_t_ws[h] = CudaMatrix.get_workspace(@head_dim, batch_size, "mha_v_t_ws", precision)
+            @scores_t_ws[h] = CudaMatrix.get_workspace(batch_size, batch_size, "mha_scores_t_ws", precision)
+            @d_concat_slices_ws[h] = CudaMatrix.get_workspace(batch_size, @head_dim, "mha_d_concat_slice_ws", precision)
           end
 
           @last_batch_size = batch_size

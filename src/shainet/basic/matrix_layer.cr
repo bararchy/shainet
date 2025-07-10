@@ -155,7 +155,7 @@ module SHAInet
       b = @biases.as(CudaMatrix)
 
       # Linear transformation using workspace
-      fw = CudaMatrix.get_workspace(input.rows, w.cols, "layer_fwd")
+      fw = CudaMatrix.get_workspace(input.rows, w.cols, "layer_fwd", input.precision)
       @forward_workspace = fw
       fw.gemm!(input, w)
       fw.add_bias!(b)
@@ -166,11 +166,11 @@ module SHAInet
         act = @activations.as(CudaMatrix)
         if act.rows != linear_result.rows || act.cols != linear_result.cols
           CudaMatrix.return_workspace(act)
-          @activations = CudaMatrix.get_workspace(linear_result.rows, linear_result.cols, "layer_act")
+          @activations = CudaMatrix.get_workspace(linear_result.rows, linear_result.cols, "layer_act", input.precision)
         end
       else
         CudaMatrix.return_workspace(@activations.as(CudaMatrix)) if @activations && @activations.is_a?(CudaMatrix)
-        @activations = CudaMatrix.get_workspace(linear_result.rows, linear_result.cols, "layer_act")
+        @activations = CudaMatrix.get_workspace(linear_result.rows, linear_result.cols, "layer_act", input.precision)
       end
       activations_cuda = @activations.as(CudaMatrix)
       activations_cuda.copy_from!(linear_result)
@@ -265,7 +265,7 @@ module SHAInet
       # Apply activation derivative: grad ⊙ σ'
       local_grad : CudaMatrix | Nil = nil
       begin
-        local_grad = CudaMatrix.get_workspace(grad.rows, grad.cols, "layer_local_grad")
+        local_grad = CudaMatrix.get_workspace(grad.rows, grad.cols, "layer_local_grad", grad.precision)
         local_grad.copy_from!(grad)
 
         # Use GPU kernel for gradient computation
@@ -283,7 +283,7 @@ module SHAInet
         local_grad.mark_device_dirty!
 
         # Accumulate weight gradients: ∂L/∂W += input^T * local_grad
-        gw = CudaMatrix.get_workspace(@g_w.rows, @g_w.cols, "layer_grad")
+        gw = CudaMatrix.get_workspace(@g_w.rows, @g_w.cols, "layer_grad", @g_w.as(CudaMatrix).precision)
         @grad_workspace = gw
         begin
           gw.gemm!(input.transpose, local_grad)
@@ -308,7 +308,7 @@ module SHAInet
         g_b_cuda.mark_device_dirty!
 
         # Return gradient for previous layer: local_grad * W^T
-        grad_input = CudaMatrix.get_workspace(local_grad.rows, @weights.rows, "layer_prev_grad")
+        grad_input = CudaMatrix.get_workspace(local_grad.rows, @weights.rows, "layer_prev_grad", local_grad.precision)
         grad_input.gemm!(local_grad, @weights.as(CudaMatrix).transpose)
 
         grad_input

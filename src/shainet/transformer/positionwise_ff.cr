@@ -271,7 +271,7 @@ module SHAInet
       w1_t = @workspace_w1_t.not_nil!
       w1_gpu.transpose_into!(w1_t)
 
-      d_input = CudaMatrix.get_workspace(drelu.rows, w1_gpu.rows, "pw_d_input")
+      d_input = CudaMatrix.get_workspace(drelu.rows, w1_gpu.rows, "pw_d_input", drelu.precision)
       d_input.gemm!(drelu, @w1_t.as(CudaMatrix))
       d_input
     end
@@ -572,13 +572,15 @@ module SHAInet
     private def ensure_workspace_matrices(batch_size : Int32)
       return unless CUDA.fully_available?
 
+      precision = @w1.is_a?(CudaMatrix) ? @w1.as(CudaMatrix).precision : Precision::Fp64
+
       d_model = @w1.rows
       hidden = @w1.cols
 
-      @workspace_w2_t ||= CudaMatrix.get_workspace(@w2.cols, @w2.rows, "ff_w2_t")
-      @workspace_w1_t ||= CudaMatrix.get_workspace(@w1.cols, @w1.rows, "ff_w1_t")
-      @workspace_temp_grad_w2 ||= CudaMatrix.get_workspace(hidden, d_model, "ff_temp_grad_w2")
-      @workspace_temp_grad_w1 ||= CudaMatrix.get_workspace(d_model, hidden, "ff_temp_grad_w1")
+      @workspace_w2_t ||= CudaMatrix.get_workspace(@w2.cols, @w2.rows, "ff_w2_t", precision)
+      @workspace_w1_t ||= CudaMatrix.get_workspace(@w1.cols, @w1.rows, "ff_w1_t", precision)
+      @workspace_temp_grad_w2 ||= CudaMatrix.get_workspace(hidden, d_model, "ff_temp_grad_w2", precision)
+      @workspace_temp_grad_w1 ||= CudaMatrix.get_workspace(d_model, hidden, "ff_temp_grad_w1", precision)
 
       if @last_batch_size != batch_size || @workspace_x_t.nil?
         if ws = @workspace_x_t
@@ -600,12 +602,12 @@ module SHAInet
           CudaMatrix.return_workspace(ws)
         end
 
-        @workspace_x_t = CudaMatrix.get_workspace(d_model, batch_size, "ff_x_t")
-        @workspace_h_t = CudaMatrix.get_workspace(hidden, batch_size, "ff_h_t")
-        @workspace_h = CudaMatrix.get_workspace(batch_size, hidden, "ff_h")
-        @workspace_out = CudaMatrix.get_workspace(batch_size, d_model, "ff_out")
-        @workspace_d_input = CudaMatrix.get_workspace(batch_size, d_model, "ff_d_input")
-        @workspace_dh = CudaMatrix.get_workspace(batch_size, hidden, "ff_dh")
+        @workspace_x_t = CudaMatrix.get_workspace(d_model, batch_size, "ff_x_t", precision)
+        @workspace_h_t = CudaMatrix.get_workspace(hidden, batch_size, "ff_h_t", precision)
+        @workspace_h = CudaMatrix.get_workspace(batch_size, hidden, "ff_h", precision)
+        @workspace_out = CudaMatrix.get_workspace(batch_size, d_model, "ff_out", precision)
+        @workspace_d_input = CudaMatrix.get_workspace(batch_size, d_model, "ff_d_input", precision)
+        @workspace_dh = CudaMatrix.get_workspace(batch_size, hidden, "ff_dh", precision)
         @last_batch_size = batch_size
       end
     end
