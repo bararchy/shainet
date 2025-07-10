@@ -35,5 +35,19 @@ jobs:
         apt-get -y install cuda-toolkit-12-9
     - name: Install dependencies
       run: shards install
-    - name: Run tests
+    - name: Check GPU count
+      id: gpu
+      run: |
+        if command -v nvidia-smi >/dev/null; then
+          echo "gpu_count=$(nvidia-smi -L | wc -l)" >> "$GITHUB_OUTPUT"
+        else
+          echo "gpu_count=0" >> "$GITHUB_OUTPUT"
+        fi
+    - name: Run tests (single GPU)
+      if: ${{ steps.gpu.outputs.gpu_count <= '1' }}
+      run: crystal spec
+    - name: Run tests (multi GPU)
+      if: ${{ steps.gpu.outputs.gpu_count > '1' }}
+      env:
+        MULTI_GPU_TEST: '1'
       run: crystal spec

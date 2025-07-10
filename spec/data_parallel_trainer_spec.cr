@@ -4,6 +4,7 @@ describe "Data parallel trainer" do
   it "matches single gpu training" do
     pending! "CUDA not available" unless SHAInet::CUDA.fully_available?
     pending! "need at least 2 GPUs" unless SHAInet::CUDA.device_count >= 2
+    pending! "multi-gpu tests disabled" unless ENV["MULTI_GPU_TEST"]?
 
     data = [
       [[0.0, 0.0], [0.0]],
