@@ -4,7 +4,7 @@ describe "CUDA dropout! in-place" do
   it "masks values on the GPU" do
     pending! "CUDA not available" unless SHAInet::CUDA.fully_available?
 
-    mat = SHAInet::CudaMatrix.new(32, 32)
+    mat = SHAInet::CudaMatrix.new(32, 32, 0.0, SHAInet::Precision::Fp16)
     mat.fill!(1.0)
 
     # Apply dropout in-place without CPU sync

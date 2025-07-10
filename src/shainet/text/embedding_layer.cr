@@ -104,7 +104,22 @@ module SHAInet
           CUDA.malloc(pointerof(ids_dev).as(Pointer(Pointer(Void))), bytes)
           CUDA.memcpy(ids_dev.as(Pointer(Void)), ids.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
           begin
-            CUDA.gather_rows(r_ptr.as(Pointer(Float64)), e_ptr.as(Pointer(Float64)), ids_dev, ids.size, @l_size)
+            case @embeddings.as(CudaMatrix).precision
+            when Precision::Fp16
+              {% if flag?(:cuda_fp16) %}
+                CUDA.gather_rows_fp16(r_ptr.as(Pointer(UInt16)), e_ptr.as(Pointer(UInt16)), ids_dev, ids.size, @l_size)
+              {% else %}
+                CUDA.gather_rows(r_ptr.as(Pointer(Float64)), e_ptr.as(Pointer(Float64)), ids_dev, ids.size, @l_size)
+              {% end %}
+            when Precision::Bf16
+              {% if flag?(:cuda_bf16) %}
+                CUDA.gather_rows_bf16(r_ptr.as(Pointer(UInt16)), e_ptr.as(Pointer(UInt16)), ids_dev, ids.size, @l_size)
+              {% else %}
+                CUDA.gather_rows(r_ptr.as(Pointer(Float64)), e_ptr.as(Pointer(Float64)), ids_dev, ids.size, @l_size)
+              {% end %}
+            else
+              CUDA.gather_rows(r_ptr.as(Pointer(Float64)), e_ptr.as(Pointer(Float64)), ids_dev, ids.size, @l_size)
+            end
           rescue
             ids.each_with_index do |id, row|
               src = e_ptr + id*@l_size
@@ -273,12 +288,17 @@ module SHAInet
       return unless CUDA.fully_available?
 
       # Only reallocate if batch size changed
-      if @last_ids_size != ids_size
+      if @last_ids_size != ids_size || (@workspace_result && @workspace_result.as(CudaMatrix).precision != @embeddings.as(CudaMatrix).precision)
         if ws = @workspace_result
           CudaMatrix.return_workspace(ws)
         end
 
-        @workspace_result = CudaMatrix.get_workspace(ids_size, @l_size, "embed_ws")
+        precision = @embeddings.as(CudaMatrix).precision
+        @workspace_result = if precision == Precision::Fp64
+                              CudaMatrix.get_workspace(ids_size, @l_size, "embed_ws")
+                            else
+                              CudaMatrix.new(ids_size, @l_size, 0.0, precision)
+                            end
         @workspace_result.not_nil!.zero!
 
         @last_ids_size = ids_size

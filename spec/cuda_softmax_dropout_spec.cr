@@ -4,7 +4,7 @@ describe "CUDA softmax and dropout" do
   it "matches CPU softmax" do
     pending! "CUDA kernels not available" unless SHAInet::CUDA.fully_available?
     cpu = SHAInet::SimpleMatrix.from_a([[1.0, 2.0], [3.0, 4.0]])
-    gpu = SHAInet::GPUMemory.to_gpu(cpu)
+    gpu = SHAInet::CudaMatrix.from_a(cpu.to_a, SHAInet::Precision::Fp16)
     gpu_out = SHAInet.softmax_rows(gpu)
     gpu_out.sync_from_device! if gpu_out.is_a?(SHAInet::CudaMatrix)
     cpu_out = SHAInet.softmax_rows(cpu)
@@ -17,7 +17,7 @@ describe "CUDA softmax and dropout" do
 
   it "drops approximately the given percentage" do
     pending! "CUDA kernels not available" unless SHAInet::CUDA.fully_available?
-    mat = SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.ones(10, 10))
+    mat = SHAInet::CudaMatrix.ones(10, 10, SHAInet::Precision::Fp16)
     runs = 200
     total_ratio = 0.0
     runs.times do |run_idx|
