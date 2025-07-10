@@ -127,11 +127,35 @@ module SHAInet
       raise "CUDA kernels not available"
     end
 
+    def softmax_rows_fp16(*args)
+      raise "CUDA kernels not available"
+    end
+
+    def softmax_rows_bf16(*args)
+      raise "CUDA kernels not available"
+    end
+
     def dropout(*args)
       raise "CUDA kernels not available"
     end
 
+    def dropout_fp16(*args)
+      raise "CUDA kernels not available"
+    end
+
+    def dropout_bf16(*args)
+      raise "CUDA kernels not available"
+    end
+
     def gather_rows(*args)
+      raise "CUDA kernels not available"
+    end
+
+    def gather_rows_fp16(*args)
+      raise "CUDA kernels not available"
+    end
+
+    def gather_rows_bf16(*args)
       raise "CUDA kernels not available"
     end
 
@@ -147,7 +171,23 @@ module SHAInet
       raise "CUDA kernels not available"
     end
 
+    def row_mean_var_fp16(*args)
+      raise "CUDA kernels not available"
+    end
+
+    def row_mean_var_bf16(*args)
+      raise "CUDA kernels not available"
+    end
+
     def layer_norm(*args)
+      raise "CUDA kernels not available"
+    end
+
+    def layer_norm_fp16(*args)
+      raise "CUDA kernels not available"
+    end
+
+    def layer_norm_bf16(*args)
       raise "CUDA kernels not available"
     end
 
