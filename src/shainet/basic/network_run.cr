@@ -1402,17 +1402,60 @@ module SHAInet
           cols = arr[0].as(Array).size
           mat = CudaMatrix.new(rows, cols, precision: @precision)
 
-          flat_slice = Slice(Float64).new(rows * cols) do |idx|
-            r = idx // cols
-            c = idx % cols
-            arr[r].as(Array)[c].as(GenNum).to_f64
-          end
+          elem_count = rows * cols
+          elem_size = case @precision
+                      when Precision::Int8
+                        1
+                      when Precision::Fp16, Precision::Bf16
+                        2
+                      when Precision::Fp32
+                        4
+                      else
+                        8
+                      end
 
           if dptr = mat.device_ptr
+            ptr = case @precision
+                  when Precision::Int8
+                    slice = Slice(Int8).new(elem_count) do |idx|
+                      r = idx // cols
+                      c = idx % cols
+                      arr[r].as(Array)[c].as(GenNum).to_f64.round.clamp(-128, 127).to_i8
+                    end
+                    slice.to_unsafe.as(Pointer(Void))
+                  when Precision::Fp16
+                    slice = Slice(Float16).new(elem_count) do |idx|
+                      r = idx // cols
+                      c = idx % cols
+                      Float16.new(arr[r].as(Array)[c].as(GenNum).to_f32)
+                    end
+                    slice.to_unsafe.as(Pointer(Void))
+                  when Precision::Bf16
+                    slice = Slice(BFloat16).new(elem_count) do |idx|
+                      r = idx // cols
+                      c = idx % cols
+                      BFloat16.new(arr[r].as(Array)[c].as(GenNum).to_f32)
+                    end
+                    slice.to_unsafe.as(Pointer(Void))
+                  when Precision::Fp32
+                    slice = Slice(Float32).new(elem_count) do |idx|
+                      r = idx // cols
+                      c = idx % cols
+                      arr[r].as(Array)[c].as(GenNum).to_f32
+                    end
+                    slice.to_unsafe.as(Pointer(Void))
+                  else
+                    slice = Slice(Float64).new(elem_count) do |idx|
+                      r = idx // cols
+                      c = idx % cols
+                      arr[r].as(Array)[c].as(GenNum).to_f64
+                    end
+                    slice.to_unsafe.as(Pointer(Void))
+                  end
             CUDA.memcpy(
               dptr.as(Pointer(Void)),
-              flat_slice.to_unsafe.as(Pointer(Void)),
-              (flat_slice.size * 8).to_u64,
+              ptr,
+              (elem_count * elem_size).to_u64,
               CUDA::MemcpyKind::HostToDevice
             )
             mat.mark_device_dirty!
@@ -1424,18 +1467,46 @@ module SHAInet
             mat.unsafe_set(r, c, v)
           end
 
+          mat.sync_to_device!("to_matrix")
           mat
         else
           cols = arr.size
           mat = CudaMatrix.new(1, cols, precision: @precision)
 
-          flat_slice = Slice(Float64).new(cols) { |i| arr[i].as(GenNum).to_f64 }
+          elem_count = cols
+          elem_size = case @precision
+                      when Precision::Int8
+                        1
+                      when Precision::Fp16, Precision::Bf16
+                        2
+                      when Precision::Fp32
+                        4
+                      else
+                        8
+                      end
 
           if dptr = mat.device_ptr
+            ptr = case @precision
+                  when Precision::Int8
+                    slice = Slice(Int8).new(elem_count) { |i| arr[i].as(GenNum).to_f64.round.clamp(-128, 127).to_i8 }
+                    slice.to_unsafe.as(Pointer(Void))
+                  when Precision::Fp16
+                    slice = Slice(Float16).new(elem_count) { |i| Float16.new(arr[i].as(GenNum).to_f32) }
+                    slice.to_unsafe.as(Pointer(Void))
+                  when Precision::Bf16
+                    slice = Slice(BFloat16).new(elem_count) { |i| BFloat16.new(arr[i].as(GenNum).to_f32) }
+                    slice.to_unsafe.as(Pointer(Void))
+                  when Precision::Fp32
+                    slice = Slice(Float32).new(elem_count) { |i| arr[i].as(GenNum).to_f32 }
+                    slice.to_unsafe.as(Pointer(Void))
+                  else
+                    slice = Slice(Float64).new(elem_count) { |i| arr[i].as(GenNum).to_f64 }
+                    slice.to_unsafe.as(Pointer(Void))
+                  end
             CUDA.memcpy(
               dptr.as(Pointer(Void)),
-              flat_slice.to_unsafe.as(Pointer(Void)),
-              (flat_slice.size * 8).to_u64,
+              ptr,
+              (elem_count * elem_size).to_u64,
               CUDA::MemcpyKind::HostToDevice
             )
             mat.mark_device_dirty!
@@ -1443,6 +1514,7 @@ module SHAInet
 
           flat_slice.each_with_index { |v, i| mat.unsafe_set(0, i, v) }
 
+          mat.sync_to_device!("to_matrix")
           mat
         end
       else
