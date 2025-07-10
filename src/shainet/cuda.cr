@@ -507,6 +507,8 @@ module SHAInet
     @@dropout_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Float64, UInt64, Void)? = nil
     @@weight_update_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Float32, Int32, Void)? = nil
     @@weight_update_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Float32, Int32, Void)? = nil
+    @@add_bias_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Void)? = nil
+    @@add_bias_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Void)? = nil
     @@gather_rows_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Int32), Int32, Int32, Void)? = nil
     @@gather_rows_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Pointer(Int32), Int32, Int32, Void)? = nil
     @@gather_rows_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Pointer(Int32), Int32, Int32, Void)? = nil
@@ -685,6 +687,40 @@ module SHAInet
       end
       raise "CUDA kernels not available" unless fn
       fn.call(weights, grads, lr, size)
+    end
+
+    def add_bias_fp16(mat : UInt16Ptr, bias : UInt16Ptr, rows : Int32, cols : Int32)
+      unless fn = @@add_bias_fp16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "add_bias_fp16")
+          unless sym.null?
+            @@add_bias_fp16_proc = Proc(UInt16Ptr, UInt16Ptr, Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@add_bias_fp16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(mat, bias, rows, cols)
+    end
+
+    def add_bias_bf16(mat : UInt16Ptr, bias : UInt16Ptr, rows : Int32, cols : Int32)
+      unless fn = @@add_bias_bf16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "add_bias_bf16")
+          unless sym.null?
+            @@add_bias_bf16_proc = Proc(UInt16Ptr, UInt16Ptr, Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@add_bias_bf16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(mat, bias, rows, cols)
     end
 
     def gather_rows(dst : Pointer(Float64), src : Pointer(Float64), ids : Pointer(Int32), rows : Int32, cols : Int32)

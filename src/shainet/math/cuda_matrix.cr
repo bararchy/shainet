@@ -796,10 +796,34 @@ module SHAInet
         end
       end
 
-      # Fallback to CUDA kernel. This kernel only supports Float64 precision,
-      # so ensure both matrices are FP64 before proceeding. Non-FP64 precisions
-      # must rely on cuDNN for bias addition, otherwise memory faults may occur.
-      unless self.precision == Precision::Fp64 && bias.precision == Precision::Fp64
+      # Fallback to CUDA kernels when cuDNN is unavailable
+      if self.precision == Precision::Fp16 && bias.precision == Precision::Fp16
+        raise RuntimeError.new("GPU add_bias! requires valid device pointers") unless (dptr = self.device_ptr) && (bptr = bias.device_ptr) && !dptr.null? && !bptr.null?
+
+        self.sync_to_device!("bias_addition") unless device_dirty?
+        bias.sync_to_device!("bias_addition") unless bias.device_dirty?
+
+        CUDA.add_bias_fp16(
+          dptr.as(UInt16Ptr),
+          bptr.as(UInt16Ptr),
+          @rows, @cols)
+
+        mark_device_dirty!
+        return self
+      elsif self.precision == Precision::Bf16 && bias.precision == Precision::Bf16
+        raise RuntimeError.new("GPU add_bias! requires valid device pointers") unless (dptr = self.device_ptr) && (bptr = bias.device_ptr) && !dptr.null? && !bptr.null?
+
+        self.sync_to_device!("bias_addition") unless device_dirty?
+        bias.sync_to_device!("bias_addition") unless bias.device_dirty?
+
+        CUDA.add_bias_bf16(
+          dptr.as(UInt16Ptr),
+          bptr.as(UInt16Ptr),
+          @rows, @cols)
+
+        mark_device_dirty!
+        return self
+      elsif !(self.precision == Precision::Fp64 && bias.precision == Precision::Fp64)
         raise "CUDA fallback for add_bias! only supports Precision::Fp64; non-FP64 precisions require cuDNN"
       end
 

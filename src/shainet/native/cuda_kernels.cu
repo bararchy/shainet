@@ -571,6 +571,36 @@ void row_sum(double* dst, const double* src, int rows, int cols) {
     }
 }
 
+template <typename T>
+__global__ void add_bias_kernel_t(T* mat, const T* bias, int rows, int cols) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if(idx >= rows * cols) return;
+    int col = idx % cols;
+    mat[idx] = Convert<T>::from_float(
+        Convert<T>::to_float(mat[idx]) + Convert<T>::to_float(bias[col])
+    );
+}
+
+void add_bias_fp16(__half* mat, const __half* bias, int rows, int cols) {
+    int threads_per_block = 256;
+    int blocks = (rows * cols + threads_per_block - 1) / threads_per_block;
+    add_bias_kernel_t<<<blocks, threads_per_block>>>(mat, bias, rows, cols);
+    cudaError_t err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        printf("CUDA Error in add_bias_fp16: %s\n", cudaGetErrorString(err));
+    }
+}
+
+void add_bias_bf16(__nv_bfloat16* mat, const __nv_bfloat16* bias, int rows, int cols) {
+    int threads_per_block = 256;
+    int blocks = (rows * cols + threads_per_block - 1) / threads_per_block;
+    add_bias_kernel_t<<<blocks, threads_per_block>>>(mat, bias, rows, cols);
+    cudaError_t err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        printf("CUDA Error in add_bias_bf16: %s\n", cudaGetErrorString(err));
+    }
+}
+
 __global__ void zero_matrix_kernel(double* matrix, int size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= size) return;
