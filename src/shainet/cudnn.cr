@@ -441,6 +441,7 @@ module SHAInet
     # Optimized softmax (for attention) with proper descriptor management
     def self.softmax_rows(input : CudaMatrix, output : CudaMatrix)
       raise "Input and output must have same dimensions" unless input.rows == output.rows && input.cols == output.cols
+      raise "Precision mismatch" unless input.precision == output.precision
 
       # Set up 4D tensor descriptors: [batch, channels, height, width] = [rows, cols, 1, 1]
       dims = [input.rows, input.cols, 1, 1]
@@ -592,6 +593,7 @@ module SHAInet
                                                      loss : Float64*, grad_output : CudaMatrix)
       raise "Predicted and target must have same dimensions" unless predicted.rows == target.rows && predicted.cols == target.cols
       raise "Gradient output must have same dimensions as predicted" unless grad_output.rows == predicted.rows && grad_output.cols == predicted.cols
+      raise "Precision mismatch" unless grad_output.precision == predicted.precision
 
       # Compute softmax of logits into grad_output
       softmax_rows(predicted, grad_output)

@@ -51,4 +51,41 @@ describe "CUDA softmax cross entropy" do
     result[:loss].should be_close(2.407605, 1e-5)
     ENV.delete("SHAINET_DISABLE_CUDA")
   end
+
+  it "raises when workspace precision mismatches" do
+    pending! "CUDA kernels not available" unless SHAInet::CUDA.fully_available?
+    logits = SHAInet::SimpleMatrix.from_a([[1.0, 2.0]], SHAInet::Precision::Fp16)
+    target = SHAInet::SimpleMatrix.from_a([[0.0, 1.0]], SHAInet::Precision::Fp16)
+    g_pred = SHAInet::GPUMemory.to_gpu(logits).as(SHAInet::CudaMatrix)
+    g_target = SHAInet::GPUMemory.to_gpu(target).as(SHAInet::CudaMatrix)
+    grad = SHAInet::CudaMatrix.new(logits.rows, logits.cols) # fp64 by default
+    loss_val = 0.0
+    expect_raises(Exception) do
+      SHAInet::CUDNN.softmax_cross_entropy_loss_and_gradient(g_pred, g_target, pointerof(loss_val), grad)
+    end
+  end
+
+  it "works when workspace precision matches" do
+    pending! "CUDA kernels not available" unless SHAInet::CUDA.fully_available?
+    logits = SHAInet::SimpleMatrix.from_a([[1.0, 2.0]], SHAInet::Precision::Fp16)
+    target = SHAInet::SimpleMatrix.from_a([[0.0, 1.0]], SHAInet::Precision::Fp16)
+    l64 = SHAInet::SimpleMatrix.new(logits.rows, logits.cols)
+    t64 = SHAInet::SimpleMatrix.new(target.rows, target.cols)
+    logits.rows.times do |i|
+      logits.cols.times do |j|
+        l64[i, j] = logits[i, j]
+        t64[i, j] = target[i, j]
+      end
+    end
+    ref = cpu_softmax_cross_entropy(l64, t64)
+
+    g_pred = SHAInet::GPUMemory.to_gpu(logits).as(SHAInet::CudaMatrix)
+    g_target = SHAInet::GPUMemory.to_gpu(target).as(SHAInet::CudaMatrix)
+    grad = SHAInet::CudaMatrix.new(logits.rows, logits.cols, precision: g_pred.precision)
+    loss_val = 0.0
+    SHAInet::CUDNN.softmax_cross_entropy_loss_and_gradient(g_pred, g_target, pointerof(loss_val), grad)
+    grad.sync_from_device!
+
+    loss_val.should be_close(ref[:loss], 1e-6)
+  end
 end
