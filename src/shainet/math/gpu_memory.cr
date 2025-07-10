@@ -59,7 +59,12 @@ module SHAInet
     def to_gpu(matrix : SimpleMatrix, dest : CudaMatrix? = nil)
       return matrix if matrix.is_a?(CudaMatrix) || !CUDA.fully_available?
 
-      target = dest || CudaMatrix.new(matrix.rows, matrix.cols, device_id: CUDA.current_device || 0)
+      target = dest || CudaMatrix.new(
+        matrix.rows,
+        matrix.cols,
+        device_id: CUDA.current_device || 0,
+        precision: matrix.precision
+      )
       to_gpu!(matrix, target)
     end
 
@@ -168,11 +173,17 @@ module SHAInet
     # Create a new matrix of the same type as the input
     def like(matrix : SimpleMatrix | CudaMatrix, rows : Int32, cols : Int32, init : Float64 = 0.0)
       if matrix.is_a?(CudaMatrix) && CUDA.fully_available?
-        result = CudaMatrix.new(rows, cols, init, device_id: matrix.device_id)
+        result = CudaMatrix.new(
+          rows,
+          cols,
+          init,
+          precision: matrix.precision,
+          device_id: matrix.device_id
+        )
         result.sync_to_device!("gpu_memory_zeros_like")
         result
       else
-        SimpleMatrix.new(rows, cols, init)
+        SimpleMatrix.new(rows, cols, init, matrix.precision)
       end
     end
 
