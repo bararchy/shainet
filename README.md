@@ -85,6 +85,14 @@ if SHAInet::CUDA.device_count > 1
 end
 ```
 
+### Raw data access
+
+`CudaMatrix#raw_data` provides the matrix values as an `Array(Float64)` for
+convenience.  When the matrix uses half precision or INT8 storage this method
+allocates and converts the data.  Use `CudaMatrix#raw_data_buffer` to obtain a
+writable slice of the underlying CPU buffer without conversion.  Functions such
+as `GPUMemory.to_gpu!` use this buffer when copying data.
+
 ### Multi-GPU Training
 
 SHAInet can train on multiple GPUs using `SHAInet::DataParallelTrainer`. Ensure
