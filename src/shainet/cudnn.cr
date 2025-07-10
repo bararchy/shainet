@@ -222,7 +222,7 @@ module SHAInet
     end
 
     # Map SHAInet precision to cuDNN data type
-    private def self.data_type_for(p : Precision)
+    def self.data_type_for(p : Precision)
       case p
       when Precision::Fp32
         LibCUDNN::CudnnDataType::CUDNN_DATA_FLOAT
@@ -238,7 +238,7 @@ module SHAInet
     end
 
     # Helper function to create 2D tensor descriptors for matrices
-    private def self.create_tensor_descriptor_2d(rows : Int32, cols : Int32, precision : Precision = Precision::Fp64)
+    def self.create_tensor_descriptor_2d(rows : Int32, cols : Int32, precision : Precision = Precision::Fp64)
       # Create the descriptor first
       CUDNN.check_status(LibCUDNN.cudnnCreateTensorDescriptor(out desc))
 
@@ -662,8 +662,8 @@ module SHAInet
       raise "Matrices must have same dimensions" unless a.rows == b.rows && a.cols == b.cols && output.rows == a.rows && output.cols == a.cols
 
       # Create OpTensor descriptor
-      op_desc = uninitialized LibCUDNN::CudnnOpTensorDescriptor
-      CUDNN.check_status(LibCUDNN.cudnnCreateOpTensorDescriptor(out op_desc))
+      op_desc = Pointer(Void).null.as(LibCUDNN::CudnnOpTensorDescriptor)
+      CUDNN.check_status(LibCUDNN.cudnnCreateOpTensorDescriptor(pointerof(op_desc)))
 
       begin
         dtype = data_type_for(output.precision)
@@ -711,7 +711,7 @@ module SHAInet
           LibCUDNN.cudnnDestroyTensorDescriptor(c_desc)
         end
       ensure
-        LibCUDNN.cudnnDestroyOpTensorDescriptor(op_desc)
+        LibCUDNN.cudnnDestroyOpTensorDescriptor(op_desc) unless op_desc.null?
       end
     end
 
@@ -754,8 +754,8 @@ module SHAInet
       raise "Matrices must have same dimensions" unless a.rows == b.rows && a.cols == b.cols && output.rows == a.rows && output.cols == a.cols
 
       # Create OpTensor descriptor
-      op_desc = uninitialized LibCUDNN::CudnnOpTensorDescriptor
-      CUDNN.check_status(LibCUDNN.cudnnCreateOpTensorDescriptor(out op_desc))
+      op_desc = Pointer(Void).null.as(LibCUDNN::CudnnOpTensorDescriptor)
+      CUDNN.check_status(LibCUDNN.cudnnCreateOpTensorDescriptor(pointerof(op_desc)))
 
       begin
         dtype = data_type_for(output.precision)
@@ -803,7 +803,7 @@ module SHAInet
           LibCUDNN.cudnnDestroyTensorDescriptor(c_desc)
         end
       ensure
-        LibCUDNN.cudnnDestroyOpTensorDescriptor(op_desc)
+        LibCUDNN.cudnnDestroyOpTensorDescriptor(op_desc) unless op_desc.null?
       end
     end
 
