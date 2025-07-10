@@ -874,18 +874,84 @@ module SHAInet
       ensure_same_device(vec)
       raise RuntimeError.new("GPU mul_row_vector! requires valid device pointers") unless (dptr = self.device_ptr) && (vptr = vec.device_ptr) && !dptr.null? && !vptr.null?
 
-      # Ensure both matrices have up-to-date GPU data
-      self.sync_to_device!("mul_row_vector") unless device_dirty?
-      vec.sync_to_device!("mul_row_vector") unless vec.device_dirty?
+      # Try precision-specific GPU implementations
+      if @precision == Precision::Fp64 && vec.precision == Precision::Fp64 && CUDA.kernels_available?
+        # Ensure both matrices have up-to-date GPU data
+        self.sync_to_device!("mul_row_vector") unless device_dirty?
+        vec.sync_to_device!("mul_row_vector") unless vec.device_dirty?
 
-      # Use GPU kernel for column-wise scaling
+        CUDA.mul_row_vector(
+          dptr.as(Pointer(Float64)),
+          vptr.as(Pointer(Float64)),
+          @rows, @cols)
 
-      CUDA.mul_row_vector(
-        dptr.as(Pointer(Float64)),
-        vptr.as(Pointer(Float64)),
-        @rows, @cols)
+        mark_device_dirty!
+        return self
+      elsif @precision.in?({Precision::Fp16, Precision::Bf16, Precision::Fp32}) &&
+            vec.precision == @precision && CUDNN.available?
+        {% if flag?(:enable_cuda) %}
+        begin
+          # Broadcast multiply using cuDNN OpTensor
+          op_desc = uninitialized LibCUDNN::CudnnOpTensorDescriptor
+          CUDNN.check_status(LibCUDNN.cudnnCreateOpTensorDescriptor(out op_desc))
 
-      # Mark result as dirty on device
+          begin
+            dtype = CUDNN.data_type_for(@precision)
+            CUDNN.check_status(LibCUDNN.cudnnSetOpTensorDescriptor(
+              op_desc,
+              LibCUDNN::CudnnOpTensorOp::CUDNN_OP_TENSOR_MUL,
+              dtype,
+              0))
+
+            mat_desc = CUDNN.create_tensor_descriptor_2d(@rows, @cols, @precision)
+            vec_desc = CUDNN.create_tensor_descriptor_2d(1, vec.cols, vec.precision)
+
+            alpha1 = 1.0
+            alpha2 = 1.0
+            beta = 0.0
+
+            self.sync_to_device!("mul_row_vector") unless device_dirty?
+            vec.sync_to_device!("mul_row_vector") unless vec.device_dirty?
+
+            CUDNN.check_status(LibCUDNN.cudnnOpTensor(
+              CUDNN.handle,
+              op_desc,
+              pointerof(alpha1).as(Pointer(Void)),
+              mat_desc,
+              dptr.as(Pointer(Void)),
+              pointerof(alpha2).as(Pointer(Void)),
+              vec_desc,
+              vptr.as(Pointer(Void)),
+              pointerof(beta).as(Pointer(Void)),
+              mat_desc,
+              dptr.as(Pointer(Void))
+            ))
+
+            mark_device_dirty!
+            return self
+          ensure
+            LibCUDNN.cudnnDestroyTensorDescriptor(mat_desc)
+            LibCUDNN.cudnnDestroyTensorDescriptor(vec_desc)
+          end
+        ensure
+          LibCUDNN.cudnnDestroyOpTensorDescriptor(op_desc)
+        end
+        {% end %}
+      end
+
+      # CPU fallback
+      self.sync_from_device!("mul_row_vector_fallback") if device_dirty?
+      vec.sync_from_device!("mul_row_vector_fallback") if vec.device_dirty?
+
+      @rows.times do |i|
+        @cols.times do |j|
+          self_val = self.unsafe_get(i, j)
+          vec_val = vec.unsafe_get(0, j)
+          self.unsafe_set(i, j, self_val * vec_val)
+        end
+      end
+
+      self.sync_to_device!("mul_row_vector_result") if CUDA.available?
       mark_device_dirty!
       self
     end
