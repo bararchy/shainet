@@ -399,7 +399,11 @@ module SHAInet
     # models consisting of an embedding layer followed by one or more
     # TransformerLayer blocks and a final Linear output layer.
     def load_from_pt(file_path : String)
-      data = PyTorchImport.load(file_path)
+      data = if File.directory?(file_path) || File.exists?(File.join(file_path, "pytorch_model.bin")) || File.exists?(File.join(File.dirname(file_path), "pytorch_model.bin.index.json"))
+               PyTorchImport.load_llama(file_path)
+             else
+               PyTorchImport.load(file_path)
+             end
       layers = data["layers"].as_a
 
       lookup = Hash(String, JSON::Any).new
@@ -472,6 +476,89 @@ module SHAInet
           b = bias.map(&.as_f)
           target.weights = SimpleMatrix.from_a(w)
           target.biases = SimpleMatrix.from_a([b])
+        end
+      elsif lookup.keys.any? { |k| k.starts_with?("model.layers.") } || lookup.keys.any? { |k| k.starts_with?("transformer.h.") }
+        emb_key = lookup["model.embed_tokens"]? || lookup["transformer.word_embeddings"]?
+        return unless emb_key
+        emb_w = emb_key["weight"].as_a
+        d_model = emb_w.first.as_a.size
+        out_key = lookup["lm_head"]?
+        out_size = out_key ? out_key["weight"].as_a.size : d_model
+
+        add_layer(:input, 1)
+        add_layer(:embedding, d_model, vocab_size: emb_w.size)
+        blocks.each do
+          add_layer(:transformer, d_model, SHAInet.swiglu)
+        end
+        add_layer(:output, out_size, activation_function: SHAInet.identity)
+        fully_connect
+
+        emb_layer = @hidden_layers.find(&.is_a?(EmbeddingLayer)).as(EmbeddingLayer)
+        emb_w.each_with_index do |row, idx|
+          row.as_a.each_with_index do |val, j|
+            emb_layer.embeddings[idx, j] = val.as_f
+          end
+        end
+
+        blocks.each_with_index do |prefix, idx|
+          t_layer = @transformer_layers[idx]
+          mha = t_layer.mha
+          if lookup["#{prefix}.attn.q_proj"]?
+            mha.w_q = SimpleMatrix.from_a(lookup["#{prefix}.attn.q_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
+            mha.w_k = SimpleMatrix.from_a(lookup["#{prefix}.attn.k_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
+            mha.w_v = SimpleMatrix.from_a(lookup["#{prefix}.attn.v_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
+            mha.w_o = SimpleMatrix.from_a(lookup["#{prefix}.attn.o_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
+          elsif lookup["#{prefix}.self_attention.query_key_value"]?
+            qkv = lookup["#{prefix}.self_attention.query_key_value"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }
+            rows = qkv.size // 3
+            w_q = qkv[0, rows]
+            w_k = qkv[rows, rows]
+            w_v = qkv[rows*2, rows]
+            mha.w_q = SimpleMatrix.from_a(w_q).transpose
+            mha.w_k = SimpleMatrix.from_a(w_k).transpose
+            mha.w_v = SimpleMatrix.from_a(w_v).transpose
+            mha.w_o = SimpleMatrix.from_a(lookup["#{prefix}.self_attention.dense"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
+          end
+
+          ffn = t_layer.ffn
+          if lookup["#{prefix}.mlp.gate_proj"]?
+            gate = lookup["#{prefix}.mlp.gate_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }
+            up = lookup["#{prefix}.mlp.up_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }
+            down = lookup["#{prefix}.mlp.down_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }
+            w1 = gate.zip(up).map { |g,u| g + u }
+            ffn.w1 = SimpleMatrix.from_a(w1).transpose
+            ffn.w2 = SimpleMatrix.from_a(down).transpose
+            ffn.b1 = SimpleMatrix.zeros(1, w1.first.size)
+            ffn.b2 = SimpleMatrix.zeros(1, down.size)
+          else
+            ffn.w1 = SimpleMatrix.from_a(lookup["#{prefix}.mlp.dense_h_to_4h"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
+            ffn.w2 = SimpleMatrix.from_a(lookup["#{prefix}.mlp.dense_4h_to_h"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
+            ffn.b1 = SimpleMatrix.from_a([lookup["#{prefix}.mlp.dense_h_to_4h"]["bias"].as_a.map(&.as_f)]) if lookup["#{prefix}.mlp.dense_h_to_4h"]["bias"]?
+            ffn.b2 = SimpleMatrix.from_a([lookup["#{prefix}.mlp.dense_4h_to_h"]["bias"].as_a.map(&.as_f)]) if lookup["#{prefix}.mlp.dense_4h_to_h"]["bias"]?
+          end
+
+          n1 = t_layer.norm1
+          if lookup["#{prefix}.input_layernorm"]?
+            n1.gamma = SimpleMatrix.from_a([lookup["#{prefix}.input_layernorm"]["weight"].as_a.map(&.as_f)])
+          elsif lookup["#{prefix}.ln_attn"]?
+            n1.gamma = SimpleMatrix.from_a([lookup["#{prefix}.ln_attn"]["weight"].as_a.map(&.as_f)])
+          end
+          n1.beta = SimpleMatrix.zeros(1, n1.gamma.cols)
+          n2 = t_layer.norm2
+          if lookup["#{prefix}.post_attention_layernorm"]?
+            n2.gamma = SimpleMatrix.from_a([lookup["#{prefix}.post_attention_layernorm"]["weight"].as_a.map(&.as_f)])
+          elsif lookup["#{prefix}.ln_mlp"]?
+            n2.gamma = SimpleMatrix.from_a([lookup["#{prefix}.ln_mlp"]["weight"].as_a.map(&.as_f)])
+          end
+          n2.beta = SimpleMatrix.zeros(1, n2.gamma.cols)
+        end
+
+        if out_key
+          weights = out_key["weight"].as_a
+          target = @output_layers.first
+          w = weights.map { |r| r.as_a.map(&.as_f) }
+          target.weights = SimpleMatrix.from_a(w)
+          target.biases = SimpleMatrix.zeros(1, w.size)
         end
       else
         # Sequential linear model
