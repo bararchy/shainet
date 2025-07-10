@@ -17,7 +17,8 @@ if len(sys.argv) < 2:
 
 model_path = sys.argv[1]
 
-model = AutoModelForCausalLM.from_pretrained(model_path, device_map="cpu")
+# Load weights on CPU without requiring the accelerate package.
+model = AutoModelForCausalLM.from_pretrained(model_path)
 state = model.state_dict()
 
 keys = list(state.keys())

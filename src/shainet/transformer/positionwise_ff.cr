@@ -410,6 +410,12 @@ module SHAInet
       end
     end
 
+    # Public helper to refresh cached transpose matrices when weights are
+    # replaced externally (e.g., during model import).
+    def refresh_transposes!
+      update_transposes
+    end
+
     private def activation_grad(m : CudaMatrix, grad : CudaMatrix, dest : CudaMatrix) : CudaMatrix
       raise ArgumentError.new("size mismatch") unless grad.rows == dest.rows && grad.cols == dest.cols
       case @activation_function
