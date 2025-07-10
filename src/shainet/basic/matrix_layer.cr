@@ -379,7 +379,23 @@ module SHAInet
 
       w_cuda = @weights.as(CudaMatrix)
       w_cuda.weight_update!(@g_w.as(CudaMatrix), learning_rate)
-      w_cuda.scale!(1.0 - weight_decay) if weight_decay != 0.0
+      if weight_decay != 0.0
+        if w_cuda.precision == Precision::Fp64
+          w_cuda.scale!(1.0 - weight_decay)
+        else
+          # CPU fallback for precisions lacking cuBLAS scal
+          w_cuda.sync_from_device!("weight_decay") if w_cuda.device_dirty?
+          factor = 1.0 - weight_decay
+          w_cuda.rows.times do |i|
+            w_cuda.cols.times do |j|
+              val = w_cuda.unsafe_get(i, j) * factor
+              w_cuda.unsafe_set(i, j, val)
+            end
+          end
+          w_cuda.sync_to_device!("weight_decay_result") if CUDA.fully_available?
+          w_cuda.mark_device_dirty!
+        end
+      end
       @biases.as(CudaMatrix).weight_update!(@g_b.as(CudaMatrix), learning_rate)
     end
 
