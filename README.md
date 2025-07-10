@@ -207,6 +207,14 @@ net.train(
 )
 ```
 
+### Saving on Exit
+
+Install handlers that save the network when `SIGINT` or `SIGTERM` are received:
+
+```crystal
+net.enable_exit_save("model_on_exit.nn")
+```
+
 ### INT8 Quantization
 
 Convert a trained network to use INT8 weights for faster inference:

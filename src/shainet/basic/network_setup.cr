@@ -46,6 +46,7 @@ module SHAInet
     property decay_type : Symbol?
     property decay_rate : Float64
     property decay_step : Int32
+    property exit_save_path : String?
     # Map of destination layer index to array of source layer indices for residual connections
     getter :residual_edges
 
@@ -98,6 +99,8 @@ module SHAInet
       @batch_out_ws = nil
       @batch_grad_ws = nil
       @residual_edges = {} of Int32 => Array(Int32)
+      @exit_save_path = nil
+      @exit_traps_installed = false
     end
 
     # Create and populate a layer
@@ -343,9 +346,9 @@ module SHAInet
       if dt = data["decay_type"]?
         str = dt.as_s
         @decay_type = case str
-                      when "step" then :step
+                      when "step"               then :step
                       when "exp", "exponential" then :exp
-                      else nil
+                      else                           nil
                       end
       end
       if dr = data["decay_rate"]?
