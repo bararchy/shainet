@@ -17,6 +17,8 @@ module SHAInet
     property mask : SimpleMatrix | CudaMatrix | Nil
     # KV cache for autoregressive generation
     property kv_cache : KVCache | Nil
+    # Optional rotary frequencies for RoPE
+    property rotary_freqs : SimpleMatrix | CudaMatrix | Nil
 
     def initialize(d_model : Int32, num_heads : Int32, ff_hidden : Int32,
                    drop_percent : Int32 = 0, pre_norm : Bool = false,
@@ -31,6 +33,7 @@ module SHAInet
       @pre_norm = pre_norm
       @mask = nil
       @kv_cache = nil
+      @rotary_freqs = nil
     end
 
     # Convert all internal matrices to GPU
@@ -43,6 +46,9 @@ module SHAInet
         if pe = @positional_encoding
           @positional_encoding = pe.is_a?(CudaMatrix) ? pe : pe.to_cuda
         end
+        if rf = @rotary_freqs
+          @rotary_freqs = rf.is_a?(CudaMatrix) ? rf : rf.to_cuda
+        end
         # Clear any existing cache when switching devices
         @kv_cache = nil
         super
@@ -50,7 +56,7 @@ module SHAInet
     end
 
     # GPU path - all CudaMatrix operations
-    def forward(x : CudaMatrix, pe : CudaMatrix | Nil = nil, mask : CudaMatrix | Nil = nil) : CudaMatrix
+    def forward(x : CudaMatrix, pe : CudaMatrix | Nil = nil, mask : CudaMatrix | Nil = nil, rotary_freqs : CudaMatrix | Nil = nil) : CudaMatrix
       mask ||= @mask
       input = if enc = (pe || (@positional_encoding ? @positional_encoding.as(CudaMatrix) : nil))
                 # Check dimensions and provide better error message
@@ -76,11 +82,11 @@ module SHAInet
         normed_in = @norm1.forward(input).as(CudaMatrix)
         attn_mask = mask.as?(CudaMatrix)
         attn = if use_cache
-                 out, cache = @mha.forward(normed_in, attn_mask, @kv_cache.not_nil!, 0)
+                 out, cache = @mha.forward(normed_in, attn_mask, @kv_cache.not_nil!, 0, rotary_freqs || @rotary_freqs.as?(CudaMatrix))
                  @kv_cache = cache
                  out
                else
-                 @mha.forward(normed_in, attn_mask)
+                 @mha.forward(normed_in, attn_mask, rotary_freqs || @rotary_freqs.as?(CudaMatrix))
                end
         TransformerDropout.apply!(attn, @drop_percent) if @drop_percent > 0
         attn.add!(input)
@@ -92,11 +98,11 @@ module SHAInet
       else
         attn_mask = mask.as?(CudaMatrix)
         attn = if use_cache
-                 out, cache = @mha.forward(input, attn_mask, @kv_cache.not_nil!, 0)
+                 out, cache = @mha.forward(input, attn_mask, @kv_cache.not_nil!, 0, rotary_freqs || @rotary_freqs.as?(CudaMatrix))
                  @kv_cache = cache
                  out
                else
-                 @mha.forward(input, attn_mask)
+                 @mha.forward(input, attn_mask, rotary_freqs || @rotary_freqs.as?(CudaMatrix))
                end
         TransformerDropout.apply!(attn, @drop_percent) if @drop_percent > 0
         attn.add!(input)
@@ -109,7 +115,7 @@ module SHAInet
     end
 
     # CPU path - all SimpleMatrix operations
-    def forward(x : SimpleMatrix, pe : SimpleMatrix | Nil = nil, mask : SimpleMatrix | Nil = nil) : SimpleMatrix
+    def forward(x : SimpleMatrix, pe : SimpleMatrix | Nil = nil, mask : SimpleMatrix | Nil = nil, rotary_freqs : SimpleMatrix | Nil = nil) : SimpleMatrix
       mask ||= @mask
       input = if enc = (pe || (@positional_encoding ? @positional_encoding.as(SimpleMatrix) : nil))
                 # Check dimensions and provide better error message
@@ -136,11 +142,11 @@ module SHAInet
         normed_in = @norm1.forward(input).as(SimpleMatrix)
         attn_mask = mask.as?(SimpleMatrix)
         attn = if use_cache
-                 out, cache = @mha.forward(normed_in, attn_mask, @kv_cache.not_nil!, 0)
+                 out, cache = @mha.forward(normed_in, attn_mask, @kv_cache.not_nil!, 0, rotary_freqs || @rotary_freqs.as?(SimpleMatrix))
                  @kv_cache = cache
                  out
                else
-                 @mha.forward(normed_in, attn_mask)
+                 @mha.forward(normed_in, attn_mask, rotary_freqs || @rotary_freqs.as?(SimpleMatrix))
                end
         TransformerDropout.apply!(attn, @drop_percent) if @drop_percent > 0
         attn.add!(input)
@@ -152,11 +158,11 @@ module SHAInet
       else
         attn_mask = mask.as?(SimpleMatrix)
         attn = if use_cache
-                 out, cache = @mha.forward(input, attn_mask, @kv_cache.not_nil!, 0)
+                 out, cache = @mha.forward(input, attn_mask, @kv_cache.not_nil!, 0, rotary_freqs || @rotary_freqs.as?(SimpleMatrix))
                  @kv_cache = cache
                  out
                else
-                 @mha.forward(input, attn_mask)
+                 @mha.forward(input, attn_mask, rotary_freqs || @rotary_freqs.as?(SimpleMatrix))
                end
         TransformerDropout.apply!(attn, @drop_percent) if @drop_percent > 0
         attn.add!(input)
