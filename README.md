@@ -19,6 +19,8 @@ SHAInet (Super Human Artificial Intelligence Network) is a neural network librar
 - Supports INT8 quantization for efficient inference
 - Enable half precision by setting `net.precision = SHAInet::Precision::Fp16`
   or `SHAInet::Precision::Bf16`.
+  Weights are stored as Float16/BFloat16 while calculations accumulate in
+  Float32 for stability.
 
 ---
 
@@ -38,6 +40,7 @@ dependencies:
 - SHAInet will auto-detect CUDA and use GPU acceleration if available.
 - For cuDNN support, ensure `libcudnn.so` is also in your `LD_LIBRARY_PATH`.
 - Compile the project with `-Denable_cuda`
+- Mixed precision on GPU requires CUDA 7.0 or later (or a compatible runtime).
 
 Check CUDA availability:
 
@@ -91,6 +94,7 @@ data = [
 ]
 
 net = SHAInet::Network.new
+net.precision = SHAInet::Precision::Fp16 # half precision weights with float32 accumulations
 net.add_layer(:input, 2)
 net.add_layer(:hidden, 2)
 net.add_layer(:output, 1)
@@ -112,6 +116,7 @@ data = SHAInet::Data.new_with_csv_input_target("iris.csv", 0..3, 4)
 train, test = data.split(0.67)
 
 iris = SHAInet::Network.new
+iris.precision = SHAInet::Precision::Bf16 # half precision weights with float32 accumulations
 iris.add_layer(:input, 4)
 iris.add_layer(:hidden, 5)
 iris.add_layer(:output, 3)
