@@ -19,6 +19,14 @@ struct Convert<__nv_bfloat16> {
     __device__ static __nv_bfloat16 from_float(float v) { return __float2bfloat16(v); }
 };
 
+template <typename T>
+__global__ void scale_kernel_t(T* data, float alpha, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if(idx >= size) return;
+    float v = Convert<T>::to_float(data[idx]);
+    data[idx] = Convert<T>::from_float(v * alpha);
+}
+
 // Device kernels
 // Simple row-wise softmax kernel. This version runs one thread per row and
 // performs the computation sequentially. It uses the row maximum for numerical
@@ -708,14 +716,6 @@ void element_log(double* out, const double* in, int size) {
     if (err != cudaSuccess) {
         printf("CUDA Error in element_log: %s\n", cudaGetErrorString(err));
     }
-}
-
-template <typename T>
-__global__ void scale_kernel_t(T* data, float alpha, int size) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if(idx >= size) return;
-    float v = Convert<T>::to_float(data[idx]);
-    data[idx] = Convert<T>::from_float(v * alpha);
 }
 
 void scale_fp16(__half* data, float alpha, int size) {
