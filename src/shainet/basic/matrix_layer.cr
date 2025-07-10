@@ -377,26 +377,40 @@ module SHAInet
       # W := W - lr * ∂L/∂W - weight_decay * W
       # b := b - lr * ∂L/∂b
 
-      w_cuda = @weights.as(CudaMatrix)
-      w_cuda.weight_update!(@g_w.as(CudaMatrix), learning_rate)
-      if weight_decay != 0.0
-        if w_cuda.precision == Precision::Fp64
-          w_cuda.scale!(1.0 - weight_decay)
-        else
-          # CPU fallback for precisions lacking cuBLAS scal
-          w_cuda.sync_from_device!("weight_decay") if w_cuda.device_dirty?
-          factor = 1.0 - weight_decay
-          w_cuda.rows.times do |i|
-            w_cuda.cols.times do |j|
-              val = w_cuda.unsafe_get(i, j) * factor
-              w_cuda.unsafe_set(i, j, val)
+      if @precision.in?({Precision::Fp16, Precision::Bf16})
+        master = @master_weights.as(CudaMatrix)
+        gw_f32 = convert_matrix_precision(@g_w.as(CudaMatrix), Precision::Fp32).as(CudaMatrix)
+        master.weight_update!(gw_f32, learning_rate)
+        master.scale!(1.0 - weight_decay) if weight_decay != 0.0
+        @master_weights = master
+        @weights = convert_matrix_precision(master, @precision)
+
+        b_f32 = convert_matrix_precision(@biases.as(CudaMatrix), Precision::Fp32).as(CudaMatrix)
+        gb_f32 = convert_matrix_precision(@g_b.as(CudaMatrix), Precision::Fp32).as(CudaMatrix)
+        b_f32.weight_update!(gb_f32, learning_rate)
+        @biases = convert_matrix_precision(b_f32, @precision)
+      else
+        w_cuda = @weights.as(CudaMatrix)
+        w_cuda.weight_update!(@g_w.as(CudaMatrix), learning_rate)
+        if weight_decay != 0.0
+          if w_cuda.precision == Precision::Fp64
+            w_cuda.scale!(1.0 - weight_decay)
+          else
+            # CPU fallback for precisions lacking cuBLAS scal
+            w_cuda.sync_from_device!("weight_decay") if w_cuda.device_dirty?
+            factor = 1.0 - weight_decay
+            w_cuda.rows.times do |i|
+              w_cuda.cols.times do |j|
+                val = w_cuda.unsafe_get(i, j) * factor
+                w_cuda.unsafe_set(i, j, val)
+              end
             end
+            w_cuda.sync_to_device!("weight_decay_result") if CUDA.fully_available?
+            w_cuda.mark_device_dirty!
           end
-          w_cuda.sync_to_device!("weight_decay_result") if CUDA.fully_available?
-          w_cuda.mark_device_dirty!
         end
+        @biases.as(CudaMatrix).weight_update!(@g_b.as(CudaMatrix), learning_rate)
       end
-      @biases.as(CudaMatrix).weight_update!(@g_b.as(CudaMatrix), learning_rate)
     end
 
     # CPU path weight update - all SimpleMatrix operations
