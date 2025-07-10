@@ -75,6 +75,13 @@ module SHAInet
       end
     end
 
+    private def compute_in_f32?(other_precision : Precision? = nil)
+      p1 = @precision
+      p2 = other_precision || @precision
+      return false if p1 == Precision::Fp64 && p2 == Precision::Fp64
+      true
+    end
+
     def self.gpu_memory_stats
       {
         active_matrices:       @@active_matrices,
@@ -1249,9 +1256,13 @@ module SHAInet
 
       handle = CUDA.create_handle
       begin
-        if a.precision == b.precision && a.precision == self.precision &&
-           (a.precision == Precision::Fp16 || a.precision == Precision::Bf16) &&
-           CUDA.gemm_ex_available?
+        if a.precision != b.precision || a.precision != self.precision
+          raise ArgumentError.new("precision mismatch for GEMM")
+        end
+
+        if (a.precision == Precision::Fp16 ||
+           a.precision == Precision::Bf16 ||
+           a.precision == Precision::Fp32) && CUDA.gemm_ex_available?
           dtype = CUDA.data_type_for(a.precision)
           compute = CUDA.compute_type_for(a.precision)
           CUDA.gemm_ex(handle,
@@ -1260,20 +1271,31 @@ module SHAInet
             b.cols, a.cols, @cols,
             dtype, dtype, dtype,
             compute)
-        elsif a.precision == b.precision && a.precision == self.precision &&
-              (a.precision == Precision::Fp16 || a.precision == Precision::Bf16)
+        elsif a.precision == Precision::Fp16 ||
+              a.precision == Precision::Bf16 ||
+              a.precision == Precision::Fp32
           # CPU fallback when gemmEx is unavailable
           self.sync_from_device!("gemm_fallback") if device_dirty?
           a.sync_from_device!("gemm_fallback") if a.device_dirty?
           b.sync_from_device!("gemm_fallback") if b.device_dirty?
+          use_f32 = compute_in_f32?(a.precision) || compute_in_f32?(b.precision)
           @rows.times do |i|
             @cols.times do |j|
-              sum = 0.0
-              a.cols.times do |k|
-                sum += a.unsafe_get(i, k) * b.unsafe_get(k, j)
+              if use_f32
+                sum = 0.0_f32
+                a.cols.times do |k|
+                  sum += a.unsafe_get(i, k).to_f32 * b.unsafe_get(k, j).to_f32
+                end
+                val = alpha.to_f32 * sum + beta.to_f32 * self.unsafe_get(i, j).to_f32
+                self.unsafe_set(i, j, val.to_f64)
+              else
+                sum = 0.0
+                a.cols.times do |k|
+                  sum += a.unsafe_get(i, k) * b.unsafe_get(k, j)
+                end
+                val = alpha * sum + beta * self.unsafe_get(i, j)
+                self.unsafe_set(i, j, val)
               end
-              val = alpha * sum + beta * self.unsafe_get(i, j)
-              self.unsafe_set(i, j, val)
             end
           end
           self.sync_to_device!("gemm_fallback_result")
