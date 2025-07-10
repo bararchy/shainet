@@ -1,6 +1,23 @@
 #include <curand_kernel.h>
 #include <cstdio>
 #include <math.h>
+#include <cuda_fp16.h>
+#include <cuda_bf16.h>
+
+template <typename T>
+struct Convert;
+
+template <>
+struct Convert<__half> {
+    __device__ static float to_float(__half v) { return __half2float(v); }
+    __device__ static __half from_float(float v) { return __float2half(v); }
+};
+
+template <>
+struct Convert<__nv_bfloat16> {
+    __device__ static float to_float(__nv_bfloat16 v) { return __bfloat162float(v); }
+    __device__ static __nv_bfloat16 from_float(float v) { return __float2bfloat16(v); }
+};
 
 // Device kernels
 // Simple row-wise softmax kernel. This version runs one thread per row and
@@ -34,6 +51,33 @@ __global__ void softmax_rows_kernel(double* out, const double* in, int rows, int
     }
 }
 
+template <typename T>
+__global__ void softmax_rows_kernel_t(T* out, const T* in, int rows, int cols) {
+    int row = blockIdx.x;
+    if (row >= rows) return;
+
+    const T* row_in = in + row * cols;
+    T* row_out = out + row * cols;
+
+    float max_val = Convert<T>::to_float(row_in[0]);
+    for (int j = 1; j < cols; ++j) {
+        float v = Convert<T>::to_float(row_in[j]);
+        if (v > max_val) max_val = v;
+    }
+
+    float sum = 0.0f;
+    for (int j = 0; j < cols; ++j) {
+        float e = expf(Convert<T>::to_float(row_in[j]) - max_val);
+        row_out[j] = Convert<T>::from_float(e);
+        sum += e;
+    }
+
+    for (int j = 0; j < cols; ++j) {
+        float val = Convert<T>::to_float(row_out[j]) / sum;
+        row_out[j] = Convert<T>::from_float(val);
+    }
+}
+
 __global__ void relu_backward_kernel(double* output, const double* input, const double* grad, int size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= size) return;
@@ -48,6 +92,22 @@ void softmax_rows(double* out, const double* in, int rows, int cols) {
     cudaError_t err = cudaDeviceSynchronize();
     if (err != cudaSuccess) {
         printf("CUDA Error in softmax_rows: %s\n", cudaGetErrorString(err));
+    }
+}
+
+void softmax_rows_fp16(__half* out, const __half* in, int rows, int cols) {
+    softmax_rows_kernel_t<<<rows, 1>>>(out, in, rows, cols);
+    cudaError_t err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        printf("CUDA Error in softmax_rows_fp16: %s\n", cudaGetErrorString(err));
+    }
+}
+
+void softmax_rows_bf16(__nv_bfloat16* out, const __nv_bfloat16* in, int rows, int cols) {
+    softmax_rows_kernel_t<<<rows, 1>>>(out, in, rows, cols);
+    cudaError_t err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        printf("CUDA Error in softmax_rows_bf16: %s\n", cudaGetErrorString(err));
     }
 }
 
@@ -75,11 +135,41 @@ __global__ void dropout_kernel(double* out, const double* in, int rows, int cols
     }
 }
 
+template <typename T>
+__global__ void dropout_kernel_t(T* out, const T* in, int rows, int cols, float drop_p, unsigned long long seed) {
+    int row = blockIdx.x;
+    if(row >= rows) return;
+    curandState state;
+    curand_init(seed + row, 0, 0, &state);
+    const T* row_in = in + row * cols;
+    T* row_out = out + row * cols;
+    for(int j=0;j<cols;++j){
+        float r = curand_uniform(&state);
+        row_out[j] = r < drop_p ? Convert<T>::from_float(0.0f) : row_in[j];
+    }
+}
+
 void dropout(double* out, const double* in, int rows, int cols, double drop_p, unsigned long long seed) {
     dropout_kernel<<<rows, 1>>>(out, in, rows, cols, drop_p, seed);
     cudaError_t err = cudaDeviceSynchronize();
     if (err != cudaSuccess) {
         printf("CUDA Error in dropout: %s\n", cudaGetErrorString(err));
+    }
+}
+
+void dropout_fp16(__half* out, const __half* in, int rows, int cols, double drop_p, unsigned long long seed) {
+    dropout_kernel_t<<<rows,1>>>(out, in, rows, cols, (float)drop_p, seed);
+    cudaError_t err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        printf("CUDA Error in dropout_fp16: %s\n", cudaGetErrorString(err));
+    }
+}
+
+void dropout_bf16(__nv_bfloat16* out, const __nv_bfloat16* in, int rows, int cols, double drop_p, unsigned long long seed) {
+    dropout_kernel_t<<<rows,1>>>(out, in, rows, cols, (float)drop_p, seed);
+    cudaError_t err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        printf("CUDA Error in dropout_bf16: %s\n", cudaGetErrorString(err));
     }
 }
 
@@ -94,8 +184,30 @@ __global__ void gather_rows_kernel(double* out, const double* in, const int* ids
     }
 }
 
+template <typename T>
+__global__ void gather_rows_kernel_t(T* out, const T* in, const int* ids, int rows, int cols) {
+    int row = blockIdx.x;
+    if(row >= rows) return;
+    int id = ids[row];
+    const T *row_in = in + id * cols;
+    T *row_out = out + row * cols;
+    for(int j=0;j<cols;++j){
+        row_out[j] = row_in[j];
+    }
+}
+
 void gather_rows(double* out, const double* in, const int* ids, int rows, int cols) {
     gather_rows_kernel<<<rows, 1>>>(out, in, ids, rows, cols);
+    cudaDeviceSynchronize();
+}
+
+void gather_rows_fp16(__half* out, const __half* in, const int* ids, int rows, int cols) {
+    gather_rows_kernel_t<<<rows,1>>>(out, in, ids, rows, cols);
+    cudaDeviceSynchronize();
+}
+
+void gather_rows_bf16(__nv_bfloat16* out, const __nv_bfloat16* in, const int* ids, int rows, int cols) {
+    gather_rows_kernel_t<<<rows,1>>>(out, in, ids, rows, cols);
     cudaDeviceSynchronize();
 }
 
@@ -116,8 +228,36 @@ __global__ void row_mean_var_kernel(const double* in, double* mean, double* var,
     var[row] = sq_sum / cols - m*m;
 }
 
+template <typename T>
+__global__ void row_mean_var_kernel_t(const T* in, float* mean, float* var,
+                                      int rows, int cols) {
+    int row = blockIdx.x;
+    if(row >= rows) return;
+    const T *row_in = in + row * cols;
+    float sum = 0.0f;
+    float sq_sum = 0.0f;
+    for(int j=0;j<cols;++j){
+        float v = Convert<T>::to_float(row_in[j]);
+        sum += v;
+        sq_sum += v*v;
+    }
+    float m = sum / cols;
+    mean[row] = m;
+    var[row] = sq_sum / cols - m*m;
+}
+
 void row_mean_var(const double* in, double* mean, double* var, int rows, int cols) {
     row_mean_var_kernel<<<rows, 1>>>(in, mean, var, rows, cols);
+    cudaDeviceSynchronize();
+}
+
+void row_mean_var_fp16(const __half* in, float* mean, float* var, int rows, int cols) {
+    row_mean_var_kernel_t<<<rows,1>>>(in, mean, var, rows, cols);
+    cudaDeviceSynchronize();
+}
+
+void row_mean_var_bf16(const __nv_bfloat16* in, float* mean, float* var, int rows, int cols) {
+    row_mean_var_kernel_t<<<rows,1>>>(in, mean, var, rows, cols);
     cudaDeviceSynchronize();
 }
 
@@ -135,10 +275,40 @@ __global__ void apply_layer_norm_kernel(double* out, const double* in,
     }
 }
 
+template <typename T>
+__global__ void apply_layer_norm_kernel_t(T* out, const T* in,
+                                          const float* mean, const float* var,
+                                          int rows, int cols, float epsilon) {
+    int row = blockIdx.x;
+    if(row >= rows) return;
+    const T *row_in = in + row * cols;
+    T *row_out = out + row * cols;
+    float m = mean[row];
+    float denom = sqrtf(var[row] + epsilon);
+    for(int j=0;j<cols;++j){
+        float v = Convert<T>::to_float(row_in[j]);
+        row_out[j] = Convert<T>::from_float((v - m) / denom);
+    }
+}
+
 void apply_layer_norm(double* out, const double* in,
                       const double* mean, const double* var,
                       int rows, int cols, double epsilon) {
     apply_layer_norm_kernel<<<rows, 1>>>(out, in, mean, var, rows, cols, epsilon);
+    cudaDeviceSynchronize();
+}
+
+void apply_layer_norm_fp16(__half* out, const __half* in,
+                           const float* mean, const float* var,
+                           int rows, int cols, float epsilon) {
+    apply_layer_norm_kernel_t<<<rows,1>>>(out, in, mean, var, rows, cols, epsilon);
+    cudaDeviceSynchronize();
+}
+
+void apply_layer_norm_bf16(__nv_bfloat16* out, const __nv_bfloat16* in,
+                           const float* mean, const float* var,
+                           int rows, int cols, float epsilon) {
+    apply_layer_norm_kernel_t<<<rows,1>>>(out, in, mean, var, rows, cols, epsilon);
     cudaDeviceSynchronize();
 }
 

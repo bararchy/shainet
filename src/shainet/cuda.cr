@@ -5,6 +5,10 @@ module SHAInet
     Log = ::Log.for(self)
     extend self
 
+    {% if flag?(:cuda_fp16) || flag?(:cuda_bf16) %}
+      alias UInt16Ptr = Pointer(UInt16)
+    {% end %}
+
     # :nodoc:
     @[Link("cudart")]
     lib LibCUDARuntime
@@ -416,12 +420,42 @@ module SHAInet
     # These methods dynamically load from libshainet_cuda_kernels.so when available
     @@kernels_handle : Pointer(Void) = Pointer(Void).null
     @@softmax_rows_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
+    {% if flag?(:cuda_fp16) %}
+      @@softmax_rows_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Void)? = nil
+    {% end %}
+    {% if flag?(:cuda_bf16) %}
+      @@softmax_rows_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Void)? = nil
+    {% end %}
     @@dropout_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Float64, UInt64, Void)? = nil
+    {% if flag?(:cuda_fp16) %}
+      @@dropout_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Float64, UInt64, Void)? = nil
+    {% end %}
+    {% if flag?(:cuda_bf16) %}
+      @@dropout_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Float64, UInt64, Void)? = nil
+    {% end %}
     @@gather_rows_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Int32), Int32, Int32, Void)? = nil
+    {% if flag?(:cuda_fp16) %}
+      @@gather_rows_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Pointer(Int32), Int32, Int32, Void)? = nil
+    {% end %}
+    {% if flag?(:cuda_bf16) %}
+      @@gather_rows_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Pointer(Int32), Int32, Int32, Void)? = nil
+    {% end %}
     @@slice_cols_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Int32, Int32, Void)? = nil
     @@set_cols_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Int32, Int32, Void)? = nil
     @@row_mean_var_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
+    {% if flag?(:cuda_fp16) %}
+      @@row_mean_var_fp16_proc : Proc(Pointer(UInt16), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
+    {% end %}
+    {% if flag?(:cuda_bf16) %}
+      @@row_mean_var_bf16_proc : Proc(Pointer(UInt16), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
+    {% end %}
     @@layer_norm_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Int32, Float64, Void)? = nil
+    {% if flag?(:cuda_fp16) %}
+      @@layer_norm_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Pointer(Float32), Pointer(Float32), Int32, Int32, Float32, Void)? = nil
+    {% end %}
+    {% if flag?(:cuda_bf16) %}
+      @@layer_norm_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Pointer(Float32), Pointer(Float32), Int32, Int32, Float32, Void)? = nil
+    {% end %}
     @@layer_norm_backward_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Int32, Float64, Void)? = nil
     @@sum_cols_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
     @@mul_row_vector_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
@@ -470,6 +504,44 @@ module SHAInet
       end
     end
 
+    {% if flag?(:cuda_fp16) %}
+      def softmax_rows_fp16(dst : UInt16Ptr, src : UInt16Ptr, rows : Int32, cols : Int32)
+        unless fn = @@softmax_rows_fp16_proc
+          if @@kernels_handle.null?
+            @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+          end
+          unless @@kernels_handle.null?
+            sym = LibC.dlsym(@@kernels_handle, "softmax_rows_fp16")
+            unless sym.null?
+              @@softmax_rows_fp16_proc = Proc(UInt16Ptr, UInt16Ptr, Int32, Int32, Void).new(sym, Pointer(Void).null)
+              fn = @@softmax_rows_fp16_proc
+            end
+          end
+        end
+        raise "CUDA kernels not available" unless fn
+        fn.call(dst, src, rows, cols)
+      end
+    {% end %}
+
+    {% if flag?(:cuda_bf16) %}
+      def softmax_rows_bf16(dst : UInt16Ptr, src : UInt16Ptr, rows : Int32, cols : Int32)
+        unless fn = @@softmax_rows_bf16_proc
+          if @@kernels_handle.null?
+            @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+          end
+          unless @@kernels_handle.null?
+            sym = LibC.dlsym(@@kernels_handle, "softmax_rows_bf16")
+            unless sym.null?
+              @@softmax_rows_bf16_proc = Proc(UInt16Ptr, UInt16Ptr, Int32, Int32, Void).new(sym, Pointer(Void).null)
+              fn = @@softmax_rows_bf16_proc
+            end
+          end
+        end
+        raise "CUDA kernels not available" unless fn
+        fn.call(dst, src, rows, cols)
+      end
+    {% end %}
+
     def dropout(dst : Pointer(Float64), src : Pointer(Float64), rows : Int32, cols : Int32, drop_p : Float64, seed : UInt64)
       unless fn = @@dropout_proc
         if @@kernels_handle.null?
@@ -487,6 +559,44 @@ module SHAInet
       fn.call(dst, src, rows, cols, drop_p, seed)
     end
 
+    {% if flag?(:cuda_fp16) %}
+      def dropout_fp16(dst : UInt16Ptr, src : UInt16Ptr, rows : Int32, cols : Int32, drop_p : Float64, seed : UInt64)
+        unless fn = @@dropout_fp16_proc
+          if @@kernels_handle.null?
+            @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+          end
+          unless @@kernels_handle.null?
+            sym = LibC.dlsym(@@kernels_handle, "dropout_fp16")
+            unless sym.null?
+              @@dropout_fp16_proc = Proc(UInt16Ptr, UInt16Ptr, Int32, Int32, Float64, UInt64, Void).new(sym, Pointer(Void).null)
+              fn = @@dropout_fp16_proc
+            end
+          end
+        end
+        raise "CUDA kernels not available" unless fn
+        fn.call(dst, src, rows, cols, drop_p, seed)
+      end
+    {% end %}
+
+    {% if flag?(:cuda_bf16) %}
+      def dropout_bf16(dst : UInt16Ptr, src : UInt16Ptr, rows : Int32, cols : Int32, drop_p : Float64, seed : UInt64)
+        unless fn = @@dropout_bf16_proc
+          if @@kernels_handle.null?
+            @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+          end
+          unless @@kernels_handle.null?
+            sym = LibC.dlsym(@@kernels_handle, "dropout_bf16")
+            unless sym.null?
+              @@dropout_bf16_proc = Proc(UInt16Ptr, UInt16Ptr, Int32, Int32, Float64, UInt64, Void).new(sym, Pointer(Void).null)
+              fn = @@dropout_bf16_proc
+            end
+          end
+        end
+        raise "CUDA kernels not available" unless fn
+        fn.call(dst, src, rows, cols, drop_p, seed)
+      end
+    {% end %}
+
     def gather_rows(dst : Pointer(Float64), src : Pointer(Float64), ids : Pointer(Int32), rows : Int32, cols : Int32)
       unless fn = @@gather_rows_proc
         if @@kernels_handle.null?
@@ -503,6 +613,44 @@ module SHAInet
       raise "CUDA kernels not available" unless fn
       fn.call(dst, src, ids, rows, cols)
     end
+
+    {% if flag?(:cuda_fp16) %}
+      def gather_rows_fp16(dst : UInt16Ptr, src : UInt16Ptr, ids : Pointer(Int32), rows : Int32, cols : Int32)
+        unless fn = @@gather_rows_fp16_proc
+          if @@kernels_handle.null?
+            @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+          end
+          unless @@kernels_handle.null?
+            sym = LibC.dlsym(@@kernels_handle, "gather_rows_fp16")
+            unless sym.null?
+              @@gather_rows_fp16_proc = Proc(UInt16Ptr, UInt16Ptr, Pointer(Int32), Int32, Int32, Void).new(sym, Pointer(Void).null)
+              fn = @@gather_rows_fp16_proc
+            end
+          end
+        end
+        raise "CUDA kernels not available" unless fn
+        fn.call(dst, src, ids, rows, cols)
+      end
+    {% end %}
+
+    {% if flag?(:cuda_bf16) %}
+      def gather_rows_bf16(dst : UInt16Ptr, src : UInt16Ptr, ids : Pointer(Int32), rows : Int32, cols : Int32)
+        unless fn = @@gather_rows_bf16_proc
+          if @@kernels_handle.null?
+            @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+          end
+          unless @@kernels_handle.null?
+            sym = LibC.dlsym(@@kernels_handle, "gather_rows_bf16")
+            unless sym.null?
+              @@gather_rows_bf16_proc = Proc(UInt16Ptr, UInt16Ptr, Pointer(Int32), Int32, Int32, Void).new(sym, Pointer(Void).null)
+              fn = @@gather_rows_bf16_proc
+            end
+          end
+        end
+        raise "CUDA kernels not available" unless fn
+        fn.call(dst, src, ids, rows, cols)
+      end
+    {% end %}
 
     def slice_cols(dst : Pointer(Float64), src : Pointer(Float64), rows : Int32, src_cols : Int32, start_col : Int32, len : Int32)
       # Validate inputs
@@ -579,6 +727,44 @@ module SHAInet
       fn.call(src, mean, var, rows, cols)
     end
 
+    {% if flag?(:cuda_fp16) %}
+      def row_mean_var_fp16(src : UInt16Ptr, mean : Pointer(Float32), var : Pointer(Float32), rows : Int32, cols : Int32)
+        unless fn = @@row_mean_var_fp16_proc
+          if @@kernels_handle.null?
+            @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+          end
+          unless @@kernels_handle.null?
+            sym = LibC.dlsym(@@kernels_handle, "row_mean_var_fp16")
+            unless sym.null?
+              @@row_mean_var_fp16_proc = Proc(UInt16Ptr, Pointer(Float32), Pointer(Float32), Int32, Int32, Void).new(sym, Pointer(Void).null)
+              fn = @@row_mean_var_fp16_proc
+            end
+          end
+        end
+        raise "CUDA kernels not available" unless fn
+        fn.call(src, mean, var, rows, cols)
+      end
+    {% end %}
+
+    {% if flag?(:cuda_bf16) %}
+      def row_mean_var_bf16(src : UInt16Ptr, mean : Pointer(Float32), var : Pointer(Float32), rows : Int32, cols : Int32)
+        unless fn = @@row_mean_var_bf16_proc
+          if @@kernels_handle.null?
+            @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+          end
+          unless @@kernels_handle.null?
+            sym = LibC.dlsym(@@kernels_handle, "row_mean_var_bf16")
+            unless sym.null?
+              @@row_mean_var_bf16_proc = Proc(UInt16Ptr, Pointer(Float32), Pointer(Float32), Int32, Int32, Void).new(sym, Pointer(Void).null)
+              fn = @@row_mean_var_bf16_proc
+            end
+          end
+        end
+        raise "CUDA kernels not available" unless fn
+        fn.call(src, mean, var, rows, cols)
+      end
+    {% end %}
+
     def layer_norm(dst : Pointer(Float64), src : Pointer(Float64), mean : Pointer(Float64), var : Pointer(Float64), rows : Int32, cols : Int32, eps : Float64)
       unless fn = @@layer_norm_proc
         if @@kernels_handle.null?
@@ -595,6 +781,44 @@ module SHAInet
       raise "CUDA kernels not available" unless fn
       fn.call(dst, src, mean, var, rows, cols, eps)
     end
+
+    {% if flag?(:cuda_fp16) %}
+      def layer_norm_fp16(dst : UInt16Ptr, src : UInt16Ptr, mean : Pointer(Float32), var : Pointer(Float32), rows : Int32, cols : Int32, eps : Float32)
+        unless fn = @@layer_norm_fp16_proc
+          if @@kernels_handle.null?
+            @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+          end
+          unless @@kernels_handle.null?
+            sym = LibC.dlsym(@@kernels_handle, "apply_layer_norm_fp16")
+            unless sym.null?
+              @@layer_norm_fp16_proc = Proc(UInt16Ptr, UInt16Ptr, Pointer(Float32), Pointer(Float32), Int32, Int32, Float32, Void).new(sym, Pointer(Void).null)
+              fn = @@layer_norm_fp16_proc
+            end
+          end
+        end
+        raise "CUDA kernels not available" unless fn
+        fn.call(dst, src, mean, var, rows, cols, eps)
+      end
+    {% end %}
+
+    {% if flag?(:cuda_bf16) %}
+      def layer_norm_bf16(dst : UInt16Ptr, src : UInt16Ptr, mean : Pointer(Float32), var : Pointer(Float32), rows : Int32, cols : Int32, eps : Float32)
+        unless fn = @@layer_norm_bf16_proc
+          if @@kernels_handle.null?
+            @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+          end
+          unless @@kernels_handle.null?
+            sym = LibC.dlsym(@@kernels_handle, "apply_layer_norm_bf16")
+            unless sym.null?
+              @@layer_norm_bf16_proc = Proc(UInt16Ptr, UInt16Ptr, Pointer(Float32), Pointer(Float32), Int32, Int32, Float32, Void).new(sym, Pointer(Void).null)
+              fn = @@layer_norm_bf16_proc
+            end
+          end
+        end
+        raise "CUDA kernels not available" unless fn
+        fn.call(dst, src, mean, var, rows, cols, eps)
+      end
+    {% end %}
 
     def layer_norm_backward(d_x : Pointer(Float64), d_gamma : Pointer(Float64), d_beta : Pointer(Float64),
                             d_out : Pointer(Float64), x : Pointer(Float64), gamma : Pointer(Float64),
