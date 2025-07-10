@@ -20,6 +20,7 @@ module SHAInet
       fun cudaFreeHost(ptr : Pointer(Void)) : Int32
       fun cudaMemGetInfo(free : Pointer(LibC::SizeT), total : Pointer(LibC::SizeT)) : Int32
       fun cudaGetDeviceCount(count : Pointer(Int32)) : Int32
+      fun cudaGetDevice(device : Pointer(Int32)) : Int32
       fun cudaSetDevice(device : Int32) : Int32
     end
 
@@ -253,6 +254,19 @@ module SHAInet
       LibCUDARuntime.cudaSetDevice(id)
     rescue
       -1
+    end
+
+    # Return the currently active CUDA device id or nil if unavailable
+    def current_device
+      return nil unless available?
+      id = 0
+      if LibCUDARuntime.cudaGetDevice(pointerof(id)) == 0
+        id
+      else
+        nil
+      end
+    rescue
+      nil
     end
 
     def malloc(ptr : Pointer(Pointer(Void)), size : LibC::SizeT)
