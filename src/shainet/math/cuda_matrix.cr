@@ -1134,22 +1134,51 @@ module SHAInet
 
     # High-performance in-place scalar multiplication using cuBLAS SCAL
     def scale!(scalar : Float64)
-      raise RuntimeError.new("GPU scale! requires valid device pointer") unless (dptr = self.device_ptr) && !dptr.null?
+      if CUDA.fully_available? && (dptr = self.device_ptr) && !dptr.null?
+        self.sync_to_device!("scalar_scale_inplace") unless device_dirty?
 
-      # Ensure self has up-to-date GPU data
-      self.sync_to_device!("scalar_scale_inplace") unless device_dirty?
+        handle = CUDA.create_handle
+        begin
+          case @precision
+          when Precision::Fp64
+            CUDA.scal(handle, dptr.as(Pointer(Float64)), (@rows*@cols), scalar)
+          when Precision::Fp32
+            CUDA.scal_s(handle, dptr.as(Pointer(Float32)), (@rows*@cols), scalar.to_f32)
+          when Precision::Fp16
+            if CUDA.kernels_available?
+              CUDA.scale_fp16(dptr.as(Pointer(UInt16)), scalar.to_f32, (@rows*@cols))
+            else
+              return scale_cpu!(scalar)
+            end
+          when Precision::Bf16
+            if CUDA.kernels_available?
+              CUDA.scale_bf16(dptr.as(Pointer(UInt16)), scalar.to_f32, (@rows*@cols))
+            else
+              return scale_cpu!(scalar)
+            end
+          else
+            return scale_cpu!(scalar)
+          end
+        ensure
+          CUDA.destroy_handle(handle)
+        end
 
-      handle = CUDA.create_handle
-      begin
-        CUDA.scal(
-          handle,
-          dptr.as(Pointer(Float64)),
-          (@rows*@cols), scalar)
-      ensure
-        CUDA.destroy_handle(handle)
+        mark_device_dirty!
+        self
+      else
+        scale_cpu!(scalar)
       end
+    end
 
-      # Mark self as having newer GPU data
+    private def scale_cpu!(scalar : Float64)
+      self.sync_from_device!("scale_cpu") if device_dirty?
+      @rows.times do |i|
+        @cols.times do |j|
+          val = unsafe_get(i, j) * scalar
+          unsafe_set(i, j, val)
+        end
+      end
+      self.sync_to_device!("scale_result") if CUDA.available?
       mark_device_dirty!
       self
     end

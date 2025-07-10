@@ -674,6 +674,34 @@ void element_log(double* out, const double* in, int size) {
     }
 }
 
+template <typename T>
+__global__ void scale_kernel_t(T* data, float alpha, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if(idx >= size) return;
+    float v = Convert<T>::to_float(data[idx]);
+    data[idx] = Convert<T>::from_float(v * alpha);
+}
+
+void scale_fp16(__half* data, float alpha, int size) {
+    int threads = 256;
+    int blocks = (size + threads - 1) / threads;
+    scale_kernel_t<<<blocks, threads>>>(data, alpha, size);
+    cudaError_t err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        printf("CUDA Error in scale_fp16: %s\n", cudaGetErrorString(err));
+    }
+}
+
+void scale_bf16(__nv_bfloat16* data, float alpha, int size) {
+    int threads = 256;
+    int blocks = (size + threads - 1) / threads;
+    scale_kernel_t<<<blocks, threads>>>(data, alpha, size);
+    cudaError_t err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        printf("CUDA Error in scale_bf16: %s\n", cudaGetErrorString(err));
+    }
+}
+
 __global__ void cross_entropy_loss_gradient_kernel(const double* pred, const double* target, double* grad, double* loss, int total) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= total) return;
