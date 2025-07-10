@@ -305,12 +305,63 @@ module SHAInet
         dump_network << dump_layer
       end
 
-      File.write(file_path, {"layers" => dump_network}.to_json)
+      edges = {} of String => Array(Int32)
+      @residual_edges.each do |k, v|
+        edges[k.to_s] = v
+      end
+
+      net_data = Hash(String, JSON::Any).new
+      net_data["learning_rate"] = JSON::Any.new(@learning_rate)
+      net_data["momentum"] = JSON::Any.new(@momentum)
+      net_data["precision"] = JSON::Any.new(@precision.to_s)
+      net_data["warmup_steps"] = JSON::Any.new(@warmup_steps)
+      net_data["decay_type"] = JSON::Any.new(@decay_type.to_s) if @decay_type
+      net_data["decay_rate"] = JSON::Any.new(@decay_rate)
+      net_data["decay_step"] = JSON::Any.new(@decay_step)
+      net_data["residual_edges"] = JSON.parse(edges.to_json)
+      net_data["layers"] = JSON.parse(dump_network.to_json)
+
+      File.write(file_path, net_data.to_json)
       Log.info { "Network saved to: #{file_path}" }
     end
 
     def load_from_file(file_path : String)
       data = JSON.parse(File.read(file_path))
+
+      if lr = data["learning_rate"]?
+        @learning_rate = lr.as_f
+      end
+      if mom = data["momentum"]?
+        @momentum = mom.as_f
+      end
+      if prec = data["precision"]?
+        @precision = Precision.parse(prec.as_s)
+      end
+      if ws = data["warmup_steps"]?
+        @warmup_steps = ws.as_i
+      end
+      if dt = data["decay_type"]?
+        str = dt.as_s
+        @decay_type = case str
+                      when "step" then :step
+                      when "exp", "exponential" then :exp
+                      else nil
+                      end
+      end
+      if dr = data["decay_rate"]?
+        @decay_rate = dr.as_f
+      end
+      if ds = data["decay_step"]?
+        @decay_step = ds.as_i
+      end
+      if edges = data["residual_edges"]?
+        map = {} of Int32 => Array(Int32)
+        edges.as_h.each do |k, v|
+          map[k.to_i] = v.as_a.map(&.as_i)
+        end
+        @residual_edges = map
+      end
+
       layers = data["layers"].as_a
 
       layers.each do |layer_data|

@@ -191,6 +191,36 @@ puts net.run([1.0, 0.0])
 
 See `examples/quantize_int8.cr` for a full example.
 
+### Saving and Loading Networks
+
+Networks can be serialized to JSON with global parameters included:
+
+```crystal
+net.save_to_file("model.json")
+
+other = SHAInet::Network.new
+other.load_from_file("model.json")
+```
+
+The JSON contains training attributes and residual connections:
+
+```json
+{
+  "learning_rate": 0.005,
+  "momentum": 0.05,
+  "precision": "Fp64",
+  "warmup_steps": 0,
+  "decay_type": null,
+  "decay_rate": 0.0,
+  "decay_step": 1,
+  "residual_edges": {"1": [0]},
+  "layers": [
+    {"l_type": "input", "weights": [[...]], "biases": [...], "activation_function": "sigmoid"},
+    {"l_type": "output", "weights": [[...]], "biases": [...], "activation_function": "sigmoid"}
+  ]
+}
+```
+
 ---
 
 ## Advanced
