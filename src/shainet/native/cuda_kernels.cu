@@ -85,6 +85,66 @@ __global__ void relu_backward_kernel(double* output, const double* input, const 
     output[idx] = input[idx] > 0.0 ? grad[idx] : 0.0;
 }
 
+template <typename T>
+__global__ void dropout_kernel_t(T* out, const T* in, int rows, int cols, float drop_p, unsigned long long seed) {
+    int row = blockIdx.x;
+    if(row >= rows) return;
+    curandState state;
+    curand_init(seed + row, 0, 0, &state);
+    const T* row_in = in + row * cols;
+    T* row_out = out + row * cols;
+    for(int j=0;j<cols;++j){
+        float r = curand_uniform(&state);
+        row_out[j] = r < drop_p ? Convert<T>::from_float(0.0f) : row_in[j];
+    }
+}
+
+template <typename T>
+__global__ void gather_rows_kernel_t(T* out, const T* in, const int* ids, int rows, int cols) {
+    int row = blockIdx.x;
+    if(row >= rows) return;
+    int id = ids[row];
+    const T *row_in = in + id * cols;
+    T *row_out = out + row * cols;
+    for(int j=0;j<cols;++j){
+        row_out[j] = row_in[j];
+    }
+}
+
+template <typename T>
+__global__ void row_mean_var_kernel_t(const T* in, float* mean, float* var,
+                                      int rows, int cols) {
+    int row = blockIdx.x;
+    if(row >= rows) return;
+    const T *row_in = in + row * cols;
+    float sum = 0.0f;
+    float sq_sum = 0.0f;
+    for(int j=0;j<cols;++j){
+        float v = Convert<T>::to_float(row_in[j]);
+        sum += v;
+        sq_sum += v*v;
+    }
+    float m = sum / cols;
+    mean[row] = m;
+    var[row] = sq_sum / cols - m*m;
+}
+
+template <typename T>
+__global__ void apply_layer_norm_kernel_t(T* out, const T* in,
+                                          const float* mean, const float* var,
+                                          int rows, int cols, float epsilon) {
+    int row = blockIdx.x;
+    if(row >= rows) return;
+    const T *row_in = in + row * cols;
+    T *row_out = out + row * cols;
+    float m = mean[row];
+    float denom = sqrtf(var[row] + epsilon);
+    for(int j=0;j<cols;++j){
+        float v = Convert<T>::to_float(row_in[j]);
+        row_out[j] = Convert<T>::from_float((v - m) / denom);
+    }
+}
+
 // Host wrapper functions
 extern "C" {
 void softmax_rows(double* out, const double* in, int rows, int cols) {
@@ -135,20 +195,6 @@ __global__ void dropout_kernel(double* out, const double* in, int rows, int cols
     }
 }
 
-template <typename T>
-__global__ void dropout_kernel_t(T* out, const T* in, int rows, int cols, float drop_p, unsigned long long seed) {
-    int row = blockIdx.x;
-    if(row >= rows) return;
-    curandState state;
-    curand_init(seed + row, 0, 0, &state);
-    const T* row_in = in + row * cols;
-    T* row_out = out + row * cols;
-    for(int j=0;j<cols;++j){
-        float r = curand_uniform(&state);
-        row_out[j] = r < drop_p ? Convert<T>::from_float(0.0f) : row_in[j];
-    }
-}
-
 void dropout(double* out, const double* in, int rows, int cols, double drop_p, unsigned long long seed) {
     dropout_kernel<<<rows, 1>>>(out, in, rows, cols, drop_p, seed);
     cudaError_t err = cudaDeviceSynchronize();
@@ -184,17 +230,6 @@ __global__ void gather_rows_kernel(double* out, const double* in, const int* ids
     }
 }
 
-template <typename T>
-__global__ void gather_rows_kernel_t(T* out, const T* in, const int* ids, int rows, int cols) {
-    int row = blockIdx.x;
-    if(row >= rows) return;
-    int id = ids[row];
-    const T *row_in = in + id * cols;
-    T *row_out = out + row * cols;
-    for(int j=0;j<cols;++j){
-        row_out[j] = row_in[j];
-    }
-}
 
 void gather_rows(double* out, const double* in, const int* ids, int rows, int cols) {
     gather_rows_kernel<<<rows, 1>>>(out, in, ids, rows, cols);
@@ -228,23 +263,6 @@ __global__ void row_mean_var_kernel(const double* in, double* mean, double* var,
     var[row] = sq_sum / cols - m*m;
 }
 
-template <typename T>
-__global__ void row_mean_var_kernel_t(const T* in, float* mean, float* var,
-                                      int rows, int cols) {
-    int row = blockIdx.x;
-    if(row >= rows) return;
-    const T *row_in = in + row * cols;
-    float sum = 0.0f;
-    float sq_sum = 0.0f;
-    for(int j=0;j<cols;++j){
-        float v = Convert<T>::to_float(row_in[j]);
-        sum += v;
-        sq_sum += v*v;
-    }
-    float m = sum / cols;
-    mean[row] = m;
-    var[row] = sq_sum / cols - m*m;
-}
 
 void row_mean_var(const double* in, double* mean, double* var, int rows, int cols) {
     row_mean_var_kernel<<<rows, 1>>>(in, mean, var, rows, cols);
@@ -275,21 +293,6 @@ __global__ void apply_layer_norm_kernel(double* out, const double* in,
     }
 }
 
-template <typename T>
-__global__ void apply_layer_norm_kernel_t(T* out, const T* in,
-                                          const float* mean, const float* var,
-                                          int rows, int cols, float epsilon) {
-    int row = blockIdx.x;
-    if(row >= rows) return;
-    const T *row_in = in + row * cols;
-    T *row_out = out + row * cols;
-    float m = mean[row];
-    float denom = sqrtf(var[row] + epsilon);
-    for(int j=0;j<cols;++j){
-        float v = Convert<T>::to_float(row_in[j]);
-        row_out[j] = Convert<T>::from_float((v - m) / denom);
-    }
-}
 
 void apply_layer_norm(double* out, const double* in,
                       const double* mean, const double* var,

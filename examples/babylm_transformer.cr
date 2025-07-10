@@ -68,6 +68,8 @@ weight_decay = 0.01
 tk = 10
 # Top-p: sample from the smallest set of tokens with cumulative probability >= 0.9
 tp = 0.9
+# network precision: Use Fp16 for better GPU performance, Fp32 for compatibility
+precision = SHAInet::Precision::Fp16
 
 puts "Reading dataset from #{path}..."
 text = File.read(path)
@@ -89,6 +91,7 @@ puts "Building the network..."
 # Build the network with much smaller dimensions for fast debugging
 token_count = tokenizer.vocab.size
 net = SHAInet::Network.new
+net.precision = precision
 net.add_layer(:input, 1, SHAInet.none)
 net.add_layer(:embedding, d_model, SHAInet.none, vocab_size: token_count)
 transformer_layers.times { net.add_layer(:transformer, d_model, SHAInet.gelu) }
