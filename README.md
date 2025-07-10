@@ -184,6 +184,19 @@ Enable weight decay to shrink parameters on each update:
 net.weight_decay = 0.01
 ```
 
+### Autosave During Training
+
+Save checkpoints automatically every epoch (or custom interval):
+
+```crystal
+net.train(
+  data: data,
+  epochs: 10,
+  autosave_path: "checkpoints",
+  autosave_freq: 1
+)
+```
+
 ### INT8 Quantization
 
 Convert a trained network to use INT8 weights for faster inference:
