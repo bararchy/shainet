@@ -217,7 +217,7 @@ module SHAInet
     end
 
     # GPU path - all operations with CudaMatrix - optimized with workspace pool
-    def forward(x : CudaMatrix, mask : CudaMatrix | Nil = nil) : CudaMatrix
+    def forward(x : CudaMatrix, mask : CudaMatrix | Nil = nil, rotary_freqs : CudaMatrix | Nil = nil) : CudaMatrix
       @x = x
 
       # Ensure workspace matrices are allocated for this batch size
@@ -249,6 +249,10 @@ module SHAInet
           q.slice_cols_into!(qs, h * @head_dim, @head_dim)
           k.slice_cols_into!(ks, h * @head_dim, @head_dim)
           v.slice_cols_into!(vs, h * @head_dim, @head_dim)
+
+          if rf = rotary_freqs
+            RotaryEmbedding.rotate!(qs, ks, rf)
+          end
 
           @q_heads << qs
           @k_heads << ks
@@ -320,7 +324,7 @@ module SHAInet
     end
 
     # GPU path with KV caching. Returns a tuple of the output and updated cache.
-    def forward(x : CudaMatrix, mask : CudaMatrix | Nil, cache : KVCache, layer : Int32) : Tuple(CudaMatrix, KVCache)
+    def forward(x : CudaMatrix, mask : CudaMatrix | Nil, cache : KVCache, layer : Int32, rotary_freqs : CudaMatrix | Nil = nil) : Tuple(CudaMatrix, KVCache)
       # Compute fresh projections for the new step
       q = x * @w_q.as(CudaMatrix)
       k_proj = x * @w_k.as(CudaMatrix)
@@ -332,6 +336,10 @@ module SHAInet
         qs = q.slice_cols(h * @head_dim, @head_dim)
         ks_new = k_proj.slice_cols(h * @head_dim, @head_dim)
         vs_new = v_proj.slice_cols(h * @head_dim, @head_dim)
+
+        if rf = rotary_freqs
+          RotaryEmbedding.rotate!(qs, ks_new, rf)
+        end
 
         cached_keys = cache.keys[layer][h]
         cached_vals = cache.values[layer][h]
@@ -368,7 +376,7 @@ module SHAInet
     end
 
     # CPU path - all operations with SimpleMatrix
-    def forward(x : SimpleMatrix, mask : SimpleMatrix | Nil = nil) : SimpleMatrix
+    def forward(x : SimpleMatrix, mask : SimpleMatrix | Nil = nil, rotary_freqs : SimpleMatrix | Nil = nil) : SimpleMatrix
       @x = x
 
       # Compute Q, K, V projections - CPU path
@@ -387,6 +395,10 @@ module SHAInet
         qs = q.slice_cols(h * @head_dim, @head_dim)
         ks = k.slice_cols(h * @head_dim, @head_dim)
         vs = v.slice_cols(h * @head_dim, @head_dim)
+
+        if rf = rotary_freqs
+          RotaryEmbedding.rotate!(qs, ks, rf)
+        end
 
         @q_heads << qs
         @k_heads << ks
@@ -422,7 +434,7 @@ module SHAInet
     end
 
     # CPU path with KV caching. Returns a tuple of the output and updated cache.
-    def forward(x : SimpleMatrix, mask : SimpleMatrix | Nil, cache : KVCache, layer : Int32) : Tuple(SimpleMatrix, KVCache)
+    def forward(x : SimpleMatrix, mask : SimpleMatrix | Nil, cache : KVCache, layer : Int32, rotary_freqs : SimpleMatrix | Nil = nil) : Tuple(SimpleMatrix, KVCache)
       q = x * @w_q.as(SimpleMatrix)
       k_proj = x * @w_k.as(SimpleMatrix)
       v_proj = x * @w_v.as(SimpleMatrix)
@@ -433,6 +445,10 @@ module SHAInet
         qs = q.slice_cols(h * @head_dim, @head_dim)
         ks_new = k_proj.slice_cols(h * @head_dim, @head_dim)
         vs_new = v_proj.slice_cols(h * @head_dim, @head_dim)
+
+        if rf = rotary_freqs
+          RotaryEmbedding.rotate!(qs, ks_new, rf)
+        end
 
         cached_keys = cache.keys[layer][h]
         cached_vals = cache.values[layer][h]
