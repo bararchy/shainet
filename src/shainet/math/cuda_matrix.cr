@@ -789,7 +789,13 @@ module SHAInet
         end
       end
 
-      # Fallback to CUDA kernel
+      # Fallback to CUDA kernel. This kernel only supports Float64 precision,
+      # so ensure both matrices are FP64 before proceeding. Non-FP64 precisions
+      # must rely on cuDNN for bias addition, otherwise memory faults may occur.
+      unless self.precision == Precision::Fp64 && bias.precision == Precision::Fp64
+        raise "CUDA fallback for add_bias! only supports Precision::Fp64; non-FP64 precisions require cuDNN"
+      end
+
       raise RuntimeError.new("GPU add_bias! requires valid device pointers") unless (dptr = self.device_ptr) && (bptr = bias.device_ptr) && !dptr.null? && !bptr.null?
 
       # Ensure both matrices have up-to-date GPU data
