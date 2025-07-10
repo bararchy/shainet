@@ -607,6 +607,42 @@ void fill_matrix(double* matrix, double value, int size) {
     }
 }
 
+__global__ void weight_update_fp16_kernel(__half* weights, const __half* grads, float lr, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= size) return;
+    float w = __half2float(weights[idx]);
+    float g = __half2float(grads[idx]);
+    weights[idx] = __float2half(w + lr * g); // lr already has sign
+}
+
+void weight_update_fp16(__half* weights, const __half* grads, float lr, int size) {
+    int threads_per_block = 256;
+    int blocks = (size + threads_per_block - 1) / threads_per_block;
+    weight_update_fp16_kernel<<<blocks, threads_per_block>>>(weights, grads, lr, size);
+    cudaError_t err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        printf("CUDA Error in weight_update_fp16: %s\n", cudaGetErrorString(err));
+    }
+}
+
+__global__ void weight_update_bf16_kernel(__nv_bfloat16* weights, const __nv_bfloat16* grads, float lr, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= size) return;
+    float w = __bfloat162float(weights[idx]);
+    float g = __bfloat162float(grads[idx]);
+    weights[idx] = __float2bfloat16(w + lr * g);
+}
+
+void weight_update_bf16(__nv_bfloat16* weights, const __nv_bfloat16* grads, float lr, int size) {
+    int threads_per_block = 256;
+    int blocks = (size + threads_per_block - 1) / threads_per_block;
+    weight_update_bf16_kernel<<<blocks, threads_per_block>>>(weights, grads, lr, size);
+    cudaError_t err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        printf("CUDA Error in weight_update_bf16: %s\n", cudaGetErrorString(err));
+    }
+}
+
 __global__ void element_div_kernel(double* out, const double* a, const double* b, int size){
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if(idx >= size) return;

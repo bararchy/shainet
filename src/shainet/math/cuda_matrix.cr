@@ -1436,19 +1436,50 @@ module SHAInet
       self.sync_to_device!("weight_update") unless device_dirty?
       gradient.sync_to_device!("weight_update") unless gradient.device_dirty?
 
-      handle = CUDA.create_handle
-      begin
-        # Use AXPY: weights = weights - lr * gradients
-        total_elements = @rows * @cols
+      total_elements = @rows * @cols
 
-        CUDA.axpy(
-          handle,
-          -learning_rate,
-          grad_ptr.as(Pointer(Float64)),
-          weight_ptr.as(Pointer(Float64)),
-          total_elements)
+      begin
+        handle = CUDA.create_handle
+        case @precision
+        when Precision::Fp64
+          CUDA.axpy(handle, -learning_rate, grad_ptr.as(Pointer(Float64)), weight_ptr.as(Pointer(Float64)), total_elements)
+        when Precision::Fp32
+          CUDA.saxpy(handle, -learning_rate.to_f32, grad_ptr.as(Pointer(Float32)), weight_ptr.as(Pointer(Float32)), total_elements)
+        when Precision::Fp16
+          if CUDA.kernels_available?
+            CUDA.weight_update_fp16(weight_ptr.as(Pointer(UInt16)), grad_ptr.as(Pointer(UInt16)), -learning_rate.to_f32, total_elements)
+          elsif CUDA.axpy_ex_available?
+            dtype = CUDA.data_type_for(Precision::Fp16)
+            CUDA.axpy_ex(handle, -learning_rate.to_f32, grad_ptr.as(Void*), dtype, weight_ptr.as(Void*), dtype, total_elements, dtype)
+          else
+            raise "axpyEx unavailable"
+          end
+        when Precision::Bf16
+          if CUDA.kernels_available?
+            CUDA.weight_update_bf16(weight_ptr.as(Pointer(UInt16)), grad_ptr.as(Pointer(UInt16)), -learning_rate.to_f32, total_elements)
+          elsif CUDA.axpy_ex_available?
+            dtype = CUDA.data_type_for(Precision::Bf16)
+            CUDA.axpy_ex(handle, -learning_rate.to_f32, grad_ptr.as(Void*), dtype, weight_ptr.as(Void*), dtype, total_elements, dtype)
+          else
+            raise "axpyEx unavailable"
+          end
+        else
+          CUDA.axpy(handle, -learning_rate, grad_ptr.as(Pointer(Float64)), weight_ptr.as(Pointer(Float64)), total_elements)
+        end
+      rescue
+        # CPU fallback when CUDA routines are missing
+        self.sync_from_device!("weight_update_fallback") if device_dirty?
+        gradient.sync_from_device!("weight_update_fallback") if gradient.device_dirty?
+        @rows.times do |i|
+          @cols.times do |j|
+            val = unsafe_get(i, j) - learning_rate * gradient.unsafe_get(i, j)
+            unsafe_set(i, j, val)
+          end
+        end
+        self.sync_to_device!("weight_update_cpu_result") if CUDA.fully_available?
+        return mark_device_dirty!
       ensure
-        CUDA.destroy_handle(handle)
+        CUDA.destroy_handle(handle) if handle
       end
 
       # Mark self as having newer GPU data

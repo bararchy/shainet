@@ -73,9 +73,19 @@ module SHAInet
                          alpha : Pointer(Float64),
                          x : Pointer(Float64), incx : Int32,
                          y : Pointer(Float64), incy : Int32) : Int32
+      fun cublasSaxpy_v2(handle : Handle, n : Int32,
+                         alpha : Pointer(Float32),
+                         x : Pointer(Float32), incx : Int32,
+                         y : Pointer(Float32), incy : Int32) : Int32
       fun cublasDcopy_v2(handle : Handle, n : Int32,
                          x : Pointer(Float64), incx : Int32,
                          y : Pointer(Float64), incy : Int32) : Int32
+
+      fun cublasAxpyEx(handle : Handle, n : Int32,
+                       alpha : Void*,
+                       x : Void*, xType : Int32, incx : Int32,
+                       y : Void*, yType : Int32, incy : Int32,
+                       computeType : Int32) : Int32
 
       fun cublasGemmEx(handle : Handle,
                        transa : Int32, transb : Int32,
@@ -124,6 +134,7 @@ module SHAInet
     end
 
     @@gemm_ex_available : Bool? = nil
+    @@axpy_ex_available : Bool? = nil
 
     # Check if cublasGemmEx is available at runtime
     def gemm_ex_available?
@@ -133,6 +144,21 @@ module SHAInet
           false
         else
           sym = LibC.dlsym(handle, "cublasGemmEx")
+          LibC.dlclose(handle)
+          !sym.null?
+        end
+      rescue
+        false
+      end
+    end
+
+    def axpy_ex_available?
+      @@axpy_ex_available ||= begin
+        handle = LibC.dlopen("libcublas.so", LibC::RTLD_LAZY)
+        if handle.null?
+          false
+        else
+          sym = LibC.dlsym(handle, "cublasAxpyEx")
           LibC.dlclose(handle)
           !sym.null?
         end
@@ -451,6 +477,19 @@ module SHAInet
       # These methods fall back to CPU when the native library is missing.
     end
 
+    def saxpy(handle : LibCUBLAS::Handle, alpha : Float32, x : Pointer(Float32), y : Pointer(Float32), n : Int32)
+      LibCUBLAS.cublasSaxpy_v2(handle, n, pointerof(alpha), x, 1, y, 1)
+    end
+
+    def axpy_ex(handle : LibCUBLAS::Handle, alpha : Float32, x : Pointer(Void), x_type : LibCUBLAS::DataType,
+                y : Pointer(Void), y_type : LibCUBLAS::DataType, n : Int32, compute_type : LibCUBLAS::DataType)
+      LibCUBLAS.cublasAxpyEx(handle, n,
+        pointerof(alpha).as(Void*),
+        x, x_type.value, 1,
+        y, y_type.value, 1,
+        compute_type.value)
+    end
+
     # Optional kernels implemented in src/shainet/native/cuda_kernels.cu
     # These methods dynamically load from libshainet_cuda_kernels.so when available
     @@kernels_handle : Pointer(Void) = Pointer(Void).null
@@ -460,6 +499,8 @@ module SHAInet
     @@dropout_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Float64, UInt64, Void)? = nil
     @@dropout_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Float64, UInt64, Void)? = nil
     @@dropout_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Float64, UInt64, Void)? = nil
+    @@weight_update_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Float32, Int32, Void)? = nil
+    @@weight_update_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Float32, Int32, Void)? = nil
     @@gather_rows_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Int32), Int32, Int32, Void)? = nil
     @@gather_rows_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Pointer(Int32), Int32, Int32, Void)? = nil
     @@gather_rows_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Pointer(Int32), Int32, Int32, Void)? = nil
@@ -602,6 +643,40 @@ module SHAInet
       end
       raise "CUDA kernels not available" unless fn
       fn.call(dst, src, rows, cols, drop_p, seed)
+    end
+
+    def weight_update_fp16(weights : UInt16Ptr, grads : UInt16Ptr, lr : Float32, size : Int32)
+      unless fn = @@weight_update_fp16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "weight_update_fp16")
+          unless sym.null?
+            @@weight_update_fp16_proc = Proc(UInt16Ptr, UInt16Ptr, Float32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@weight_update_fp16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(weights, grads, lr, size)
+    end
+
+    def weight_update_bf16(weights : UInt16Ptr, grads : UInt16Ptr, lr : Float32, size : Int32)
+      unless fn = @@weight_update_bf16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "weight_update_bf16")
+          unless sym.null?
+            @@weight_update_bf16_proc = Proc(UInt16Ptr, UInt16Ptr, Float32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@weight_update_bf16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(weights, grads, lr, size)
     end
 
     def gather_rows(dst : Pointer(Float64), src : Pointer(Float64), ids : Pointer(Int32), rows : Int32, cols : Int32)

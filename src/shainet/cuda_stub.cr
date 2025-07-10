@@ -55,6 +55,10 @@ module SHAInet
       false
     end
 
+    def axpy_ex_available? : Bool
+      false
+    end
+
     def data_type_for(*args)
       raise "CUDA disabled"
     end
@@ -121,6 +125,18 @@ module SHAInet
     end
 
     def axpy(*args)
+    end
+
+    def saxpy(*args)
+    end
+
+    def axpy_ex(*args)
+    end
+
+    def weight_update_fp16(*args)
+    end
+
+    def weight_update_bf16(*args)
     end
 
     def softmax_rows(*args)
