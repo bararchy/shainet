@@ -1,6 +1,7 @@
 require "log"
 require "json"
 require "file_utils"
+require "signal"
 {% if flag?(:enable_cuda) %}
   require "../cuda"
   require "../cudnn"
@@ -26,6 +27,8 @@ module SHAInet
     @batch_in_ws : CudaMatrix? = nil
     @batch_out_ws : CudaMatrix? = nil
     @batch_grad_ws : CudaMatrix? = nil
+    property exit_save_path : String?
+    @exit_traps_installed : Bool = false
 
     private def convert_num(v : GenNum)
       case @precision
@@ -1803,6 +1806,31 @@ module SHAInet
 
     private def clone_matrix(mat : CudaMatrix | SimpleMatrix)
       mat.is_a?(CudaMatrix) ? mat.as(CudaMatrix).clone : mat.as(SimpleMatrix).clone
+    end
+
+    # Enable saving the network when INT or TERM is received.
+    # The network will be written to *path* and the process exits.
+    def enable_exit_save(path : String)
+      @exit_save_path = path
+      install_exit_traps unless @exit_traps_installed
+    end
+
+    private def install_exit_traps
+      @exit_traps_installed = true
+      [Signal::INT, Signal::TERM].each do |sig|
+        sig.trap do
+          if (dest = @exit_save_path)
+            FileUtils.mkdir_p(File.dirname(dest)) unless Dir.exists?(File.dirname(dest))
+            Log.info { "Signal #{sig} received, saving network to #{dest}" }
+            begin
+              save_to_file(dest)
+            rescue e
+              Log.error { "Failed to save network on #{sig}: #{e}" }
+            end
+          end
+          Process.exit
+        end
+      end
     end
   end
 end
