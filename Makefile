@@ -27,10 +27,13 @@ help:
 	@echo ""
 	@echo "Usage:"
 	@echo "  make install                 # Complete setup (dependencies + CUDA)"
-	@echo "  make cuda                    # Build CUDA kernels only"
-	@echo "  LD_LIBRARY_PATH=. make test  # Test with library path"
-	@echo ""
-	@echo "For GPU acceleration, use 'make install' instead of 'shards install'"
+@echo "  make cuda                    # Build CUDA kernels only"
+@echo "  LD_LIBRARY_PATH=. make test  # Test with library path"
+@echo ""
+@echo "Multi-GPU example:"
+@echo "  CUDA_VISIBLE_DEVICES=0,1 crystal run my_train.cr"
+@echo ""
+@echo "For GPU acceleration, use 'make install' instead of 'shards install'"
 
 cuda: $(CUDA_LIB)
 

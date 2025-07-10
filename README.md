@@ -85,6 +85,29 @@ if SHAInet::CUDA.device_count > 1
 end
 ```
 
+### Multi-GPU Training
+
+SHAInet can train on multiple GPUs using `SHAInet::DataParallelTrainer`. Ensure
+the CUDA toolkit is installed and that your system has two or more GPUs
+available.
+
+```crystal
+devices = [0, 1]
+net.train(data: data,
+  training_type: :sgd,
+  cost_function: :mse,
+  epochs: 10,
+  training_mode: :data_parallel,
+  devices: devices)
+```
+
+Use the `CUDA_VISIBLE_DEVICES` environment variable to limit the GPUs that will
+be used:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 crystal run my_train.cr
+```
+
 ---
 
 ## Usage
