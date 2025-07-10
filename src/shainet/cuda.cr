@@ -19,6 +19,8 @@ module SHAInet
       fun cudaMallocHost(ptr : Pointer(Pointer(Void)), size : LibC::SizeT) : Int32
       fun cudaFreeHost(ptr : Pointer(Void)) : Int32
       fun cudaMemGetInfo(free : Pointer(LibC::SizeT), total : Pointer(LibC::SizeT)) : Int32
+      fun cudaGetDeviceCount(count : Pointer(Int32)) : Int32
+      fun cudaSetDevice(device : Int32) : Int32
     end
 
     @[Link("cublas")]
@@ -230,6 +232,27 @@ module SHAInet
     rescue e
       Log.error { "kernel availability check raised: #{e}" }
       false
+    end
+
+    # Returns the number of CUDA-capable devices or 0 when unavailable
+    def device_count : Int32
+      return 0 unless available?
+      count = 0
+      if LibCUDARuntime.cudaGetDeviceCount(pointerof(count)) == 0
+        count
+      else
+        0
+      end
+    rescue
+      0
+    end
+
+    # Select the active CUDA device by id. Returns CUDA error code.
+    def set_device(id : Int32) : Int32
+      return -1 unless available?
+      LibCUDARuntime.cudaSetDevice(id)
+    rescue
+      -1
     end
 
     def malloc(ptr : Pointer(Pointer(Void)), size : LibC::SizeT)

@@ -72,6 +72,16 @@ and reuse them across iterations. Call `to_gpu!` or `to_cpu!` only when
 switching devices. Repeated calls without a device change keep the existing
 workspaces to avoid unnecessary allocations.
 
+Use `SHAInet::CUDA.device_count` to query the available GPUs and
+`SHAInet::CUDA.set_device(id)` to select which GPU to use before creating
+matrices:
+
+```crystal
+if SHAInet::CUDA.device_count > 1
+  SHAInet::CUDA.set_device(1) # choose second GPU
+end
+```
+
 ---
 
 ## Usage
