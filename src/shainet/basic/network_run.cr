@@ -1,5 +1,6 @@
 require "log"
 require "json"
+require "file_utils"
 {% if flag?(:enable_cuda) %}
   require "../cuda"
   require "../cudnn"
@@ -865,7 +866,8 @@ module SHAInet
               mini_batch_size : Int32 = 1,
               log_each : Int32 = 1,
               show_slice : Bool = false,
-              autosave : NamedTuple(freq: Int32, path: String) | Nil = nil)
+              autosave_path : String | Nil = nil,
+              autosave_freq : Int32 = 1)
       verify_net_before_train
 
       stream = data.is_a?(SHAInet::StreamingData) ? data : nil
@@ -906,8 +908,9 @@ module SHAInet
         end
 
         # Autosave if configured
-        if autosave && epoch % autosave[:freq] == 0 && epoch > 0
-          save_to_file("#{autosave[:path]}/autosave_epoch_#{epoch}.nn")
+        if autosave_path && epoch % autosave_freq == 0 && epoch > 0
+          FileUtils.mkdir_p(autosave_path) unless Dir.exists?(autosave_path)
+          save_to_file("#{autosave_path}/autosave_epoch_#{epoch}.nn")
         end
 
         # Shuffle or rewind data for each epoch

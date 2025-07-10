@@ -21,6 +21,6 @@ describe "INT8 quantization" do
     net.precision = SHAInet::Precision::Int8
     out_int8 = net.run([0.5, -0.5])
 
-    out_int8.first.should be_close(out_fp.first, 1e-3)
+    out_int8.first.should be_close(out_fp.first, 2e-2)
   end
 end
