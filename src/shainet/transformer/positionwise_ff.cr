@@ -424,8 +424,8 @@ module SHAInet
             a = m.unsafe_get(i, j)
             b = m.unsafe_get(i, j + half)
             g = grad.unsafe_get(i, j)
-            sig = _sigmoid(b)
-            sig_p = _sigmoid_prime(b)
+            sig = SHAInet._sigmoid(b)
+            sig_p = SHAInet._sigmoid_prime(b)
             dest.unsafe_set(i, j, g * sig)
             dest.unsafe_set(i, j + half, g * a * sig_p)
           end
