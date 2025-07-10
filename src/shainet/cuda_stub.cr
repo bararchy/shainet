@@ -39,6 +39,14 @@ module SHAInet
       false
     end
 
+    def device_count : Int32
+      0
+    end
+
+    def set_device(*args) : Int32
+      raise "CUDA disabled"
+    end
+
     def gemm_ex_available? : Bool
       false
     end
