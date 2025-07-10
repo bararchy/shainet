@@ -200,33 +200,13 @@ module SHAInet
           CudaMatrix.return_workspace(ws)
         end
 
-        @workspace_mean = if precision == Precision::Fp64
-                            CudaMatrix.get_workspace(batch_size, 1, "ln_mean")
-                          else
-                            CudaMatrix.new(batch_size, 1, 0.0, Precision::Fp32)
-                          end
-        @workspace_var = if precision == Precision::Fp64
-                           CudaMatrix.get_workspace(batch_size, 1, "ln_var")
-                         else
-                           CudaMatrix.new(batch_size, 1, 0.0, Precision::Fp32)
-                         end
-        @workspace_norm = if precision == Precision::Fp64
-                             CudaMatrix.get_workspace(batch_size, d_model, "ln_norm")
-                           else
-                             CudaMatrix.new(batch_size, d_model, 0.0, precision)
-                           end
-        @workspace_result = if precision == Precision::Fp64
-                               CudaMatrix.get_workspace(batch_size, d_model, "ln_result")
-                             else
-                               CudaMatrix.new(batch_size, d_model, 0.0, precision)
-                             end
-        @workspace_d_x = if precision == Precision::Fp64
-                            CudaMatrix.get_workspace(batch_size, d_model, "ln_d_x")
-                          else
-                            CudaMatrix.new(batch_size, d_model, 0.0, precision)
-                          end
-        @workspace_d_gamma = CudaMatrix.get_workspace(1, d_model, "ln_d_gamma")
-        @workspace_d_beta = CudaMatrix.get_workspace(1, d_model, "ln_d_beta")
+        @workspace_mean = CudaMatrix.get_workspace(batch_size, 1, "ln_mean", precision)
+        @workspace_var = CudaMatrix.get_workspace(batch_size, 1, "ln_var", precision)
+        @workspace_norm = CudaMatrix.get_workspace(batch_size, d_model, "ln_norm", precision)
+        @workspace_result = CudaMatrix.get_workspace(batch_size, d_model, "ln_result", precision)
+        @workspace_d_x = CudaMatrix.get_workspace(batch_size, d_model, "ln_d_x", precision)
+        @workspace_d_gamma = CudaMatrix.get_workspace(1, d_model, "ln_d_gamma", precision)
+        @workspace_d_beta = CudaMatrix.get_workspace(1, d_model, "ln_d_beta", precision)
 
         @workspace_d_gamma.not_nil!.zero!
         @workspace_d_beta.not_nil!.zero!

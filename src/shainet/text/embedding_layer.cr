@@ -294,11 +294,7 @@ module SHAInet
         end
 
         precision = @embeddings.as(CudaMatrix).precision
-        @workspace_result = if precision == Precision::Fp64
-                              CudaMatrix.get_workspace(ids_size, @l_size, "embed_ws")
-                            else
-                              CudaMatrix.new(ids_size, @l_size, 0.0, precision)
-                            end
+        @workspace_result = CudaMatrix.get_workspace(ids_size, @l_size, "embed_ws", precision)
         @workspace_result.not_nil!.zero!
 
         @last_ids_size = ids_size
