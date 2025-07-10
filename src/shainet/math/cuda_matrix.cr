@@ -1028,7 +1028,9 @@ module SHAInet
       self
     end
 
-    # Provide access to raw data for batch operations
+    # Return matrix data as `Array(Float64)` for compatibility.
+    # For non-`Fp64` precisions this allocates and converts values,
+    # so use `raw_data_buffer` when direct mutable access is needed.
     def raw_data
       case @precision
       when Precision::Int8
@@ -1038,6 +1040,26 @@ module SHAInet
       else
         @data_f64.not_nil!
       end
+    end
+
+    # Provide a mutable slice of the underlying CPU buffer without
+    # any precision conversion. Useful for copying data to or from the
+    # GPU while avoiding extra allocations.
+    def raw_data_buffer : Bytes
+      bytes = @rows * @cols * element_size
+      ptr = case @precision
+            when Precision::Int8
+              @data_i8.not_nil!.to_unsafe.as(UInt8*)
+            when Precision::Fp16
+              @data_f16.not_nil!.to_unsafe.as(UInt8*)
+            when Precision::Bf16
+              @data_bf16.not_nil!.to_unsafe.as(UInt8*)
+            when Precision::Fp32
+              @data_f32_master.not_nil!.to_unsafe.as(UInt8*)
+            else
+              @data_f64.not_nil!.to_unsafe.as(UInt8*)
+            end
+      Slice(UInt8).new(ptr, bytes)
     end
 
     # Copy data from another CudaMatrix

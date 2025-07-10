@@ -1418,7 +1418,11 @@ module SHAInet
             mat.mark_device_dirty!
           end
 
-          flat_slice.each_with_index { |v, i| mat.raw_data[i] = v }
+          flat_slice.each_with_index do |v, i|
+            r = i // cols
+            c = i % cols
+            mat.unsafe_set(r, c, v)
+          end
 
           mat
         else
@@ -1437,7 +1441,7 @@ module SHAInet
             mat.mark_device_dirty!
           end
 
-          flat_slice.each_with_index { |v, i| mat.raw_data[i] = v }
+          flat_slice.each_with_index { |v, i| mat.unsafe_set(0, i, v) }
 
           mat
         end
@@ -1665,7 +1669,11 @@ module SHAInet
 
       # Copy data in batch instead of elementwise
       flat_data = data.flatten
-      result.raw_data.copy_from(flat_data.to_unsafe, flat_data.size)
+      flat_data.each_with_index do |v, idx|
+        r = idx // cols
+        c = idx % cols
+        result.unsafe_set(r, c, v)
+      end
       result.sync_to_device!
       result
     end
@@ -1673,9 +1681,9 @@ module SHAInet
     # Optimized matrix population from single array using batch operations
     private def populate_matrix_batch(matrix : CudaMatrix | SimpleMatrix, data : Array(Float64), row : Int32)
       if matrix.is_a?(CudaMatrix)
-        # Use raw data access for batch copy instead of elementwise assignment
-        start_idx = row * matrix.cols
-        matrix.raw_data.to_slice[start_idx, data.size].copy_from(data.to_unsafe, data.size)
+        data.each_with_index do |val, col|
+          matrix.unsafe_set(row, col, val)
+        end
         matrix.sync_to_device!
       else
         # For SimpleMatrix, still do elementwise but at least batch the operation

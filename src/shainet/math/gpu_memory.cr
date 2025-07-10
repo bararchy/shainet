@@ -75,13 +75,12 @@ module SHAInet
       size = src.rows * src.cols
       bytes = (size * 8).to_u64
 
-      # Keep CPU copy in sync
-      dest_slice = Slice(Float64).new(dest.raw_data.to_unsafe, size)
-      src_slice = Slice(Float64).new(src.data.to_unsafe, size)
-      dest_slice.copy_from(src_slice)
+      dest_buf = dest.raw_data_buffer
+      src_buf = Slice(UInt8).new(src.data.to_unsafe.as(UInt8*), bytes)
+      dest_buf.copy_from(src_buf)
 
       if (dptr = dest.device_ptr) && !dptr.null?
-        result = CUDA.memcpy(dptr.as(Pointer(Void)), src_slice.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
+        result = CUDA.memcpy(dptr.as(Pointer(Void)), src_buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
         Log.error { "GPUMemory.to_gpu!: GPU memcpy failed with result #{result}" } if result != 0
       end
 
@@ -99,12 +98,12 @@ module SHAInet
       size = matrix.rows * matrix.cols
       bytes = (size * 8).to_u64
 
-      dest_slice = Slice(Float64).new(dest.raw_data.to_unsafe, size)
-      src_slice = Slice(Float64).new(matrix.data.to_unsafe, size)
-      dest_slice.copy_from(src_slice)
+      dest_buf = dest.raw_data_buffer
+      src_buf = Slice(UInt8).new(matrix.data.to_unsafe.as(UInt8*), bytes)
+      dest_buf.copy_from(src_buf)
 
       if (dptr = dest.device_ptr) && !dptr.null?
-        result = CUDA.memcpy(dptr.as(Pointer(Void)), src_slice.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
+        result = CUDA.memcpy(dptr.as(Pointer(Void)), src_buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
         Log.error { "GPUMemory.to_gpu!: GPU memcpy failed with result #{result}" } if result != 0
       end
 
@@ -118,13 +117,14 @@ module SHAInet
       raise ArgumentError.new("size mismatch") unless dest.rows == 1 && dest.cols == array.size
 
       slice = Slice(Float64).new(array.size) { |i| array[i].to_f64 }
+      bytes = (array.size * 8).to_u64
 
-      dest_slice = Slice(Float64).new(dest.raw_data.to_unsafe, array.size)
-      dest_slice.copy_from(slice)
+      dest_buf = dest.raw_data_buffer
+      src_buf = Slice(UInt8).new(slice.to_unsafe.as(UInt8*), bytes)
+      dest_buf.copy_from(src_buf)
 
       if (dptr = dest.device_ptr) && !dptr.null?
-        bytes = (array.size * 8).to_u64
-        result = CUDA.memcpy(dptr.as(Pointer(Void)), slice.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
+        result = CUDA.memcpy(dptr.as(Pointer(Void)), src_buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
         Log.error { "GPUMemory.to_gpu!: GPU memcpy failed with result #{result}" } if result != 0
       end
 
@@ -145,13 +145,13 @@ module SHAInet
         array[i].as(Array)[j].as(GenNum).to_f64
       end
 
-      dest_slice = Slice(Float64).new(dest.raw_data.to_unsafe, rows * cols)
-      src_slice = Slice(Float64).new(flat.to_unsafe, flat.size)
-      dest_slice.copy_from(src_slice)
+      bytes = (rows * cols * 8).to_u64
+      dest_buf = dest.raw_data_buffer
+      src_buf = Slice(UInt8).new(flat.to_unsafe.as(UInt8*), bytes)
+      dest_buf.copy_from(src_buf)
 
       if (dptr = dest.device_ptr) && !dptr.null?
-        bytes = (rows * cols * 8).to_u64
-        result = CUDA.memcpy(dptr.as(Pointer(Void)), src_slice.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
+        result = CUDA.memcpy(dptr.as(Pointer(Void)), src_buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
         Log.error { "GPUMemory.to_gpu!: GPU memcpy failed with result #{result}" } if result != 0
       end
 
