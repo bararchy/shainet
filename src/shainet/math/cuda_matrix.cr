@@ -804,8 +804,8 @@ module SHAInet
         bias.sync_to_device!("bias_addition") unless bias.device_dirty?
 
         CUDA.add_bias_fp16(
-          dptr.as(UInt16Ptr),
-          bptr.as(UInt16Ptr),
+          dptr.as(CUDA::UInt16Ptr),
+          bptr.as(CUDA::UInt16Ptr),
           @rows, @cols)
 
         mark_device_dirty!
@@ -817,8 +817,8 @@ module SHAInet
         bias.sync_to_device!("bias_addition") unless bias.device_dirty?
 
         CUDA.add_bias_bf16(
-          dptr.as(UInt16Ptr),
-          bptr.as(UInt16Ptr),
+          dptr.as(CUDA::UInt16Ptr),
+          bptr.as(CUDA::UInt16Ptr),
           @rows, @cols)
 
         mark_device_dirty!
@@ -920,54 +920,58 @@ module SHAInet
         return self
       elsif @precision.in?({Precision::Fp16, Precision::Bf16, Precision::Fp32}) &&
             vec.precision == @precision && CUDNN.available?
-        {% if flag?(:enable_cuda) %}
-          begin
-            # Broadcast multiply using cuDNN OpTensor
-            op_desc = uninitialized LibCUDNN::CudnnOpTensorDescriptor
-            CUDNN.check_status(LibCUDNN.cudnnCreateOpTensorDescriptor(out op_desc))
+        stat = LibCUDNN.cudnnCreateOpTensorDescriptor(out op_desc)
+        begin
+          # # Broadcast multiply using cuDNN OpTensor
+          # op_desc = uninitialized LibCUDNN::CudnnOpTensorDescriptor
+          CUDNN.check_status(stat)
 
-            begin
-              dtype = CUDNN.data_type_for(@precision)
-              CUDNN.check_status(LibCUDNN.cudnnSetOpTensorDescriptor(
+          begin
+            dtype = CUDNN.data_type_for(@precision)
+            CUDNN.check_status(
+              LibCUDNN.cudnnSetOpTensorDescriptor(
                 op_desc,
                 LibCUDNN::CudnnOpTensorOp::CUDNN_OP_TENSOR_MUL,
                 dtype,
-                0))
+                0
+              )
+            )
 
-              mat_desc = CUDNN.create_tensor_descriptor_2d(@rows, @cols, @precision)
-              vec_desc = CUDNN.create_tensor_descriptor_2d(1, vec.cols, vec.precision)
+            mat_desc = CUDNN.create_tensor_descriptor_2d(@rows, @cols, @precision)
+            vec_desc = CUDNN.create_tensor_descriptor_2d(1, vec.cols, vec.precision)
 
-              alpha1 = 1.0
-              alpha2 = 1.0
-              beta = 0.0
+            alpha1 = 1.0
+            alpha2 = 1.0
+            beta = 0.0
 
-              self.sync_to_device!("mul_row_vector") unless device_dirty?
-              vec.sync_to_device!("mul_row_vector") unless vec.device_dirty?
+            self.sync_to_device!("mul_row_vector") unless device_dirty?
+            vec.sync_to_device!("mul_row_vector") unless vec.device_dirty?
 
-              CUDNN.check_status(LibCUDNN.cudnnOpTensor(
-                CUDNN.handle,
-                op_desc,
-                pointerof(alpha1).as(Pointer(Void)),
-                mat_desc,
-                dptr.as(Pointer(Void)),
-                pointerof(alpha2).as(Pointer(Void)),
-                vec_desc,
-                vptr.as(Pointer(Void)),
-                pointerof(beta).as(Pointer(Void)),
-                mat_desc,
-                dptr.as(Pointer(Void))
-              ))
+            CUDNN.check_status(LibCUDNN.cudnnOpTensor(
+              CUDNN.handle,
+              op_desc,
+              pointerof(alpha1).as(Pointer(Void)),
+              mat_desc,
+              dptr.as(Pointer(Void)),
+              pointerof(alpha2).as(Pointer(Void)),
+              vec_desc,
+              vptr.as(Pointer(Void)),
+              pointerof(beta).as(Pointer(Void)),
+              mat_desc,
+              dptr.as(Pointer(Void))
+            ))
 
-              mark_device_dirty!
-              return self
-            ensure
-              LibCUDNN.cudnnDestroyTensorDescriptor(mat_desc)
-              LibCUDNN.cudnnDestroyTensorDescriptor(vec_desc)
-            end
+            mark_device_dirty!
+            return self
           ensure
-            LibCUDNN.cudnnDestroyOpTensorDescriptor(op_desc)
+            LibCUDNN.cudnnDestroyTensorDescriptor(mat_desc.not_nil!)
+            LibCUDNN.cudnnDestroyTensorDescriptor(vec_desc.not_nil!)
           end
-        {% end %}
+        ensure
+          if opd = op_desc
+            LibCUDNN.cudnnDestroyOpTensorDescriptor(opd)
+          end
+        end
       end
 
       # CPU fallback

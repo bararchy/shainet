@@ -3,6 +3,10 @@ module SHAInet
     extend self
     Log = ::Log.for(self)
 
+    # Alias used by GPU kernels when CUDA is enabled.
+    # Defined here as a noop pointer type for compatibility
+    alias UInt16Ptr = Pointer(UInt16)
+
     enum MemcpyKind
       HostToHost     = 0
       HostToDevice   = 1
@@ -160,6 +164,14 @@ module SHAInet
     end
 
     def dropout_bf16(*args)
+      raise "CUDA kernels not available"
+    end
+
+    def add_bias_fp16(*args)
+      raise "CUDA kernels not available"
+    end
+
+    def add_bias_bf16(*args)
       raise "CUDA kernels not available"
     end
 

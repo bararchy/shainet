@@ -1461,10 +1461,10 @@ module SHAInet
             mat.mark_device_dirty!
           end
 
-          flat_slice.each_with_index do |v, i|
-            r = i // cols
-            c = i % cols
-            mat.unsafe_set(r, c, v)
+          arr.each_with_index do |row_arr, r|
+            row_arr.as(Array).each_with_index do |val, c|
+              mat.unsafe_set(r, c, val.as(GenNum).to_f64)
+            end
           end
 
           mat.sync_to_device!("to_matrix")
@@ -1512,7 +1512,9 @@ module SHAInet
             mat.mark_device_dirty!
           end
 
-          flat_slice.each_with_index { |v, i| mat.unsafe_set(0, i, v) }
+          arr.each_with_index do |val, i|
+            mat.unsafe_set(0, i, val.as(GenNum).to_f64)
+          end
 
           mat.sync_to_device!("to_matrix")
           mat
