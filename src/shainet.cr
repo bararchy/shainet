@@ -49,7 +49,7 @@ require "./shainet/version"
 
 module SHAInet
   Log = ::Log.for(self)
-  alias GenNum = Float64 | Int32 | Int64 | Float32
+  alias GenNum = Float64 | Int32 | Int64 | Float32 | Float16 | BFloat16
 
   lvl = {
     "info"  => ::Log::Severity::Info,

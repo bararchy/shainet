@@ -26,10 +26,16 @@ module SHAInet
     @batch_out_ws : CudaMatrix? = nil
     @batch_grad_ws : CudaMatrix? = nil
 
-    private def convert_num(v : GenNum) : Float64
+    private def convert_num(v : GenNum)
       case @precision
       when Precision::Fp64
         v.to_f64
+      when Precision::Fp32
+        v.to_f32
+      when Precision::Fp16
+        Float16.new(v.to_f32)
+      when Precision::Bf16
+        BFloat16.new(v.to_f32)
       else
         v.to_f32.to_f64
       end
@@ -53,7 +59,8 @@ module SHAInet
 
       # Convert to matrix and use core matrix method
       processed = convert_array(input)
-      matrix = GPUMemory.to_gpu(SimpleMatrix.from_a([processed]))
+      sm = SimpleMatrix.from_a([processed], @precision)
+      matrix = CUDA.fully_available? ? sm.to_cuda : sm
       result_matrix = if @precision == Precision::Int8
                         run_int8(matrix.is_a?(CudaMatrix) ? matrix.to_simple : matrix)
                       else
@@ -84,7 +91,8 @@ module SHAInet
         "Error input data size: #{input.size} doesn't fit input layer size: #{expected_size}.") unless input.size == expected_size
 
       processed = convert_array(input)
-      matrix = GPUMemory.to_gpu(SimpleMatrix.from_a([processed]))
+      sm = SimpleMatrix.from_a([processed], @precision)
+      matrix = CUDA.fully_available? ? sm.to_cuda : sm
       result_matrix = if @precision == Precision::Int8
                         run_int8(matrix.is_a?(CudaMatrix) ? matrix.to_simple : matrix)
                       else
@@ -432,7 +440,8 @@ module SHAInet
 
       outputs = [] of Array(Float64)
       tokens.each do |t|
-        matrix = GPUMemory.to_gpu(SimpleMatrix.from_a([[t.to_f64]]))
+        sm = SimpleMatrix.from_a([[t.to_f64]], @precision)
+        matrix = CUDA.fully_available? ? sm.to_cuda : sm
         out_matrix = run(matrix, stealth: true)
         if out_matrix.is_a?(CudaMatrix)
           out_matrix.sync_from_device!("cached_run") if out_matrix.device_dirty?
@@ -456,7 +465,8 @@ module SHAInet
 
       # Convert to matrix and use core matrix method
       processed = convert_seq(input)
-      matrix = GPUMemory.to_gpu(SimpleMatrix.from_a(processed))
+      sm = SimpleMatrix.from_a(processed, @precision)
+      matrix = CUDA.fully_available? ? sm.to_cuda : sm
       result_matrix = run(matrix, stealth: stealth)
 
       # Efficient array extraction - sync only once if needed
@@ -478,7 +488,8 @@ module SHAInet
       end
 
       processed = convert_seq(input)
-      matrix = GPUMemory.to_gpu(SimpleMatrix.from_a(processed))
+      sm = SimpleMatrix.from_a(processed, @precision)
+      matrix = CUDA.fully_available? ? sm.to_cuda : sm
       result_matrix = run(matrix, stealth: stealth)
 
       if return_matrix
@@ -528,21 +539,21 @@ module SHAInet
         exp_data = expected_output.map(&.to_f64)
 
         exp = if CUDA.fully_available?
-                mat = CudaMatrix.new(1, exp_data.size)
+                mat = CudaMatrix.new(1, exp_data.size, precision: @precision)
                 exp_data.each_with_index { |val, i| mat[0, i] = val }
                 mat.sync_to_device!("evaluate_expected_matrix")
                 mat
               else
-                SimpleMatrix.from_a([exp_data])
+                SimpleMatrix.from_a([exp_data], @precision)
               end
 
         act = if CUDA.fully_available?
-                mat = CudaMatrix.new(1, actual_output.size)
+                mat = CudaMatrix.new(1, actual_output.size, precision: @precision)
                 actual_output.each_with_index { |val, i| mat[0, i] = val }
                 mat.sync_to_device!("evaluate_actual_matrix")
                 mat
               else
-                SimpleMatrix.from_a([actual_output])
+                SimpleMatrix.from_a([actual_output], @precision)
               end
 
         diff = if act.is_a?(CudaMatrix) && exp.is_a?(CudaMatrix)
@@ -655,8 +666,10 @@ module SHAInet
       @total_error = @error_signal.reduce(0.0) { |acc, i| acc + i }
 
       if @hidden_layers.any? &.is_a?(TransformerLayer)
-        exp_row = GPUMemory.to_gpu(SimpleMatrix.from_a([expected_output.map(&.to_f64)]))
-        act_row = GPUMemory.to_gpu(SimpleMatrix.from_a([actual_output]))
+        exp_row_sm = SimpleMatrix.from_a([expected_output.map(&.to_f64)], @precision)
+        act_row_sm = SimpleMatrix.from_a([actual_output], @precision)
+        exp_row = CUDA.fully_available? ? exp_row_sm.to_cuda : exp_row_sm
+        act_row = CUDA.fully_available? ? act_row_sm.to_cuda : act_row_sm
         diff = act_row - exp_row
         tmp = GPUMemory.zeros_like(diff, outputs.size, diff.cols)
         tmp = tmp.to_simple if tmp.is_a?(CudaMatrix)
@@ -683,7 +696,8 @@ module SHAInet
     # Evaluate a single example using a class label and softmax cross entropy
     def evaluate_label(input_data : Array(GenNum), label : Int32)
       processed = input_data.map(&.to_f64)
-      matrix = GPUMemory.to_gpu(SimpleMatrix.from_a([processed]))
+      sm = SimpleMatrix.from_a([processed], @precision)
+      matrix = CUDA.fully_available? ? sm.to_cuda : sm
       logits = run(matrix, stealth: true)
 
       if logits.is_a?(CudaMatrix)
@@ -695,7 +709,7 @@ module SHAInet
         target[0, label] = 1.0
         target.sync_to_device!
 
-        grad = CudaMatrix.new(1, logits.cols)
+        grad = CudaMatrix.new(1, logits.cols, precision: @precision)
         loss_val = 0.0
 
         if CUDNN.available?
@@ -751,7 +765,8 @@ module SHAInet
     # Evaluate a sequence example with a class label and softmax cross entropy
     def evaluate_sequence_label(input_data : Array(Array(GenNum)), label : Int32)
       seq = input_data.map { |x| x.map(&.to_f64) }
-      matrix = GPUMemory.to_gpu(SimpleMatrix.from_a(seq))
+      sm = SimpleMatrix.from_a(seq, @precision)
+      matrix = CUDA.fully_available? ? sm.to_cuda : sm
       logits = run(matrix, stealth: true)
 
       if logits.is_a?(CudaMatrix)
@@ -763,7 +778,7 @@ module SHAInet
         target[0, label] = 1.0
         target.sync_to_device!
 
-        grad = CudaMatrix.new(1, logits.cols)
+        grad = CudaMatrix.new(1, logits.cols, precision: @precision)
         loss_val = 0.0
 
         if CUDNN.available?
@@ -806,9 +821,9 @@ module SHAInet
         @total_error = -Math.log(probs[label].clamp(1e-9, 1.0))
 
         if @hidden_layers.any? &.is_a?(TransformerLayer)
-          exp_row = SimpleMatrix.zeros(1, probs.size)
+          exp_row = SimpleMatrix.zeros(1, probs.size, @precision)
           exp_row[0, label] = 1.0
-          act_row = SimpleMatrix.from_a([probs])
+          act_row = SimpleMatrix.from_a([probs], @precision)
           diff = act_row - exp_row
           out_w = @output_layers.last.weights
           w = out_w.is_a?(CudaMatrix) ? out_w.to_simple : out_w.as(SimpleMatrix)
@@ -992,7 +1007,7 @@ module SHAInet
          !first_output.as(Array)[0].is_a?(Array) && @output_layers.last.is_a?(MatrixLayer)
         if !(CUDA.fully_available? && CUDNN.available? &&
            @output_layers.last.as(MatrixLayer).size > 1)
-          label = first_output.as(Array).first.as(GenNum).to_i
+          label = first_output.as(Array).first.as(GenNum).to_f64.to_i
           oh = Array(Float64).new(@output_layers.last.as(MatrixLayer).size, 0.0)
           oh[label] = 1.0 if label >= 0 && label < oh.size
           first_output = oh
@@ -1025,18 +1040,18 @@ module SHAInet
       if CUDA.fully_available?
         if !first_input.is_a?(CudaMatrix)
           if @batch_in_ws.nil? || @batch_in_ws.not_nil!.rows != in_rows || @batch_in_ws.not_nil!.cols != in_cols
-            @batch_in_ws = CudaMatrix.new(in_rows, in_cols)
+            @batch_in_ws = CudaMatrix.new(in_rows, in_cols, precision: @precision)
           end
           input_workspace = @batch_in_ws
         end
         if !first_output.is_a?(CudaMatrix)
           if @batch_out_ws.nil? || @batch_out_ws.not_nil!.rows != out_rows || @batch_out_ws.not_nil!.cols != out_cols
-            @batch_out_ws = CudaMatrix.new(out_rows, out_cols)
+            @batch_out_ws = CudaMatrix.new(out_rows, out_cols, precision: @precision)
           end
           expected_workspace = @batch_out_ws
         end
         if @batch_grad_ws.nil? || @batch_grad_ws.not_nil!.rows != out_rows || @batch_grad_ws.not_nil!.cols != out_cols
-          @batch_grad_ws = CudaMatrix.new(out_rows, out_cols)
+          @batch_grad_ws = CudaMatrix.new(out_rows, out_cols, precision: @precision)
         end
         output_grad = @batch_grad_ws
       end
@@ -1050,7 +1065,7 @@ module SHAInet
            !expected_output.as(Array)[0].is_a?(Array) && @output_layers.last.is_a?(MatrixLayer)
           if !(CUDA.fully_available? && CUDNN.available? &&
              @output_layers.last.as(MatrixLayer).size > 1)
-            label = expected_output.as(Array).first.as(GenNum).to_i
+            label = expected_output.as(Array).first.as(GenNum).to_f64.to_i
             oh = Array(Float64).new(@output_layers.last.as(MatrixLayer).size, 0.0)
             oh[label] = 1.0 if label >= 0 && label < oh.size
             expected_output = oh
@@ -1364,7 +1379,7 @@ module SHAInet
         if arr.size > 0 && arr[0].is_a?(Array)
           rows = arr.size
           cols = arr[0].as(Array).size
-          mat = CudaMatrix.new(rows, cols)
+          mat = CudaMatrix.new(rows, cols, precision: @precision)
 
           flat_slice = Slice(Float64).new(rows * cols) do |idx|
             r = idx // cols
@@ -1387,7 +1402,7 @@ module SHAInet
           mat
         else
           cols = arr.size
-          mat = CudaMatrix.new(1, cols)
+          mat = CudaMatrix.new(1, cols, precision: @precision)
 
           flat_slice = Slice(Float64).new(cols) { |i| arr[i].as(GenNum).to_f64 }
 
@@ -1410,7 +1425,7 @@ module SHAInet
         mat = if arr.size > 0 && arr[0].is_a?(Array)
                 rows = arr.size
                 cols = arr[0].as(Array).size
-                SimpleMatrix.new(rows, cols).tap do |m|
+                SimpleMatrix.new(rows, cols, 0.0, @precision).tap do |m|
                   rows.times do |i|
                     cols.times do |j|
                       m[i, j] = arr[i].as(Array)[j].as(GenNum).to_f64
@@ -1418,7 +1433,7 @@ module SHAInet
                   end
                 end
               else
-                SimpleMatrix.new(1, arr.size).tap do |m|
+                SimpleMatrix.new(1, arr.size, 0.0, @precision).tap do |m|
                   arr.size.times do |i|
                     m[0, i] = arr[i].as(GenNum).to_f64
                   end
@@ -1498,7 +1513,7 @@ module SHAInet
           last_token = if CUDA.fully_available? && (mptr = matrix.device_ptr) && (wptr = weights.device_ptr) && !mptr.null? && !wptr.null?
                          begin
                            # Use more efficient GPU slice operation for last row
-                           result = CudaMatrix.new(1, matrix.cols)
+                           result = CudaMatrix.new(1, matrix.cols, precision: @precision)
                            # Copy last row using GPU memory copy
                            last_row_offset = (matrix.rows - 1) * matrix.cols
                            CUDA.copy_device_to_device(
@@ -1510,7 +1525,7 @@ module SHAInet
                            result
                          rescue e
                            # Fallback to elementwise copy if GPU operation fails
-                           last_token_fallback = CudaMatrix.new(1, matrix.cols)
+                           last_token_fallback = CudaMatrix.new(1, matrix.cols, precision: @precision)
                            matrix.cols.times do |j|
                              last_token_fallback[0, j] = matrix[matrix.rows - 1, j]
                            end
@@ -1519,7 +1534,7 @@ module SHAInet
                          end
                        else
                          # CPU fallback
-                         last_token_cpu = CudaMatrix.new(1, matrix.cols)
+                         last_token_cpu = CudaMatrix.new(1, matrix.cols, precision: @precision)
                          matrix.cols.times do |j|
                            last_token_cpu[0, j] = matrix[matrix.rows - 1, j]
                          end
@@ -1547,7 +1562,7 @@ module SHAInet
           # Try reshaping for a single token/sequence case
           if matrix.rows == 1 && matrix.cols > 0 && weights.rows > 0 && weights.cols > 0
             Log.info { "Reshaping matrix for single-token transformer operation" }
-            reshaped = CudaMatrix.new(1, weights.cols)
+            reshaped = CudaMatrix.new(1, weights.cols, precision: @precision)
             weights.cols.times do |j|
               sum = 0.0
               matrix.cols.times do |k|
@@ -1570,7 +1585,7 @@ module SHAInet
         # For transformer architectures, use only the last token's representation
         if @hidden_layers.any? &.is_a?(TransformerLayer)
           # Extract last token (row) from transformer output for language modeling
-          last_token = SimpleMatrix.new(1, matrix.cols)
+          last_token = SimpleMatrix.new(1, matrix.cols, 0.0, @precision)
           matrix.cols.times do |j|
             last_token[0, j] = matrix[matrix.rows - 1, j]
           end
@@ -1595,7 +1610,7 @@ module SHAInet
           # Try reshaping for a single token/sequence case
           if matrix.rows == 1 && matrix.cols > 0 && weights.rows > 0 && weights.cols > 0
             Log.info { "Reshaping matrix for single-token transformer operation" }
-            reshaped = SimpleMatrix.new(1, weights.cols)
+            reshaped = SimpleMatrix.new(1, weights.cols, 0.0, @precision)
             weights.cols.times do |j|
               sum = 0.0
               matrix.cols.times do |k|
@@ -1620,12 +1635,12 @@ module SHAInet
 
     # Optimized matrix creation from arrays using batch operations
     private def create_matrix_from_arrays(data : Array(Array(Float64)), use_gpu : Bool = true) : SimpleMatrix | CudaMatrix
-      return SimpleMatrix.from_a(data) unless use_gpu && CUDA.fully_available?
+      return SimpleMatrix.from_a(data, @precision) unless use_gpu && CUDA.fully_available?
 
       # Create GPU matrix directly from array data in batch
       rows = data.size
       cols = data[0].size
-      result = CudaMatrix.new(rows, cols)
+      result = CudaMatrix.new(rows, cols, precision: @precision)
 
       # Copy data in batch instead of elementwise
       flat_data = data.flatten
@@ -1682,7 +1697,7 @@ module SHAInet
 
     # Helper method for matrix slicing (missing method)
     private def slice_rows_helper(matrix : CudaMatrix, start_row : Int32, num_rows : Int32) : CudaMatrix
-      result = CudaMatrix.new(num_rows, matrix.cols)
+      result = CudaMatrix.new(num_rows, matrix.cols, precision: @precision)
       num_rows.times do |i|
         matrix.cols.times do |j|
           result[i, j] = matrix[start_row + i, j]
