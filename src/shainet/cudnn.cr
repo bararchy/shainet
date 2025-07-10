@@ -244,7 +244,9 @@ module SHAInet
 
       # Set up 4D tensor descriptor: [batch, channels, height, width] = [rows, cols, 1, 1]
       dims = [rows, cols, 1, 1]
-      strides = [cols, 1, cols, cols] # Row-major ordering
+      # Row-major ordering for a 2D matrix treated as [rows, cols, 1, 1]
+      # For singleton dimensions (height and width) the stride can be 1
+      strides = [cols, 1, 1, 1]
       CUDNN.check_status(LibCUDNN.cudnnSetTensorNdDescriptor(
         desc,
         data_type_for(precision),
