@@ -385,6 +385,9 @@ module SHAInet
     # Optimized bias addition
     def self.add_bias!(matrix : CudaMatrix, bias : CudaMatrix)
       raise "Bias must be a row vector" unless bias.rows == 1 && bias.cols == matrix.cols
+      if matrix.precision != bias.precision
+        raise ArgumentError.new("matrix precision (#{matrix.precision}) must match bias precision (#{bias.precision})")
+      end
 
       # For bias addition, cuDNN expects the bias to be a 4D tensor with shape [1, C, 1, 1]
       # and the matrix to be [N, C, H, W]. For 2D matrices, we treat them as [N, C, 1, 1]
