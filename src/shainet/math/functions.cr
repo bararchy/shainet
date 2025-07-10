@@ -37,6 +37,10 @@ module SHAInet
     ->(value : GenNum) { {_gelu(value), _gelu_prime(value)} }
   end
 
+  def self.swiglu : ActivationFunction # Output range (-inf..inf)
+    ->(value : GenNum) { {_swiglu(value), _swiglu_prime(value)} }
+  end
+
   def self.identity : ActivationFunction # Output range (-inf..inf)
     ->(value : GenNum) { {value.to_f64, 1.0} }
   end
@@ -153,6 +157,17 @@ module SHAInet
   def self._gelu_prime(value : GenNum) : Float64
     x = value.to_f64
     0.5*(1.0 + Math.erf(x / Math.sqrt(2.0))) + x*Math.exp(-0.5*x*x)/Math.sqrt(2.0*Math::PI)
+  end
+
+  def self._swiglu(value : GenNum) : Float64
+    v = value.to_f64
+    v * _sigmoid(v)
+  end
+
+  def self._swiglu_prime(value : GenNum) : Float64
+    v = value.to_f64
+    s = _sigmoid(v)
+    s + v * s * (1.0 - s)
   end
 
   ##################################################################

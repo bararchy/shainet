@@ -33,6 +33,8 @@ module SHAInet
     @workspace_out : CudaMatrix | Nil = nil
     @last_batch_size : Int32 = 0
 
+    @pre_act : SimpleMatrix | CudaMatrix | Nil = nil
+
     property g_w1 : SimpleMatrix | CudaMatrix
     property g_w2 : SimpleMatrix | CudaMatrix
     property g_b1 : SimpleMatrix | CudaMatrix
@@ -43,20 +45,23 @@ module SHAInet
     def initialize(d_model : Int32, hidden_dim : Int32, activation_function : ActivationFunction = SHAInet.relu)
       # Use CudaMatrix when CUDA is available for better performance
       mat_klass = CUDA.fully_available? ? CudaMatrix : SimpleMatrix
-      @w1 = mat_klass.new(d_model, hidden_dim).random_fill!
-      @b1 = mat_klass.new(1, hidden_dim).random_fill!
+      first_hidden = activation_function == SHAInet.swiglu ? hidden_dim * 2 : hidden_dim
+
+      @w1 = mat_klass.new(d_model, first_hidden).random_fill!
+      @b1 = mat_klass.new(1, first_hidden).random_fill!
       @w2 = mat_klass.new(hidden_dim, d_model).random_fill!
       @b2 = mat_klass.new(1, d_model).random_fill!
-      @g_w1 = mat_klass.zeros(d_model, hidden_dim)
+      @g_w1 = mat_klass.zeros(d_model, first_hidden)
       @g_w2 = mat_klass.zeros(hidden_dim, d_model)
-      @g_b1 = mat_klass.zeros(1, hidden_dim)
+      @g_b1 = mat_klass.zeros(1, first_hidden)
       @g_b2 = mat_klass.zeros(1, d_model)
       @h = mat_klass.zeros(1, 1)
       @out = mat_klass.zeros(1, 1)
+      @pre_act = mat_klass.zeros(1, 1)
       @activation_function = activation_function
 
       # Initialize cached transposes
-      @w1_t = mat_klass.new(hidden_dim, d_model)
+      @w1_t = mat_klass.new(first_hidden, d_model)
       @w2_t = mat_klass.new(d_model, hidden_dim)
       update_transposes
 
@@ -88,6 +93,7 @@ module SHAInet
         @h = @h.as(SimpleMatrix).to_cuda if @h && !@h.is_a?(CudaMatrix)
         @out = @out.as(SimpleMatrix).to_cuda if @out && !@out.is_a?(CudaMatrix)
         @x = @x.as(SimpleMatrix).to_cuda if @x && !@x.is_a?(CudaMatrix)
+        @pre_act = @pre_act.as(SimpleMatrix).to_cuda if @pre_act && !@pre_act.is_a?(CudaMatrix)
         update_transposes
         # Reset workspaces to allocate on next forward
         @workspace_w2_t = nil
@@ -116,30 +122,45 @@ module SHAInet
 
       h_ws = @workspace_h.not_nil!
       h_ws.gemm!(x, w1_gpu)
-      @h = h_ws
-
-      @h.as(CudaMatrix).add_bias!(b1_gpu)
+      h_ws.add_bias!(b1_gpu)
+      @pre_act = h_ws.clone
 
       case @activation_function
+      when SHAInet.swiglu
+        h_ws.sync_from_device! if h_ws.device_dirty?
+        half = h_ws.cols // 2
+        gated = CudaMatrix.zeros(h_ws.rows, half)
+        h_ws.rows.times do |i|
+          half.times do |j|
+            a = h_ws.unsafe_get(i, j)
+            b = h_ws.unsafe_get(i, j + half)
+            gated.unsafe_set(i, j, a * SHAInet._sigmoid(b))
+          end
+        end
+        gated.sync_to_device!
+        @h = gated
       when SHAInet.relu
         if CUDNN.available?
           CUDNN.relu_forward(@h.as(CudaMatrix), @h.as(CudaMatrix))
         else
-          @h.as(CudaMatrix).relu!
+          h_ws.relu!
         end
+        @h = h_ws
       when SHAInet.gelu
-        @h.as(CudaMatrix).gelu!
+        h_ws.gelu!
+        @h = h_ws
       else
         # Fallback CPU computation
-        @h.as(CudaMatrix).sync_from_device!("pwff_activation") if @h.as(CudaMatrix).device_dirty?
-        @h.rows.times do |i|
-          @h.cols.times do |j|
-            val = @h.as(CudaMatrix).unsafe_get(i, j)
+        h_ws.sync_from_device!("pwff_activation") if h_ws.device_dirty?
+        h_ws.rows.times do |i|
+          h_ws.cols.times do |j|
+            val = h_ws.as(CudaMatrix).unsafe_get(i, j)
             act, _ = @activation_function.call(val)
-            @h.as(CudaMatrix).unsafe_set(i, j, act)
+            h_ws.as(CudaMatrix).unsafe_set(i, j, act)
           end
         end
-        @h.as(CudaMatrix).sync_to_device!("pwff_activation")
+        h_ws.sync_to_device!("pwff_activation")
+        @h = h_ws
       end
 
       out_ws = @workspace_out.not_nil!
@@ -165,21 +186,37 @@ module SHAInet
       w2_cpu = @w2.as(SimpleMatrix)
       b2_cpu = @b2.as(SimpleMatrix)
 
-      @h = x * w1_cpu
-      @h.as(SimpleMatrix).add_bias!(b1_cpu)
+      pre = x * w1_cpu
+      pre.as(SimpleMatrix).add_bias!(b1_cpu)
+      @pre_act = pre
+
       case @activation_function
-      when SHAInet.relu
-        @h.as(SimpleMatrix).relu!
-      when SHAInet.gelu
-        @h.as(SimpleMatrix).gelu!
-      else
-        @h.rows.times do |i|
-          @h.cols.times do |j|
-            val = @h[i, j]
-            act, _ = @activation_function.call(val)
-            @h[i, j] = act
+      when SHAInet.swiglu
+        half = pre.cols // 2
+        gated = SimpleMatrix.zeros(pre.rows, half)
+        pre.rows.times do |i|
+          half.times do |j|
+            a = pre[i, j]
+            b = pre[i, j + half]
+            gated[i, j] = a * SHAInet._sigmoid(b)
           end
         end
+        @h = gated
+      when SHAInet.relu
+        pre.relu!
+        @h = pre
+      when SHAInet.gelu
+        pre.gelu!
+        @h = pre
+      else
+        pre.rows.times do |i|
+          pre.cols.times do |j|
+            val = pre[i, j]
+            act, _ = @activation_function.call(val)
+            pre[i, j] = act
+          end
+        end
+        @h = pre
       end
       @out = @h.as(SimpleMatrix) * w2_cpu
       @out.as(SimpleMatrix).add_bias!(b2_cpu)
@@ -198,23 +235,37 @@ module SHAInet
       dh = @workspace_dh.not_nil!
       dh.gemm!(d_out, w2_t)
 
-      temp_grad_w2 = @workspace_temp_grad_w2.not_nil!
-      h_t = @workspace_h_t.not_nil!
-      @h.as(CudaMatrix).transpose_into!(h_t)
-      temp_grad_w2.gemm!(h_t, d_out)
-      @g_w2.as(CudaMatrix).add!(temp_grad_w2)
+      if @activation_function == SHAInet.swiglu
+        h_t = @h.as(CudaMatrix).transpose
+        temp_grad_w2 = h_t * d_out
+        @g_w2.as(CudaMatrix).add!(temp_grad_w2)
+      else
+        temp_grad_w2 = @workspace_temp_grad_w2.not_nil!
+        h_t = @workspace_h_t.not_nil!
+        @h.as(CudaMatrix).transpose_into!(h_t)
+        temp_grad_w2.gemm!(h_t, d_out)
+        @g_w2.as(CudaMatrix).add!(temp_grad_w2)
+      end
 
       accumulate_bias_gradient(@g_b2, d_out)
 
-      drelu = activation_grad(@h.as(CudaMatrix), dh, dh)
+      drelu = if @activation_function == SHAInet.swiglu
+                pre = @pre_act.as(CudaMatrix)
+                pre.sync_from_device! if pre.device_dirty?
+                dh.sync_from_device! if dh.device_dirty?
+                dest = CudaMatrix.zeros(pre.rows, pre.cols)
+                activation_grad(pre, dh, dest)
+              else
+                activation_grad(@h.as(CudaMatrix), dh, dh)
+              end
 
       temp_grad_w1 = @workspace_temp_grad_w1.not_nil!
       x_t = @workspace_x_t.not_nil!
       @x.not_nil!.as(CudaMatrix).transpose_into!(x_t)
-      temp_grad_w1.gemm!(x_t, dh)
+      temp_grad_w1.gemm!(x_t, drelu)
       @g_w1.as(CudaMatrix).add!(temp_grad_w1)
 
-      accumulate_bias_gradient(@g_b1, dh)
+      accumulate_bias_gradient(@g_b1, drelu)
 
       w1_gpu = @w1.as(CudaMatrix)
       w1_t = @workspace_w1_t.not_nil!
@@ -243,24 +294,42 @@ module SHAInet
       end
       @g_b2 = @g_b2.as(SimpleMatrix) + db2
 
-      drelu = activation_grad(@h.as(SimpleMatrix), dh, dh)
+      if @activation_function == SHAInet.swiglu
+        pre = @pre_act.as(SimpleMatrix)
+        dest = SimpleMatrix.zeros(pre.rows, pre.cols)
+        activation_grad(pre, dh, dest)
+        temp_grad_w1 = @x.not_nil!.as(SimpleMatrix).transpose * dest
+        @g_w1 = @g_w1.as(SimpleMatrix) + temp_grad_w1
+        db1 = SimpleMatrix.zeros(1, dest.cols)
+        dest.cols.times do |j|
+          sum = 0.0
+          dest.rows.times { |i| sum += dest[i, j] }
+          db1[0, j] = sum
+        end
+        @g_b1 = @g_b1.as(SimpleMatrix) + db1
+        w1_cpu = @w1.as(SimpleMatrix)
+        d_input = dest * @w1_t.as(SimpleMatrix)
+        d_input
+      else
+        drelu = activation_grad(@h.as(SimpleMatrix), dh, dh)
 
-      # For SimpleMatrix, still need to create temporary (no in-place add for SimpleMatrix yet)
-      temp_grad_w1 = @x.not_nil!.as(SimpleMatrix).transpose * drelu
-      @g_w1 = @g_w1.as(SimpleMatrix) + temp_grad_w1
+        # For SimpleMatrix, still need to create temporary (no in-place add for SimpleMatrix yet)
+        temp_grad_w1 = @x.not_nil!.as(SimpleMatrix).transpose * drelu
+        @g_w1 = @g_w1.as(SimpleMatrix) + temp_grad_w1
 
-      # Efficient bias gradient accumulation for CPU path
-      db1 = SimpleMatrix.zeros(1, drelu.cols)
-      drelu.cols.times do |j|
-        sum = 0.0
-        drelu.rows.times { |i| sum += drelu[i, j] }
-        db1[0, j] = sum
+        # Efficient bias gradient accumulation for CPU path
+        db1 = SimpleMatrix.zeros(1, drelu.cols)
+        drelu.cols.times do |j|
+          sum = 0.0
+          drelu.rows.times { |i| sum += drelu[i, j] }
+          db1[0, j] = sum
+        end
+        @g_b1 = @g_b1.as(SimpleMatrix) + db1
+
+        w1_cpu = @w1.as(SimpleMatrix)
+        d_input = drelu * @w1_t.as(SimpleMatrix)
+        d_input
       end
-      @g_b1 = @g_b1.as(SimpleMatrix) + db1
-
-      w1_cpu = @w1.as(SimpleMatrix)
-      d_input = drelu * @w1_t.as(SimpleMatrix)
-      d_input
     end
 
     def apply_gradients(lr : Float64, weight_decay : Float64 = 0.0)
@@ -344,6 +413,25 @@ module SHAInet
     private def activation_grad(m : CudaMatrix, grad : CudaMatrix, dest : CudaMatrix) : CudaMatrix
       raise ArgumentError.new("size mismatch") unless grad.rows == dest.rows && grad.cols == dest.cols
       case @activation_function
+      when SHAInet.swiglu
+        m.sync_from_device!("ff_gradient_debug") if m.device_dirty?
+        grad.sync_from_device!("ff_gradient_debug") if grad.device_dirty?
+        half = grad.cols
+        raise ArgumentError.new("dest size") unless dest.cols == m.cols
+        dest.zero!
+        m.rows.times do |i|
+          half.times do |j|
+            a = m.unsafe_get(i, j)
+            b = m.unsafe_get(i, j + half)
+            g = grad.unsafe_get(i, j)
+            sig = _sigmoid(b)
+            sig_p = _sigmoid_prime(b)
+            dest.unsafe_set(i, j, g * sig)
+            dest.unsafe_set(i, j + half, g * a * sig_p)
+          end
+        end
+        dest.sync_to_device!("ff_backward_result")
+        dest
       when SHAInet.relu
         # Use cuDNN for optimized ReLU gradient if available
         if CUDNN.available?
@@ -396,13 +484,31 @@ module SHAInet
     end
 
     private def activation_grad(m : SimpleMatrix, grad : SimpleMatrix, dest : SimpleMatrix) : SimpleMatrix
-      raise ArgumentError.new("size mismatch") unless grad.rows == dest.rows && grad.cols == dest.cols
-      if @activation_function == SHAInet.relu
+      raise ArgumentError.new("size mismatch") unless grad.rows == dest.rows && grad.cols <= dest.cols
+      if @activation_function == SHAInet.swiglu
+        half = grad.cols
+        dest.rows.times do |i|
+          dest.cols.times { |j| dest[i, j] = 0.0 }
+        end
+        m.rows.times do |i|
+          half.times do |j|
+            a = m[i, j]
+            b = m[i, j + half]
+            g = grad[i, j]
+            sig = SHAInet._sigmoid(b)
+            sig_p = SHAInet._sigmoid_prime(b)
+            dest[i, j] = g * sig
+            dest[i, j + half] = g * a * sig_p
+          end
+        end
+        dest
+      elsif @activation_function == SHAInet.relu
         m.rows.times do |i|
           m.cols.times do |j|
             dest[i, j] = m[i, j] > 0 ? grad[i, j] : 0.0
           end
         end
+        dest
       else
         m.rows.times do |i|
           m.cols.times do |j|
@@ -410,8 +516,8 @@ module SHAInet
             dest[i, j] = grad[i, j] * d
           end
         end
+        dest
       end
-      dest
     end
 
     # Optimized bias gradient accumulation with minimal CPU-GPU sync
