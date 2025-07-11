@@ -364,6 +364,10 @@ module SHAInet
       raise CudnnError.new("cuDNN not available")
     end
 
+    def typed_scalar(value : Float64, precision : Precision) : Bytes
+      Bytes.new(1)
+    end
+
     def softmax_cross_entropy_loss_and_gradient(*args)
       raise CudnnError.new("cuDNN not available")
     end

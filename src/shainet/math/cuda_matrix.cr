@@ -1024,9 +1024,9 @@ module SHAInet
             mat_desc = CUDNN.create_tensor_descriptor_2d(@rows, @cols, @precision)
             vec_desc = CUDNN.create_tensor_descriptor_2d(1, vec.cols, vec.precision)
 
-            alpha1 = 1.0
-            alpha2 = 1.0
-            beta = 0.0
+            alpha1_buf = CUDNN.typed_scalar(1.0, @precision)
+            alpha2_buf = CUDNN.typed_scalar(1.0, @precision)
+            beta_buf = CUDNN.typed_scalar(0.0, @precision)
 
             self.sync_to_device!("mul_row_vector") unless device_dirty?
             vec.sync_to_device!("mul_row_vector") unless vec.device_dirty?
@@ -1034,13 +1034,13 @@ module SHAInet
             CUDNN.check_status(LibCUDNN.cudnnOpTensor(
               CUDNN.handle,
               op_desc,
-              pointerof(alpha1).as(Pointer(Void)),
+              alpha1_buf.to_unsafe.as(Pointer(Void)),
               mat_desc,
               dptr.as(Pointer(Void)),
-              pointerof(alpha2).as(Pointer(Void)),
+              alpha2_buf.to_unsafe.as(Pointer(Void)),
               vec_desc,
               vptr.as(Pointer(Void)),
-              pointerof(beta).as(Pointer(Void)),
+              beta_buf.to_unsafe.as(Pointer(Void)),
               mat_desc,
               dptr.as(Pointer(Void))
             ))
