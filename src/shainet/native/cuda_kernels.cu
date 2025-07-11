@@ -391,6 +391,12 @@ void row_mean_var_bf16(const __nv_bfloat16 *in, float *mean, float *var,
   cudaDeviceSynchronize();
 }
 
+void row_mean_var_f32(const float *in, float *mean, float *var, int rows,
+                      int cols) {
+  row_mean_var_kernel_t<<<rows, 1>>>(in, mean, var, rows, cols);
+  cudaDeviceSynchronize();
+}
+
 __global__ void apply_layer_norm_kernel(double *out, const double *in,
                                         const double *mean, const double *var,
                                         int rows, int cols, double epsilon) {
@@ -423,6 +429,14 @@ void apply_layer_norm_fp16(__half *out, const __half *in, const float *mean,
 void apply_layer_norm_bf16(__nv_bfloat16 *out, const __nv_bfloat16 *in,
                            const float *mean, const float *var, int rows,
                            int cols, float epsilon) {
+  apply_layer_norm_kernel_t<<<rows, 1>>>(out, in, mean, var, rows, cols,
+                                         epsilon);
+  cudaDeviceSynchronize();
+}
+
+void apply_layer_norm_f32(float *out, const float *in, const float *mean,
+                          const float *var, int rows, int cols,
+                          float epsilon) {
   apply_layer_norm_kernel_t<<<rows, 1>>>(out, in, mean, var, rows, cols,
                                          epsilon);
   cudaDeviceSynchronize();
