@@ -192,12 +192,24 @@ module SHAInet
 
       case @activation_function
       when SHAInet.sigmoid
-        CUDA.sigmoid_forward(
-          activations_cuda.device_ptr.not_nil!.as(Pointer(Float64)),
-          sigma_primes_cuda.device_ptr.not_nil!.as(Pointer(Float64)),
-          linear_result.device_ptr.not_nil!.as(Pointer(Float64)),
-          size
-        )
+        case activations_cuda.precision
+        when Precision::Fp32
+          CUDA.sigmoid_forward_fp32(
+            activations_cuda.device_ptr.not_nil!.as(Pointer(Float32)),
+            sigma_primes_cuda.device_ptr.not_nil!.as(Pointer(Float32)),
+            linear_result.device_ptr.not_nil!.as(Pointer(Float32)),
+            size
+          )
+        when Precision::Fp64
+          CUDA.sigmoid_forward(
+            activations_cuda.device_ptr.not_nil!.as(Pointer(Float64)),
+            sigma_primes_cuda.device_ptr.not_nil!.as(Pointer(Float64)),
+            linear_result.device_ptr.not_nil!.as(Pointer(Float64)),
+            size
+          )
+        else
+          raise "No suitable sigmoid kernel for precision #{activations_cuda.precision}"
+        end
         # Mark results as dirty on device
         activations_cuda.mark_device_dirty!
         sigma_primes_cuda.mark_device_dirty!

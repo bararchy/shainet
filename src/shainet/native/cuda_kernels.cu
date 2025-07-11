@@ -20,6 +20,11 @@ template <> struct Convert<__nv_bfloat16> {
   }
 };
 
+template <> struct Convert<float> {
+  __device__ static float to_float(float v) { return v; }
+  __device__ static float from_float(float v) { return v; }
+};
+
 template <typename T>
 __global__ void scale_kernel_t(T *data, float alpha, int size) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -246,6 +251,14 @@ void softmax_rows_bf16(__nv_bfloat16 *out, const __nv_bfloat16 *in, int rows,
   }
 }
 
+void softmax_rows_f32(float *out, const float *in, int rows, int cols) {
+  softmax_rows_kernel_t<<<rows, 1>>>(out, in, rows, cols);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in softmax_rows_f32: %s\n", cudaGetErrorString(err));
+  }
+}
+
 void relu_backward(double *output, const double *input, const double *grad,
                    int size) {
   int threads_per_block = 256;
@@ -299,6 +312,15 @@ void dropout_bf16(__nv_bfloat16 *out, const __nv_bfloat16 *in, int rows,
   cudaError_t err = cudaDeviceSynchronize();
   if (err != cudaSuccess) {
     printf("CUDA Error in dropout_bf16: %s\n", cudaGetErrorString(err));
+  }
+}
+
+void dropout_f32(float *out, const float *in, int rows, int cols,
+                 double drop_p, unsigned long long seed) {
+  dropout_kernel_t<<<rows, 1>>>(out, in, rows, cols, (float)drop_p, seed);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in dropout_f32: %s\n", cudaGetErrorString(err));
   }
 }
 
@@ -641,6 +663,58 @@ void gelu_forward(double *activations, double *derivatives,
   cudaError_t err = cudaDeviceSynchronize();
   if (err != cudaSuccess) {
     printf("CUDA Error in gelu_forward: %s\n", cudaGetErrorString(err));
+  }
+}
+
+__global__ void sigmoid_forward_kernel_f32(float *activations, float *derivatives,
+                                           const float *linear, int size) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= size)
+    return;
+
+  float val = linear[idx];
+  float exp_neg_val = expf(-val);
+  float sigmoid_val = 1.0f / (1.0f + exp_neg_val);
+
+  activations[idx] = sigmoid_val;
+  derivatives[idx] = sigmoid_val * (1.0f - sigmoid_val);
+}
+
+__global__ void gelu_forward_kernel_f32(float *activations, float *derivatives,
+                                        const float *linear, int size) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= size)
+    return;
+
+  float x = linear[idx];
+  float cdf = 0.5f * (1.0f + erff(-x / sqrtf(2.0f)));
+  activations[idx] = x * cdf;
+  derivatives[idx] = cdf + x * expf(-0.5f * x * x) / sqrtf(2.0f * M_PI);
+}
+
+void gelu_forward_f32(float *activations, float *derivatives,
+                      const float *linear, int size) {
+  int threads_per_block = 256;
+  int blocks = (size + threads_per_block - 1) / threads_per_block;
+
+  gelu_forward_kernel_f32<<<blocks, threads_per_block>>>(activations, derivatives,
+                                                         linear, size);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in gelu_forward_f32: %s\n", cudaGetErrorString(err));
+  }
+}
+
+void sigmoid_forward_f32(float *activations, float *derivatives,
+                         const float *linear, int size) {
+  int threads_per_block = 256;
+  int blocks = (size + threads_per_block - 1) / threads_per_block;
+
+  sigmoid_forward_kernel_f32<<<blocks, threads_per_block>>>(activations, derivatives,
+                                                            linear, size);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in sigmoid_forward_f32: %s\n", cudaGetErrorString(err));
   }
 }
 

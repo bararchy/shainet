@@ -1013,11 +1013,20 @@ module SHAInet
       size = @rows * @cols
 
       begin
-        CUDA.gelu_forward(
-          dptr.as(Pointer(Float64)),
-          dptr.as(Pointer(Float64)),
-          dptr.as(Pointer(Float64)),
-          size)
+        case @precision
+        when Precision::Fp32
+          CUDA.gelu_forward_fp32(
+            dptr.as(Pointer(Float32)),
+            dptr.as(Pointer(Float32)),
+            dptr.as(Pointer(Float32)),
+            size)
+        else
+          CUDA.gelu_forward(
+            dptr.as(Pointer(Float64)),
+            dptr.as(Pointer(Float64)),
+            dptr.as(Pointer(Float64)),
+            size)
+        end
       rescue e
         Log.error { "CUDA GELU failed: #{e}, falling back to CPU" }
         self.sync_from_device!("gelu_fallback")
@@ -1286,11 +1295,20 @@ module SHAInet
       # Apply sigmoid in-place - use same pointer for all three parameters
       size = @rows * @cols
 
-      CUDA.sigmoid_forward(
-        dptr.as(Pointer(Float64)),
-        dptr.as(Pointer(Float64)),
-        dptr.as(Pointer(Float64)),
-        size)
+      case @precision
+      when Precision::Fp32
+        CUDA.sigmoid_forward_fp32(
+          dptr.as(Pointer(Float32)),
+          dptr.as(Pointer(Float32)),
+          dptr.as(Pointer(Float32)),
+          size)
+      else
+        CUDA.sigmoid_forward(
+          dptr.as(Pointer(Float64)),
+          dptr.as(Pointer(Float64)),
+          dptr.as(Pointer(Float64)),
+          size)
+      end
 
       # Mark self as having newer GPU data
       mark_device_dirty!
@@ -1419,6 +1437,11 @@ module SHAInet
             CUDA.softmax_rows_bf16(
               dptr.as(Pointer(UInt16)),
               dptr.as(Pointer(UInt16)),
+              @rows, @cols)
+          when Precision::Fp32
+            CUDA.softmax_rows_fp32(
+              dptr.as(Pointer(Float32)),
+              dptr.as(Pointer(Float32)),
               @rows, @cols)
           else
             CUDA.softmax_rows(
@@ -1754,6 +1777,11 @@ module SHAInet
             CUDA.dropout_bf16(
               dptr.as(Pointer(UInt16)),
               dptr.as(Pointer(UInt16)),
+              @rows, @cols, prob, seed)
+          when Precision::Fp32
+            CUDA.dropout_fp32(
+              dptr.as(Pointer(Float32)),
+              dptr.as(Pointer(Float32)),
               @rows, @cols, prob, seed)
           else
             CUDA.dropout(
