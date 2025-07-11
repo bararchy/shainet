@@ -157,6 +157,10 @@ module SHAInet
         @data_f32_master = Array(Float32).new(@rows * @cols, init.to_f32)
         @data_f64 = nil
         @data_i8 = nil
+      when Precision::Fp32
+        @data_f32_master = Array(Float32).new(@rows * @cols, init.to_f32)
+        @data_f64 = nil
+        @data_i8 = nil
       else
         @data_f64 = Array(Float64).new(@rows * @cols, init)
         @data_i8 = nil
@@ -214,7 +218,7 @@ module SHAInet
       case @precision
       when Precision::Int8
         @data_i8.not_nil![idx].to_f64
-      when Precision::Fp16, Precision::Bf16
+      when Precision::Fp16, Precision::Bf16, Precision::Fp32
         @data_f32_master.not_nil![idx].to_f64
       else
         @data_f64.not_nil![idx]
@@ -232,6 +236,8 @@ module SHAInet
       when Precision::Bf16
         @data_f32_master.not_nil![idx] = value.to_f32
         @data_bf16.not_nil![idx] = BFloat16.new(value.to_f32)
+      when Precision::Fp32
+        @data_f32_master.not_nil![idx] = value.to_f32
       else
         @data_f64.not_nil![idx] = value
       end
@@ -245,7 +251,7 @@ module SHAInet
       case @precision
       when Precision::Int8
         @data_i8.not_nil![idx].to_f64
-      when Precision::Fp16, Precision::Bf16
+      when Precision::Fp16, Precision::Bf16, Precision::Fp32
         @data_f32_master.not_nil![idx].to_f64
       else
         @data_f64.not_nil![idx]
@@ -264,6 +270,8 @@ module SHAInet
       when Precision::Bf16
         @data_f32_master.not_nil![idx] = value.to_f32
         @data_bf16.not_nil![idx] = BFloat16.new(value.to_f32)
+      when Precision::Fp32
+        @data_f32_master.not_nil![idx] = value.to_f32
       else
         @data_f64.not_nil![idx] = value
       end
@@ -399,6 +407,8 @@ module SHAInet
                 arr = @data_bf16.not_nil!
                 arr.each_index { |i| arr[i] = BFloat16.new(data_f32[i]) }
                 arr.to_unsafe.as(Pointer(Void))
+              when Precision::Fp32
+                @data_f32_master.not_nil!.to_unsafe.as(Pointer(Void))
               else
                 @data_f64.not_nil!.to_unsafe.as(Pointer(Void))
               end
@@ -446,6 +456,9 @@ module SHAInet
                       {arr_bf16.to_unsafe.as(Pointer(Void)), -> {
                         arr_bf16.each_index { |i| arr_f32[i] = arr_bf16[i].to_f32 }
                       }}
+                    when Precision::Fp32
+                      arr_f32 = @data_f32_master.not_nil!
+                      {arr_f32.to_unsafe.as(Pointer(Void)), -> { }}
                     else
                       {@data_f64.not_nil!.to_unsafe.as(Pointer(Void)), -> { }}
                     end
@@ -1062,7 +1075,7 @@ module SHAInet
       case @precision
       when Precision::Int8
         @data_i8.not_nil!.dup.map(&.to_f64)
-      when Precision::Fp16, Precision::Bf16
+      when Precision::Fp16, Precision::Bf16, Precision::Fp32
         @data_f32_master.not_nil!.dup.map(&.to_f64)
       else
         @data_f64.not_nil!.dup
@@ -1091,7 +1104,7 @@ module SHAInet
       case @precision
       when Precision::Int8
         @data_i8.not_nil!.map(&.to_f64)
-      when Precision::Fp16, Precision::Bf16
+      when Precision::Fp16, Precision::Bf16, Precision::Fp32
         @data_f32_master.not_nil!.map(&.to_f64)
       else
         @data_f64.not_nil!
