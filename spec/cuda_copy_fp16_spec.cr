@@ -23,4 +23,21 @@ describe "CUDA copy_device_to_device FP16" do
       dst[0, i].should eq(src[0, i])
     end
   end
+
+  it "raises when using an invalid pointer" do
+    pending! "CUDA not available" unless SHAInet::CUDA.available?
+
+    src = SHAInet::CudaMatrix.new(1, 4, precision: SHAInet::Precision::Fp16)
+    dst = SHAInet::CudaMatrix.new(1, 4, precision: SHAInet::Precision::Fp16)
+
+    src.sync_to_device!
+    dst.sync_to_device!
+
+    bytes = (4 * 2).to_u64
+    invalid_ptr = Pointer(Void).null
+
+    expect_raises(RuntimeError, /cudaMemcpy DeviceToDevice failed/) do
+      SHAInet::CUDA.copy_device_to_device(dst.device_ptr.not_nil!, invalid_ptr, bytes)
+    end
+  end
 end
