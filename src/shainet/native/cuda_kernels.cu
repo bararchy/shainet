@@ -847,6 +847,16 @@ __global__ void zero_matrix_kernel(double *matrix, int size) {
   matrix[idx] = 0.0;
 }
 
+// Generic kernel for other precisions
+template <typename T>
+__global__ void zero_matrix_kernel_t(T *matrix, int size) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= size)
+    return;
+
+  matrix[idx] = Convert<T>::from_float(0.0f);
+}
+
 void zero_matrix(double *matrix, int size) {
   int threads_per_block = 256;
   int blocks = (size + threads_per_block - 1) / threads_per_block;
@@ -855,6 +865,36 @@ void zero_matrix(double *matrix, int size) {
   cudaError_t err = cudaDeviceSynchronize();
   if (err != cudaSuccess) {
     printf("CUDA Error in zero_matrix: %s\n", cudaGetErrorString(err));
+  }
+}
+
+void zero_matrix_fp16(__half *matrix, int size) {
+  int threads_per_block = 256;
+  int blocks = (size + threads_per_block - 1) / threads_per_block;
+  zero_matrix_kernel_t<<<blocks, threads_per_block>>>(matrix, size);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in zero_matrix_fp16: %s\n", cudaGetErrorString(err));
+  }
+}
+
+void zero_matrix_bf16(__nv_bfloat16 *matrix, int size) {
+  int threads_per_block = 256;
+  int blocks = (size + threads_per_block - 1) / threads_per_block;
+  zero_matrix_kernel_t<<<blocks, threads_per_block>>>(matrix, size);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in zero_matrix_bf16: %s\n", cudaGetErrorString(err));
+  }
+}
+
+void zero_matrix_fp32(float *matrix, int size) {
+  int threads_per_block = 256;
+  int blocks = (size + threads_per_block - 1) / threads_per_block;
+  zero_matrix_kernel_t<<<blocks, threads_per_block>>>(matrix, size);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in zero_matrix_fp32: %s\n", cudaGetErrorString(err));
   }
 }
 

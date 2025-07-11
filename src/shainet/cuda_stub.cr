@@ -369,6 +369,18 @@ module SHAInet
       raise "CUDA kernels not available"
     end
 
+    def zero_matrix_fp16(*args)
+      raise "CUDA kernels not available"
+    end
+
+    def zero_matrix_bf16(*args)
+      raise "CUDA kernels not available"
+    end
+
+    def zero_matrix_fp32(*args)
+      raise "CUDA kernels not available"
+    end
+
     def fill_matrix(*args)
       raise "CUDA kernels not available"
     end

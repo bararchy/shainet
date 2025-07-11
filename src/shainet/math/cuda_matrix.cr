@@ -1265,21 +1265,46 @@ module SHAInet
 
     # In-place zeroing using GPU kernel
     def zero!
-      if CUDA.fully_available? && (dptr = device_ptr) && !dptr.null? && @precision == Precision::Fp64
+      if CUDA.fully_available? && (dptr = device_ptr) && !dptr.null?
         size = @rows * @cols
-        CUDA.zero_matrix(dptr.as(Pointer(Float64)), size)
+        case @precision
+        when Precision::Fp64
+          CUDA.zero_matrix(dptr.as(Pointer(Float64)), size)
+        when Precision::Fp32
+          if CUDA.kernels_available?
+            CUDA.zero_matrix_fp32(dptr.as(Pointer(Float32)), size)
+          else
+            return zero_cpu!
+          end
+        when Precision::Fp16
+          if CUDA.kernels_available?
+            CUDA.zero_matrix_fp16(dptr.as(Pointer(UInt16)), size)
+          else
+            return zero_cpu!
+          end
+        when Precision::Bf16
+          if CUDA.kernels_available?
+            CUDA.zero_matrix_bf16(dptr.as(Pointer(UInt16)), size)
+          else
+            return zero_cpu!
+          end
+        else
+          return zero_cpu!
+        end
         mark_device_dirty!
       else
-        # CPU fallback - zero all elements
-        @rows.times do |i|
-          @cols.times do |j|
-            unsafe_set(i, j, 0.0)
-          end
-        end
-        # Mark CPU data as newer for CPU fallback
-        mark_device_clean!
+        zero_cpu!
       end
       self
+    end
+
+    private def zero_cpu!
+      @rows.times do |i|
+        @cols.times do |j|
+          unsafe_set(i, j, 0.0)
+        end
+      end
+      mark_device_clean!
     end
 
     # Element-wise sigmoid activation in-place using cuDNN.

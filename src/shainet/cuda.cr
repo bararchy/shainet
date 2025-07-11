@@ -699,6 +699,9 @@ module SHAInet
     @@accumulate_bias_grad_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
     @@row_sum_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
     @@zero_matrix_proc : Proc(Pointer(Float64), Int32, Void)? = nil
+    @@zero_matrix_fp16_proc : Proc(Pointer(UInt16), Int32, Void)? = nil
+    @@zero_matrix_bf16_proc : Proc(Pointer(UInt16), Int32, Void)? = nil
+    @@zero_matrix_fp32_proc : Proc(Pointer(Float32), Int32, Void)? = nil
     @@fill_matrix_proc : Proc(Pointer(Float64), Float64, Int32, Void)? = nil
     @@scale_fp16_proc : Proc(Pointer(UInt16), Float32, Int32, Void)? = nil
     @@scale_bf16_proc : Proc(Pointer(UInt16), Float32, Int32, Void)? = nil
@@ -1475,6 +1478,60 @@ module SHAInet
         Log.error { "CUDA Error in zero_matrix: #{e}, matrix=#{matrix.address}, size=#{size}" }
         raise e
       end
+    end
+
+    def zero_matrix_fp16(matrix : UInt16Ptr, size : Int32)
+      return if matrix.null? || size <= 0
+      unless fn = @@zero_matrix_fp16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "zero_matrix_fp16")
+          unless sym.null?
+            @@zero_matrix_fp16_proc = Proc(UInt16Ptr, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@zero_matrix_fp16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(matrix, size)
+    end
+
+    def zero_matrix_bf16(matrix : UInt16Ptr, size : Int32)
+      return if matrix.null? || size <= 0
+      unless fn = @@zero_matrix_bf16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "zero_matrix_bf16")
+          unless sym.null?
+            @@zero_matrix_bf16_proc = Proc(UInt16Ptr, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@zero_matrix_bf16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(matrix, size)
+    end
+
+    def zero_matrix_fp32(matrix : Pointer(Float32), size : Int32)
+      return if matrix.null? || size <= 0
+      unless fn = @@zero_matrix_fp32_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "zero_matrix_fp32")
+          unless sym.null?
+            @@zero_matrix_fp32_proc = Proc(Pointer(Float32), Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@zero_matrix_fp32_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(matrix, size)
     end
 
     def fill_matrix(matrix : Pointer(Float64), value : Float64, size : Int32)
