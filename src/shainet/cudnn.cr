@@ -494,28 +494,77 @@ module SHAInet
       end
     end
 
-    # Optimized element-wise addition using cuDNN (fallback to cuBLAS if OpTensor not available)
+    # Optimized element-wise addition using cuDNN OpTensor.
+    # Falls back to cuBLAS GEAM only for FP64 precisions.
     def self.element_add!(result : CudaMatrix, a : CudaMatrix, b : CudaMatrix, alpha : Float64 = 1.0, beta : Float64 = 1.0)
-      # For now, fall back to cuBLAS GEAM since OpTensor may not be available in all cuDNN versions
-      # This can be optimized later when OpTensor support is confirmed
       raise "Matrices must have same dimensions" unless a.rows == b.rows && a.cols == b.cols && result.rows == a.rows && result.cols == a.cols
 
       a.sync_to_device!("cudnn_element_add_a") unless a.device_dirty?
       b.sync_to_device!("cudnn_element_add_b") unless b.device_dirty?
+      result.sync_to_device!("cudnn_element_add_out") unless result.device_dirty?
 
-      # Use cuBLAS GEAM for element-wise addition as fallback
-      handle = CUDA.create_handle
-      begin
-        CUDA.geam(handle,
-          a.device_ptr.not_nil!.as(Pointer(Float64)),
-          b.device_ptr.not_nil!.as(Pointer(Float64)),
-          result.device_ptr.not_nil!.as(Pointer(Float64)),
-          a.rows, a.cols, alpha, beta)
-      ensure
-        CUDA.destroy_handle(handle)
+      if available?
+        # Attempt to use cuDNN OpTensor for the addition
+        op_desc = uninitialized LibCUDNN::CudnnOpTensorDescriptor
+        check_status(LibCUDNN.cudnnCreateOpTensorDescriptor(pointerof(op_desc)))
+        begin
+          dtype = data_type_for(result.precision)
+          check_status(LibCUDNN.cudnnSetOpTensorDescriptor(
+            op_desc,
+            LibCUDNN::CudnnOpTensorOp::CUDNN_OP_TENSOR_ADD,
+            dtype,
+            0
+          ))
+
+          a_desc = create_tensor_descriptor_2d(a.rows, a.cols, a.precision)
+          b_desc = create_tensor_descriptor_2d(b.rows, b.cols, b.precision)
+          c_desc = create_tensor_descriptor_2d(result.rows, result.cols, result.precision)
+
+          begin
+            alpha_val = alpha
+            beta_val = beta
+            check_status(LibCUDNN.cudnnOpTensor(
+              handle,
+              op_desc,
+              pointerof(alpha_val).as(Pointer(Void)),
+              a_desc,
+              a.device_ptr.not_nil!.as(Pointer(Void)),
+              pointerof(beta_val).as(Pointer(Void)),
+              b_desc,
+              b.device_ptr.not_nil!.as(Pointer(Void)),
+              pointerof(alpha_val).as(Pointer(Void)),
+              c_desc,
+              result.device_ptr.not_nil!.as(Pointer(Void))
+            ))
+
+            result.mark_device_dirty!
+          ensure
+            LibCUDNN.cudnnDestroyTensorDescriptor(a_desc)
+            LibCUDNN.cudnnDestroyTensorDescriptor(b_desc)
+            LibCUDNN.cudnnDestroyTensorDescriptor(c_desc)
+          end
+        ensure
+          LibCUDNN.cudnnDestroyOpTensorDescriptor(op_desc)
+        end
+      else
+        # cuDNN not available; allow GEAM only for FP64 precisions
+        unless result.precision.fp64? && a.precision.fp64? && b.precision.fp64?
+          raise "cuDNN OpTensor not available - non-FP64 precisions require cuDNN"
+        end
+
+        handle = CUDA.create_handle
+        begin
+          CUDA.geam(handle,
+            a.device_ptr.not_nil!.as(Pointer(Float64)),
+            b.device_ptr.not_nil!.as(Pointer(Float64)),
+            result.device_ptr.not_nil!.as(Pointer(Float64)),
+            a.rows, a.cols, alpha, beta)
+        ensure
+          CUDA.destroy_handle(handle)
+        end
+
+        result.mark_device_dirty!
       end
-
-      result.mark_device_dirty!
     end
 
     # Optimized element-wise multiplication (fallback to custom kernel)

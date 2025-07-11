@@ -675,11 +675,19 @@ module SHAInet
           CUDNN.element_add!(result, self, other, 1.0, 1.0)
           return result
         rescue e : Exception
-          Log.error { "cuDNN element_add failed: #{e}, falling back to cuBLAS" }
+          if self.precision.fp64? && other.precision.fp64? && result.precision.fp64?
+            Log.error { "cuDNN element_add failed: #{e}, falling back to cuBLAS" }
+          else
+            raise e
+          end
+        end
+      else
+        unless self.precision.fp64? && other.precision.fp64? && result.precision.fp64?
+          raise "cuDNN not available - non-FP64 precisions require cuDNN"
         end
       end
 
-      # Fallback to cuBLAS GEAM
+      # Fallback to cuBLAS GEAM (only FP64)
       handle = CUDA.create_handle
       begin
         CUDA.geam(handle, ptr_a.as(Pointer(Float64)), ptr_b.as(Pointer(Float64)), result.device_ptr.not_nil!.as(Pointer(Float64)), @rows, @cols, 1.0, 1.0)
@@ -766,11 +774,19 @@ module SHAInet
           CUDNN.element_add!(self, self, other, 1.0, 1.0)
           return self
         rescue e : Exception
-          Log.error { "cuDNN element_add failed: #{e}, falling back to cuBLAS" }
+          if self.precision.fp64? && other.precision.fp64?
+            Log.error { "cuDNN element_add failed: #{e}, falling back to cuBLAS" }
+          else
+            raise e
+          end
+        end
+      else
+        unless self.precision.fp64? && other.precision.fp64?
+          raise "cuDNN not available - non-FP64 precisions require cuDNN"
         end
       end
 
-      # Fallback to cuBLAS GEAM
+      # Fallback to cuBLAS GEAM (only FP64)
       handle = CUDA.create_handle
       begin
         CUDA.geam(handle, ptr_a.as(Pointer(Float64)), ptr_b.as(Pointer(Float64)), ptr_a.as(Pointer(Float64)), @rows, @cols, 1.0, 1.0)
