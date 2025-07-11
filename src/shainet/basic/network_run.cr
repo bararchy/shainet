@@ -1608,13 +1608,19 @@ module SHAInet
     # GPU path - all CudaMatrix operations
     private def safe_output_transform(matrix : CudaMatrix, weights : CudaMatrix) : CudaMatrix
       begin
+        # Ensure matrices reside on the same CUDA device
+        if matrix.device_id != weights.device_id
+          raise RuntimeError.new("CUDA device mismatch: #{matrix.device_id} vs #{weights.device_id}")
+        end
         # For transformer architectures, use only the last token's representation
         if @hidden_layers.any? &.is_a?(TransformerLayer)
           # Extract last token (row) from transformer output for language modeling using GPU kernel
           last_token = if CUDA.fully_available? && (mptr = matrix.device_ptr) && (wptr = weights.device_ptr) && !mptr.null? && !wptr.null?
                          begin
+                           # Ensure GPU operations occur on the correct device
+                           CUDA.set_device(matrix.device_id)
                            # Use more efficient GPU slice operation for last row
-                           result = CudaMatrix.new(1, matrix.cols, precision: @precision)
+                           result = CudaMatrix.new(1, matrix.cols, precision: @precision, device_id: matrix.device_id)
                            # Copy last row using GPU memory copy
                            last_row_offset = (matrix.rows - 1) * matrix.cols
                            elem_size = case matrix.precision
@@ -1650,7 +1656,7 @@ module SHAInet
                            result
                          rescue e
                            # Fallback to elementwise copy if GPU operation fails
-                           last_token_fallback = CudaMatrix.new(1, matrix.cols, precision: @precision)
+                           last_token_fallback = CudaMatrix.new(1, matrix.cols, precision: @precision, device_id: matrix.device_id)
                            matrix.cols.times do |j|
                              last_token_fallback[0, j] = matrix[matrix.rows - 1, j]
                            end
@@ -1659,7 +1665,7 @@ module SHAInet
                          end
                        else
                          # CPU fallback
-                         last_token_cpu = CudaMatrix.new(1, matrix.cols, precision: @precision)
+                         last_token_cpu = CudaMatrix.new(1, matrix.cols, precision: @precision, device_id: matrix.device_id)
                          matrix.cols.times do |j|
                            last_token_cpu[0, j] = matrix[matrix.rows - 1, j]
                          end
@@ -1687,7 +1693,7 @@ module SHAInet
           # Try reshaping for a single token/sequence case
           if matrix.rows == 1 && matrix.cols > 0 && weights.rows > 0 && weights.cols > 0
             Log.info { "Reshaping matrix for single-token transformer operation" }
-            reshaped = CudaMatrix.new(1, weights.cols, precision: @precision)
+            reshaped = CudaMatrix.new(1, weights.cols, precision: @precision, device_id: matrix.device_id)
             weights.cols.times do |j|
               sum = 0.0
               matrix.cols.times do |k|
