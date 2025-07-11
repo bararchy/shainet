@@ -4,8 +4,8 @@ describe "CUDA FP32 kernels" do
   it "computes softmax_rows! on FP32" do
     pending! "CUDA kernels not available" unless SHAInet::CUDA.fully_available?
     cpu = SHAInet::SimpleMatrix.new(2, 3, precision: SHAInet::Precision::Fp32)
-    cpu[0,0] = 0.5; cpu[0,1] = 1.5; cpu[0,2] = 2.5
-    cpu[1,0] = 3.0; cpu[1,1] = 0.0; cpu[1,2] = -1.0
+    cpu[0, 0] = 0.5; cpu[0, 1] = 1.5; cpu[0, 2] = 2.5
+    cpu[1, 0] = 3.0; cpu[1, 1] = 0.0; cpu[1, 2] = -1.0
     expected = SHAInet.softmax_rows(cpu)
     gpu = SHAInet::GPUMemory.to_gpu(cpu).as(SHAInet::CudaMatrix)
     gpu.softmax_rows!
@@ -52,7 +52,7 @@ describe "CUDA FP32 kernels" do
 
   it "applies gelu! on FP32" do
     pending! "CUDA kernels not available" unless SHAInet::CUDA.fully_available?
-    base = SHAInet::SimpleMatrix.from_a([[ -1.0, 0.0 ], [ 0.5, 2.0 ]], precision: SHAInet::Precision::Fp32)
+    base = SHAInet::SimpleMatrix.from_a([[-1.0, 0.0], [0.5, 2.0]], precision: SHAInet::Precision::Fp32)
     expected = base.clone
     expected.rows.times do |i|
       expected.cols.times do |j|

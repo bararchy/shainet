@@ -35,6 +35,6 @@ describe "safe_output_transform" do
 
     output.rows.should eq 1
     output.cols.should eq 1
-    output[0, 0].should be_close( input[1,0]*1.0 + input[1,1]*2.0, 1e-6 )
+    output[0, 0].should be_close(input[1, 0]*1.0 + input[1, 1]*2.0, 1e-6)
   end
 end

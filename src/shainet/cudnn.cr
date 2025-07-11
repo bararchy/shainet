@@ -665,8 +665,8 @@ module SHAInet
 
     # GPU-accelerated cross-entropy loss and gradient computation.
     # All matrices must use `Precision::Fp64`.
-  def self.cross_entropy_loss_and_gradient(predicted : CudaMatrix, target : CudaMatrix,
-                                           loss_output : Float64*, grad_output : CudaMatrix)
+    def self.cross_entropy_loss_and_gradient(predicted : CudaMatrix, target : CudaMatrix,
+                                             loss_output : Float64*, grad_output : CudaMatrix)
       raise "Matrices must have same dimensions" unless predicted.rows == target.rows && predicted.cols == target.cols
       unless predicted.precision.fp64? && target.precision.fp64? && grad_output.precision.fp64?
         raise ArgumentError.new("cross_entropy_loss_and_gradient only supports Fp64 precision")

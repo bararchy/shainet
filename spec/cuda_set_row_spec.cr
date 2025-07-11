@@ -6,12 +6,12 @@ describe "CudaMatrix#set_row!" do
 
     src = SHAInet::CudaMatrix.from_a([
       [1.0, 2.0, 3.0],
-      [4.0, 5.0, 6.0]
+      [4.0, 5.0, 6.0],
     ], SHAInet::Precision::Fp32)
 
     dst = SHAInet::CudaMatrix.from_a([
       [0.0, 0.0, 0.0],
-      [0.0, 0.0, 0.0]
+      [0.0, 0.0, 0.0],
     ], SHAInet::Precision::Fp32)
 
     dst.set_row!(1, src, 0)
@@ -27,12 +27,12 @@ describe "CudaMatrix#set_row!" do
 
     src = SHAInet::CudaMatrix.from_a([
       [1.0, 2.0, 3.0],
-      [4.0, 5.0, 6.0]
+      [4.0, 5.0, 6.0],
     ], SHAInet::Precision::Fp16)
 
     dst = SHAInet::CudaMatrix.from_a([
       [0.0, 0.0, 0.0],
-      [0.0, 0.0, 0.0]
+      [0.0, 0.0, 0.0],
     ], SHAInet::Precision::Fp16)
 
     dst.set_row!(1, src, 0)
