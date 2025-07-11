@@ -1612,6 +1612,8 @@ module SHAInet
         if matrix.device_id != weights.device_id
           raise RuntimeError.new("CUDA device mismatch: #{matrix.device_id} vs #{weights.device_id}")
         end
+        matrix.sync_to_device!("safe_output_transform")
+        weights.sync_to_device!("safe_output_transform")
         # For transformer architectures, use only the last token's representation
         if @hidden_layers.any? &.is_a?(TransformerLayer)
           # Extract last token (row) from transformer output for language modeling using GPU kernel
@@ -1638,19 +1640,14 @@ module SHAInet
                            dst_ptr = result.device_ptr.not_nil!
                            src_ptr = (mptr + byte_offset)
 
-                           case matrix.precision
-                           when Precision::Int8, Precision::Fp16, Precision::Bf16, Precision::Fp32, Precision::Fp64
-                             CUDA.copy_device_to_device(
-                               dst_ptr.as(Pointer(Void)),
-                               src_ptr.as(Pointer(Void)),
-                               (matrix.cols * elem_size).to_u64
-                             )
-                           else
-                             CUDA.copy_device_to_device(
-                               dst_ptr.as(Pointer(Void)),
-                               src_ptr.as(Pointer(Void)),
-                               (matrix.cols * elem_size).to_u64
-                             )
+                           copy_res = CUDA.copy_device_to_device(
+                             dst_ptr.as(Pointer(Void)),
+                             src_ptr.as(Pointer(Void)),
+                             (matrix.cols * elem_size).to_u64
+                           )
+                           if copy_res != 0
+                             Log.error { "safe_output_transform: device copy failed with code #{copy_res}" }
+                             raise RuntimeError.new("GPU memory copy failed in safe_output_transform for transformer output")
                            end
                            result.mark_device_dirty!
                            result
