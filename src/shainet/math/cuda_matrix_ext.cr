@@ -9,19 +9,21 @@ module SHAInet
           # Ensure source has up-to-date GPU data
           self.sync_to_device! unless device_dirty?
 
-          # Verify source data
-          test_buf = Array(Float64).new(@rows * @cols, 0.0)
-          CUDA.memcpy(test_buf.to_unsafe.as(Pointer(Void)),
-            dptr.as(Pointer(Void)),
-            (@rows * @cols * 8).to_u64,
-            CUDA::MemcpyKind::DeviceToHost)
+          {% if flag?(:softmax_debug) %}
+            # Verify source data
+            test_buf = Array(Float64).new(@rows * @cols, 0.0)
+            CUDA.memcpy(test_buf.to_unsafe.as(Pointer(Void)),
+              dptr.as(Pointer(Void)),
+              (@rows * @cols * 8).to_u64,
+              CUDA::MemcpyKind::DeviceToHost)
 
-          # Ensure result is zeroed
-          zeroes = Array(Float64).new(@rows * @cols, 0.0)
-          CUDA.memcpy(rptr.as(Pointer(Void)),
-            zeroes.to_unsafe.as(Pointer(Void)),
-            (@rows * @cols * 8).to_u64,
-            CUDA::MemcpyKind::HostToDevice)
+            # Ensure result is zeroed
+            zeroes = Array(Float64).new(@rows * @cols, 0.0)
+            CUDA.memcpy(rptr.as(Pointer(Void)),
+              zeroes.to_unsafe.as(Pointer(Void)),
+              (@rows * @cols * 8).to_u64,
+              CUDA::MemcpyKind::HostToDevice)
+          {% end %}
 
           # Run the kernel
           case @precision
@@ -56,18 +58,20 @@ module SHAInet
               @cols)
           end
 
-          # Check result data
-          test_result = Array(Float64).new(@rows * @cols, 0.0)
-          CUDA.memcpy(test_result.to_unsafe.as(Pointer(Void)),
-            rptr.as(Pointer(Void)),
-            (@rows * @cols * 8).to_u64,
-            CUDA::MemcpyKind::DeviceToHost)
+          {% if flag?(:softmax_debug) %}
+            # Check result data
+            test_result = Array(Float64).new(@rows * @cols, 0.0)
+            CUDA.memcpy(test_result.to_unsafe.as(Pointer(Void)),
+              rptr.as(Pointer(Void)),
+              (@rows * @cols * 8).to_u64,
+              CUDA::MemcpyKind::DeviceToHost)
 
-          # Check if all results are zero
-          if test_result.all? { |v| v == 0.0 }
-            Log.error { "CUDA softmax_rows produced all zeros. Falling back to CPU." }
-            raise "CUDA kernel failed silently"
-          end
+            # Check if all results are zero
+            if test_result.all? { |v| v == 0.0 }
+              Log.error { "CUDA softmax_rows produced all zeros. Falling back to CPU." }
+              raise "CUDA kernel failed silently"
+            end
+          {% end %}
 
           # Mark result as having newer GPU data
           result.mark_device_dirty!

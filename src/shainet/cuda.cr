@@ -367,9 +367,9 @@ module SHAInet
         end
       end
 
-      handle = Pointer(LibCUBLAS::Handle).malloc(1)
-      raise "cublasCreate failed" unless LibCUBLAS.cublasCreate_v2(handle) == 0
-      handle.value
+      handle = uninitialized LibCUBLAS::Handle
+      raise "cublasCreate failed" unless LibCUBLAS.cublasCreate_v2(pointerof(handle)) == 0
+      handle
     end
 
     def destroy_handle(handle : LibCUBLAS::Handle)

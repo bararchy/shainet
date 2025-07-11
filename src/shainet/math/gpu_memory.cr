@@ -83,8 +83,7 @@ module SHAInet
         result = CUDA.memcpy(dptr.as(Pointer(Void)), src_buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
         Log.error { "GPUMemory.to_gpu!: GPU memcpy failed with result #{result}" } if result != 0
       end
-
-      dest.mark_device_clean!
+      dest.sync_to_device!("to_gpu!")
       dest
     end
 
@@ -94,7 +93,7 @@ module SHAInet
     def to_gpu!(matrix : SimpleMatrix, dest : CudaMatrix)
       return dest unless CUDA.fully_available?
       raise ArgumentError.new("size mismatch") unless matrix.rows == dest.rows && matrix.cols == dest.cols
-
+  
       size = matrix.rows * matrix.cols
       bytes = (size * dest.element_size).to_u64
 
@@ -106,8 +105,7 @@ module SHAInet
         result = CUDA.memcpy(dptr.as(Pointer(Void)), src_buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
         Log.error { "GPUMemory.to_gpu!: GPU memcpy failed with result #{result}" } if result != 0
       end
-
-      dest.mark_device_clean!
+      dest.sync_to_device!("to_gpu!")
       dest
     end
 
@@ -127,8 +125,7 @@ module SHAInet
         result = CUDA.memcpy(dptr.as(Pointer(Void)), src_buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
         Log.error { "GPUMemory.to_gpu!: GPU memcpy failed with result #{result}" } if result != 0
       end
-
-      dest.mark_device_clean!
+      dest.sync_to_device!("to_gpu!")
       dest
     end
 
@@ -154,8 +151,7 @@ module SHAInet
         result = CUDA.memcpy(dptr.as(Pointer(Void)), src_buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
         Log.error { "GPUMemory.to_gpu!: GPU memcpy failed with result #{result}" } if result != 0
       end
-
-      dest.mark_device_clean!
+      dest.sync_to_device!("to_gpu!")
       dest
     end
 
