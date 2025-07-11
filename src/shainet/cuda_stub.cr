@@ -382,6 +382,10 @@ module SHAInet
     def mse_cost_gradient(*args)
       raise "CUDA kernels not available"
     end
+
+    def mse_cost_gradient_fp32(*args)
+      raise "CUDA kernels not available"
+    end
   end
 
   module CUDNN
@@ -480,6 +484,10 @@ module SHAInet
     end
 
     def cross_entropy_loss_and_gradient(*args)
+      raise CudnnError.new("cuDNN not available")
+    end
+
+    def mse_loss_and_gradient(*args)
       raise CudnnError.new("cuDNN not available")
     end
 

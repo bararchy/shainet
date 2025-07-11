@@ -852,6 +852,35 @@ void scale_bf16(__nv_bfloat16 *data, float alpha, int size) {
   }
 }
 
+template <typename T>
+__global__ void mse_loss_grad_kernel(const T *pred, const T *target, T *grad,
+                                     double *loss, int total) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= total)
+    return;
+
+  T p = pred[idx];
+  T t = target[idx];
+  T diff = p - t;
+  grad[idx] = diff;
+  double contrib = 0.5 * (double)diff * (double)diff;
+  atomicAdd(loss, contrib);
+}
+
+template <typename T>
+void mse_loss_gradient_t(const T *pred, const T *target, T *grad, double *loss,
+                         int rows, int cols) {
+  int total = rows * cols;
+  cudaMemset(loss, 0, sizeof(double));
+  int threads = 256;
+  int blocks = (total + threads - 1) / threads;
+  mse_loss_grad_kernel<<<blocks, threads>>>(pred, target, grad, loss, total);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in mse_loss_gradient: %s\n", cudaGetErrorString(err));
+  }
+}
+
 __global__ void cross_entropy_loss_gradient_kernel(const double *pred,
                                                    const double *target,
                                                    double *grad, double *loss,
@@ -935,6 +964,16 @@ void softmax_cross_entropy_label(double *pred, const int *labels, double *grad,
     printf("CUDA Error in softmax_cross_entropy_label: %s\n",
            cudaGetErrorString(err));
   }
+}
+
+void mse_loss_gradient(double *pred, double *target, double *grad, double *loss,
+                       int rows, int cols) {
+  mse_loss_gradient_t<double>(pred, target, grad, loss, rows, cols);
+}
+
+void mse_loss_gradient_f32(float *pred, float *target, float *grad, double *loss,
+                           int rows, int cols) {
+  mse_loss_gradient_t<float>(pred, target, grad, loss, rows, cols);
 }
 
 } // extern "C"
