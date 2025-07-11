@@ -1563,7 +1563,8 @@ module SHAInet
             CUDA.weight_update_fp16(weight_ptr.as(Pointer(UInt16)), grad_ptr.as(Pointer(UInt16)), -learning_rate.to_f32, total_elements)
           elsif CUDA.axpy_ex_available?
             dtype = CUDA.data_type_for(Precision::Fp16)
-            CUDA.axpy_ex(handle, -learning_rate.to_f32, grad_ptr.as(Void*), dtype, weight_ptr.as(Void*), dtype, total_elements, dtype)
+            ctype = CUDA.compute_type_for(Precision::Fp16)
+            CUDA.axpy_ex(handle, -learning_rate.to_f32, grad_ptr.as(Void*), dtype, weight_ptr.as(Void*), dtype, total_elements, ctype)
           else
             raise "axpyEx unavailable"
           end
@@ -1572,7 +1573,8 @@ module SHAInet
             CUDA.weight_update_bf16(weight_ptr.as(Pointer(UInt16)), grad_ptr.as(Pointer(UInt16)), -learning_rate.to_f32, total_elements)
           elsif CUDA.axpy_ex_available?
             dtype = CUDA.data_type_for(Precision::Bf16)
-            CUDA.axpy_ex(handle, -learning_rate.to_f32, grad_ptr.as(Void*), dtype, weight_ptr.as(Void*), dtype, total_elements, dtype)
+            ctype = CUDA.compute_type_for(Precision::Bf16)
+            CUDA.axpy_ex(handle, -learning_rate.to_f32, grad_ptr.as(Void*), dtype, weight_ptr.as(Void*), dtype, total_elements, ctype)
           else
             raise "axpyEx unavailable"
           end
