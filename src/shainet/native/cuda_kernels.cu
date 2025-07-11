@@ -224,6 +224,16 @@ __global__ void apply_layer_norm_kernel_t(T *out, const T *in,
   }
 }
 
+// Generic kernel for other precisions
+template <typename T>
+__global__ void zero_matrix_kernel_t(T *matrix, int size) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= size)
+    return;
+
+  matrix[idx] = Convert<T>::from_float(0.0f);
+}
+
 // Host wrapper functions
 extern "C" {
 void softmax_rows(double *out, const double *in, int rows, int cols) {
@@ -847,15 +857,6 @@ __global__ void zero_matrix_kernel(double *matrix, int size) {
   matrix[idx] = 0.0;
 }
 
-// Generic kernel for other precisions
-template <typename T>
-__global__ void zero_matrix_kernel_t(T *matrix, int size) {
-  int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  if (idx >= size)
-    return;
-
-  matrix[idx] = Convert<T>::from_float(0.0f);
-}
 
 void zero_matrix(double *matrix, int size) {
   int threads_per_block = 256;
