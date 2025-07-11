@@ -1003,58 +1003,58 @@ module SHAInet
       elsif @precision.in?({Precision::Fp16, Precision::Bf16, Precision::Fp32}) &&
             vec.precision == @precision && CUDNN.available?
         {% if flag?(:enable_cuda) %}
-        stat = LibCUDNN.cudnnCreateOpTensorDescriptor(out op_desc)
-        begin
-          # # Broadcast multiply using cuDNN OpTensor
-          # op_desc = uninitialized LibCUDNN::CudnnOpTensorDescriptor
-          CUDNN.check_status(stat)
-
+          stat = LibCUDNN.cudnnCreateOpTensorDescriptor(out op_desc)
           begin
-            dtype = CUDNN.data_type_for(@precision)
-            CUDNN.check_status(
-              LibCUDNN.cudnnSetOpTensorDescriptor(
-                op_desc,
-                LibCUDNN::CudnnOpTensorOp::CUDNN_OP_TENSOR_MUL,
-                dtype,
-                0
+            # # Broadcast multiply using cuDNN OpTensor
+            # op_desc = uninitialized LibCUDNN::CudnnOpTensorDescriptor
+            CUDNN.check_status(stat)
+
+            begin
+              dtype = CUDNN.data_type_for(@precision)
+              CUDNN.check_status(
+                LibCUDNN.cudnnSetOpTensorDescriptor(
+                  op_desc,
+                  LibCUDNN::CudnnOpTensorOp::CUDNN_OP_TENSOR_MUL,
+                  dtype,
+                  0
+                )
               )
-            )
 
-            mat_desc = CUDNN.create_tensor_descriptor_2d(@rows, @cols, @precision)
-            vec_desc = CUDNN.create_tensor_descriptor_2d(1, vec.cols, vec.precision)
+              mat_desc = CUDNN.create_tensor_descriptor_2d(@rows, @cols, @precision)
+              vec_desc = CUDNN.create_tensor_descriptor_2d(1, vec.cols, vec.precision)
 
-            alpha1_buf = CUDNN.typed_scalar(1.0, @precision)
-            alpha2_buf = CUDNN.typed_scalar(1.0, @precision)
-            beta_buf = CUDNN.typed_scalar(0.0, @precision)
+              alpha1_buf = CUDNN.typed_scalar(1.0, @precision)
+              alpha2_buf = CUDNN.typed_scalar(1.0, @precision)
+              beta_buf = CUDNN.typed_scalar(0.0, @precision)
 
-            self.sync_to_device!("mul_row_vector") unless device_dirty?
-            vec.sync_to_device!("mul_row_vector") unless vec.device_dirty?
+              self.sync_to_device!("mul_row_vector") unless device_dirty?
+              vec.sync_to_device!("mul_row_vector") unless vec.device_dirty?
 
-            CUDNN.check_status(LibCUDNN.cudnnOpTensor(
-              CUDNN.handle,
-              op_desc,
-              alpha1_buf.to_unsafe.as(Pointer(Void)),
-              mat_desc,
-              dptr.as(Pointer(Void)),
-              alpha2_buf.to_unsafe.as(Pointer(Void)),
-              vec_desc,
-              vptr.as(Pointer(Void)),
-              beta_buf.to_unsafe.as(Pointer(Void)),
-              mat_desc,
-              dptr.as(Pointer(Void))
-            ))
+              CUDNN.check_status(LibCUDNN.cudnnOpTensor(
+                CUDNN.handle,
+                op_desc,
+                alpha1_buf.to_unsafe.as(Pointer(Void)),
+                mat_desc,
+                dptr.as(Pointer(Void)),
+                alpha2_buf.to_unsafe.as(Pointer(Void)),
+                vec_desc,
+                vptr.as(Pointer(Void)),
+                beta_buf.to_unsafe.as(Pointer(Void)),
+                mat_desc,
+                dptr.as(Pointer(Void))
+              ))
 
-            mark_device_dirty!
-            return self
+              mark_device_dirty!
+              return self
+            ensure
+              LibCUDNN.cudnnDestroyTensorDescriptor(mat_desc.not_nil!)
+              LibCUDNN.cudnnDestroyTensorDescriptor(vec_desc.not_nil!)
+            end
           ensure
-            LibCUDNN.cudnnDestroyTensorDescriptor(mat_desc.not_nil!)
-            LibCUDNN.cudnnDestroyTensorDescriptor(vec_desc.not_nil!)
+            if opd = op_desc
+              LibCUDNN.cudnnDestroyOpTensorDescriptor(opd)
+            end
           end
-        ensure
-          if opd = op_desc
-            LibCUDNN.cudnnDestroyOpTensorDescriptor(opd)
-          end
-        end
         {% end %}
       end
 
@@ -1358,29 +1358,15 @@ module SHAInet
 
           case @precision
           when Precision::Fp16
-            {% if flag?(:cuda_fp16) %}
-              CUDA.softmax_rows_fp16(
-                dptr.as(Pointer(UInt16)),
-                dptr.as(Pointer(UInt16)),
-                @rows, @cols)
-            {% else %}
-              CUDA.softmax_rows(
-                dptr.as(Pointer(Float64)),
-                dptr.as(Pointer(Float64)),
-                @rows, @cols)
-            {% end %}
+            CUDA.softmax_rows_fp16(
+              dptr.as(Pointer(UInt16)),
+              dptr.as(Pointer(UInt16)),
+              @rows, @cols)
           when Precision::Bf16
-            {% if flag?(:cuda_bf16) %}
-              CUDA.softmax_rows_bf16(
-                dptr.as(Pointer(UInt16)),
-                dptr.as(Pointer(UInt16)),
-                @rows, @cols)
-            {% else %}
-              CUDA.softmax_rows(
-                dptr.as(Pointer(Float64)),
-                dptr.as(Pointer(Float64)),
-                @rows, @cols)
-            {% end %}
+            CUDA.softmax_rows_bf16(
+              dptr.as(Pointer(UInt16)),
+              dptr.as(Pointer(UInt16)),
+              @rows, @cols)
           else
             CUDA.softmax_rows(
               dptr.as(Pointer(Float64)),
@@ -1707,29 +1693,15 @@ module SHAInet
 
           case @precision
           when Precision::Fp16
-            {% if flag?(:cuda_fp16) %}
-              CUDA.dropout_fp16(
-                dptr.as(Pointer(UInt16)),
-                dptr.as(Pointer(UInt16)),
-                @rows, @cols, prob, seed)
-            {% else %}
-              CUDA.dropout(
-                dptr.as(Pointer(Float64)),
-                dptr.as(Pointer(Float64)),
-                @rows, @cols, prob, seed)
-            {% end %}
+            CUDA.dropout_fp16(
+              dptr.as(Pointer(UInt16)),
+              dptr.as(Pointer(UInt16)),
+              @rows, @cols, prob, seed)
           when Precision::Bf16
-            {% if flag?(:cuda_bf16) %}
-              CUDA.dropout_bf16(
-                dptr.as(Pointer(UInt16)),
-                dptr.as(Pointer(UInt16)),
-                @rows, @cols, prob, seed)
-            {% else %}
-              CUDA.dropout(
-                dptr.as(Pointer(Float64)),
-                dptr.as(Pointer(Float64)),
-                @rows, @cols, prob, seed)
-            {% end %}
+            CUDA.dropout_bf16(
+              dptr.as(Pointer(UInt16)),
+              dptr.as(Pointer(UInt16)),
+              @rows, @cols, prob, seed)
           else
             CUDA.dropout(
               dptr.as(Pointer(Float64)),

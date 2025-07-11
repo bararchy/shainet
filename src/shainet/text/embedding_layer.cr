@@ -106,17 +106,9 @@ module SHAInet
           begin
             case @embeddings.as(CudaMatrix).precision
             when Precision::Fp16
-              {% if flag?(:cuda_fp16) %}
-                CUDA.gather_rows_fp16(r_ptr.as(Pointer(UInt16)), e_ptr.as(Pointer(UInt16)), ids_dev, ids.size, @l_size)
-              {% else %}
-                CUDA.gather_rows(r_ptr.as(Pointer(Float64)), e_ptr.as(Pointer(Float64)), ids_dev, ids.size, @l_size)
-              {% end %}
+              CUDA.gather_rows_fp16(r_ptr.as(Pointer(UInt16)), e_ptr.as(Pointer(UInt16)), ids_dev, ids.size, @l_size)
             when Precision::Bf16
-              {% if flag?(:cuda_bf16) %}
-                CUDA.gather_rows_bf16(r_ptr.as(Pointer(UInt16)), e_ptr.as(Pointer(UInt16)), ids_dev, ids.size, @l_size)
-              {% else %}
-                CUDA.gather_rows(r_ptr.as(Pointer(Float64)), e_ptr.as(Pointer(Float64)), ids_dev, ids.size, @l_size)
-              {% end %}
+              CUDA.gather_rows_bf16(r_ptr.as(Pointer(UInt16)), e_ptr.as(Pointer(UInt16)), ids_dev, ids.size, @l_size)
             else
               CUDA.gather_rows(r_ptr.as(Pointer(Float64)), e_ptr.as(Pointer(Float64)), ids_dev, ids.size, @l_size)
             end

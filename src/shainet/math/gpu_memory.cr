@@ -93,7 +93,7 @@ module SHAInet
     def to_gpu!(matrix : SimpleMatrix, dest : CudaMatrix)
       return dest unless CUDA.fully_available?
       raise ArgumentError.new("size mismatch") unless matrix.rows == dest.rows && matrix.cols == dest.cols
-  
+
       size = matrix.rows * matrix.cols
       bytes = (size * dest.element_size).to_u64
 

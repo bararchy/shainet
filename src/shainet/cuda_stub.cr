@@ -57,20 +57,20 @@ module SHAInet
       type Handle = Void*
 
       enum DataType
-        CUDA_R_32F  = 0
-        CUDA_R_64F  = 1
-        CUDA_R_16F  = 2
+        CUDA_R_32F  =  0
+        CUDA_R_64F  =  1
+        CUDA_R_16F  =  2
         CUDA_R_16BF = 14
-        CUDA_R_8I   = 3
+        CUDA_R_8I   =  3
         CUDA_R_32I  = 10
       end
 
       enum ComputeType
-        CUBLAS_COMPUTE_16F  = 64
-        CUBLAS_COMPUTE_32F  = 68
-        CUBLAS_COMPUTE_64F  = 70
+        CUBLAS_COMPUTE_16F  =  64
+        CUBLAS_COMPUTE_32F  =  68
+        CUBLAS_COMPUTE_64F  =  70
         CUBLAS_COMPUTE_16BF = 119
-        CUBLAS_COMPUTE_32I  = 82
+        CUBLAS_COMPUTE_32I  =  82
       end
     end
 

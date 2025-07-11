@@ -28,50 +28,21 @@ module SHAInet
           # Run the kernel
           case @precision
           when Precision::Fp16
-            {% if flag?(:cuda_fp16) %}
-              CUDA.softmax_rows_fp16(rptr.as(Pointer(UInt16)),
-                dptr.as(Pointer(UInt16)),
-                @rows,
-                @cols)
-            {% else %}
-              CUDA.softmax_rows(rptr.as(Pointer(Float64)),
-                dptr.as(Pointer(Float64)),
-                @rows,
-                @cols)
-            {% end %}
+            CUDA.softmax_rows_fp16(rptr.as(Pointer(UInt16)),
+              dptr.as(Pointer(UInt16)),
+              @rows,
+              @cols)
           when Precision::Bf16
-            {% if flag?(:cuda_bf16) %}
-              CUDA.softmax_rows_bf16(rptr.as(Pointer(UInt16)),
-                dptr.as(Pointer(UInt16)),
-                @rows,
-                @cols)
-            {% else %}
-              CUDA.softmax_rows(rptr.as(Pointer(Float64)),
-                dptr.as(Pointer(Float64)),
-                @rows,
-                @cols)
-            {% end %}
+            CUDA.softmax_rows_bf16(rptr.as(Pointer(UInt16)),
+              dptr.as(Pointer(UInt16)),
+              @rows,
+              @cols)
           else
             CUDA.softmax_rows(rptr.as(Pointer(Float64)),
               dptr.as(Pointer(Float64)),
               @rows,
               @cols)
           end
-
-          {% if flag?(:softmax_debug) %}
-            # Check result data
-            test_result = Array(Float64).new(@rows * @cols, 0.0)
-            CUDA.memcpy(test_result.to_unsafe.as(Pointer(Void)),
-              rptr.as(Pointer(Void)),
-              (@rows * @cols * 8).to_u64,
-              CUDA::MemcpyKind::DeviceToHost)
-
-            # Check if all results are zero
-            if test_result.all? { |v| v == 0.0 }
-              Log.error { "CUDA softmax_rows produced all zeros. Falling back to CPU." }
-              raise "CUDA kernel failed silently"
-            end
-          {% end %}
 
           # Mark result as having newer GPU data
           result.mark_device_dirty!
@@ -106,29 +77,15 @@ module SHAInet
 
           case @precision
           when Precision::Fp16
-            {% if flag?(:cuda_fp16) %}
-              CUDA.dropout_fp16(
-                rptr.as(Pointer(UInt16)),
-                dptr.as(Pointer(UInt16)),
-                @rows, @cols, prob, seed)
-            {% else %}
-              CUDA.dropout(
-                rptr.as(Pointer(Float64)),
-                dptr.as(Pointer(Float64)),
-                @rows, @cols, prob, seed)
-            {% end %}
+            CUDA.dropout_fp16(
+              rptr.as(Pointer(UInt16)),
+              dptr.as(Pointer(UInt16)),
+              @rows, @cols, prob, seed)
           when Precision::Bf16
-            {% if flag?(:cuda_bf16) %}
-              CUDA.dropout_bf16(
-                rptr.as(Pointer(UInt16)),
-                dptr.as(Pointer(UInt16)),
-                @rows, @cols, prob, seed)
-            {% else %}
-              CUDA.dropout(
-                rptr.as(Pointer(Float64)),
-                dptr.as(Pointer(Float64)),
-                @rows, @cols, prob, seed)
-            {% end %}
+            CUDA.dropout_bf16(
+              rptr.as(Pointer(UInt16)),
+              dptr.as(Pointer(UInt16)),
+              @rows, @cols, prob, seed)
           else
             CUDA.dropout(
               rptr.as(Pointer(Float64)),

@@ -235,57 +235,29 @@ module SHAInet
         # Try to use CUDA kernels - if they fail, fallback to CPU
         case x.precision
         when Precision::Fp16
-          {% if flag?(:cuda_fp16) %}
-            CUDA.row_mean_var_fp16(
-              x.device_ptr.not_nil!.as(Pointer(UInt16)),
-              cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
-              cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
-              rows, cols)
-            CUDA.layer_norm_fp16(
-              cuda_norm.device_ptr.not_nil!.as(Pointer(UInt16)),
-              x.device_ptr.not_nil!.as(Pointer(UInt16)),
-              cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
-              cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
-              rows, cols, @epsilon.to_f32)
-          {% else %}
-            CUDA.row_mean_var(
-              x.device_ptr.not_nil!.as(Pointer(Float64)),
-              cuda_mean.device_ptr.not_nil!.as(Pointer(Float64)),
-              cuda_var.device_ptr.not_nil!.as(Pointer(Float64)),
-              rows, cols)
-            CUDA.layer_norm(
-              cuda_norm.device_ptr.not_nil!.as(Pointer(Float64)),
-              x.device_ptr.not_nil!.as(Pointer(Float64)),
-              cuda_mean.device_ptr.not_nil!.as(Pointer(Float64)),
-              cuda_var.device_ptr.not_nil!.as(Pointer(Float64)),
-              rows, cols, @epsilon)
-          {% end %}
+          CUDA.row_mean_var_fp16(
+            x.device_ptr.not_nil!.as(Pointer(UInt16)),
+            cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
+            cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
+            rows, cols)
+          CUDA.layer_norm_fp16(
+            cuda_norm.device_ptr.not_nil!.as(Pointer(UInt16)),
+            x.device_ptr.not_nil!.as(Pointer(UInt16)),
+            cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
+            cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
+            rows, cols, @epsilon.to_f32)
         when Precision::Bf16
-          {% if flag?(:cuda_bf16) %}
-            CUDA.row_mean_var_bf16(
-              x.device_ptr.not_nil!.as(Pointer(UInt16)),
-              cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
-              cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
-              rows, cols)
-            CUDA.layer_norm_bf16(
-              cuda_norm.device_ptr.not_nil!.as(Pointer(UInt16)),
-              x.device_ptr.not_nil!.as(Pointer(UInt16)),
-              cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
-              cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
-              rows, cols, @epsilon.to_f32)
-          {% else %}
-            CUDA.row_mean_var(
-              x.device_ptr.not_nil!.as(Pointer(Float64)),
-              cuda_mean.device_ptr.not_nil!.as(Pointer(Float64)),
-              cuda_var.device_ptr.not_nil!.as(Pointer(Float64)),
-              rows, cols)
-            CUDA.layer_norm(
-              cuda_norm.device_ptr.not_nil!.as(Pointer(Float64)),
-              x.device_ptr.not_nil!.as(Pointer(Float64)),
-              cuda_mean.device_ptr.not_nil!.as(Pointer(Float64)),
-              cuda_var.device_ptr.not_nil!.as(Pointer(Float64)),
-              rows, cols, @epsilon)
-          {% end %}
+          CUDA.row_mean_var_bf16(
+            x.device_ptr.not_nil!.as(Pointer(UInt16)),
+            cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
+            cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
+            rows, cols)
+          CUDA.layer_norm_bf16(
+            cuda_norm.device_ptr.not_nil!.as(Pointer(UInt16)),
+            x.device_ptr.not_nil!.as(Pointer(UInt16)),
+            cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
+            cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
+            rows, cols, @epsilon.to_f32)
         else
           CUDA.row_mean_var(
             x.device_ptr.not_nil!.as(Pointer(Float64)),

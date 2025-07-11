@@ -3,16 +3,16 @@ require "./spec_helper"
 # Monkey patch CUDA.axpy_ex to record the compute type used
 module SHAInet::CUDA
   enum DataType
-    CUDA_R_32F  = 0
-    CUDA_R_64F  = 1
-    CUDA_R_16F  = 2
+    CUDA_R_32F  =  0
+    CUDA_R_64F  =  1
+    CUDA_R_16F  =  2
     CUDA_R_16BF = 14
   end
 
   enum ComputeType
-    CUBLAS_COMPUTE_16F  = 64
-    CUBLAS_COMPUTE_32F  = 68
-    CUBLAS_COMPUTE_64F  = 70
+    CUBLAS_COMPUTE_16F  =  64
+    CUBLAS_COMPUTE_32F  =  68
+    CUBLAS_COMPUTE_64F  =  70
     CUBLAS_COMPUTE_16BF = 119
   end
 
