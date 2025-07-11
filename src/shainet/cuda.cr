@@ -51,6 +51,16 @@ module SHAInet
                          alpha : Pointer(Float64), a : Pointer(Float64), lda : Int32,
                          b : Pointer(Float64), ldb : Int32,
                          beta : Pointer(Float64), c : Pointer(Float64), ldc : Int32) : Int32
+      fun cublasSgemm_v2(handle : Handle, transa : Int32, transb : Int32,
+                         m : Int32, n : Int32, k : Int32,
+                         alpha : Pointer(Float32), a : Pointer(Float32), lda : Int32,
+                         b : Pointer(Float32), ldb : Int32,
+                         beta : Pointer(Float32), c : Pointer(Float32), ldc : Int32) : Int32
+      fun cublasHgemm(handle : Handle, transa : Int32, transb : Int32,
+                      m : Int32, n : Int32, k : Int32,
+                      alpha : Pointer(UInt16), a : Pointer(UInt16), lda : Int32,
+                      b : Pointer(UInt16), ldb : Int32,
+                      beta : Pointer(UInt16), c : Pointer(UInt16), ldc : Int32) : Int32
       fun cublasDgeam(handle : Handle,
                       transa : Int32, transb : Int32,
                       m : Int32, n : Int32,
@@ -447,6 +457,69 @@ module SHAInet
         pointerof(alpha), a, lda,
         b, ldb,
         pointerof(beta), c, ldc)
+    end
+
+    def sgemm(handle : LibCUBLAS::Handle, a : Pointer(Float32), b : Pointer(Float32), c : Pointer(Float32),
+              m : Int32, n : Int32, k : Int32, lda : Int32, ldb : Int32, ldc : Int32)
+      alpha = 1.0_f32
+      beta = 0.0_f32
+      LibCUBLAS.cublasSgemm_v2(handle,
+        Operation::N.value, Operation::N.value,
+        m, n, k,
+        pointerof(alpha), a, lda,
+        b, ldb,
+        pointerof(beta), c, ldc)
+    end
+
+    def sgemm_accumulate(handle : LibCUBLAS::Handle, a : Pointer(Float32), b : Pointer(Float32), c : Pointer(Float32),
+                         m : Int32, n : Int32, k : Int32, lda : Int32, ldb : Int32, ldc : Int32,
+                         alpha : Float32, beta : Float32)
+      LibCUBLAS.cublasSgemm_v2(handle,
+        Operation::N.value, Operation::N.value,
+        m, n, k,
+        pointerof(alpha), a, lda,
+        b, ldb,
+        pointerof(beta), c, ldc)
+    end
+
+    @@hgemm_available : Bool? = nil
+
+    def hgemm_available?
+      @@hgemm_available ||= begin
+        handle = LibC.dlopen("libcublas.so", LibC::RTLD_LAZY)
+        if handle.null?
+          false
+        else
+          sym = LibC.dlsym(handle, "cublasHgemm")
+          LibC.dlclose(handle)
+          !sym.null?
+        end
+      rescue
+        false
+      end
+    end
+
+    def hgemm(handle : LibCUBLAS::Handle, a : UInt16Ptr, b : UInt16Ptr, c : UInt16Ptr,
+              m : Int32, n : Int32, k : Int32, lda : Int32, ldb : Int32, ldc : Int32)
+      alpha = 1.0_f32.to_f16
+      beta = 0.0_f32.to_f16
+      LibCUBLAS.cublasHgemm(handle,
+        Operation::N.value, Operation::N.value,
+        m, n, k,
+        pointerof(alpha).as(Pointer(UInt16)), a, lda,
+        b, ldb,
+        pointerof(beta).as(Pointer(UInt16)), c, ldc)
+    end
+
+    def hgemm_accumulate(handle : LibCUBLAS::Handle, a : UInt16Ptr, b : UInt16Ptr, c : UInt16Ptr,
+                         m : Int32, n : Int32, k : Int32, lda : Int32, ldb : Int32, ldc : Int32,
+                         alpha : Float16, beta : Float16)
+      LibCUBLAS.cublasHgemm(handle,
+        Operation::N.value, Operation::N.value,
+        m, n, k,
+        pointerof(alpha).as(Pointer(UInt16)), a, lda,
+        b, ldb,
+        pointerof(beta).as(Pointer(UInt16)), c, ldc)
     end
 
     def geam(handle : LibCUBLAS::Handle, a : Pointer(Float64), b : Pointer(Float64), c : Pointer(Float64),

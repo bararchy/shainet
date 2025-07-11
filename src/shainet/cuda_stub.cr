@@ -116,6 +116,22 @@ module SHAInet
     def gemm_accumulate(*args)
     end
 
+    def sgemm(*args)
+    end
+
+    def sgemm_accumulate(*args)
+    end
+
+    def hgemm_available? : Bool
+      false
+    end
+
+    def hgemm(*args)
+    end
+
+    def hgemm_accumulate(*args)
+    end
+
     def geam(*args)
     end
 
