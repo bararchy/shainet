@@ -312,8 +312,8 @@ module SHAInet
       LibCUDARuntime.cudaMemcpy(dst, src, bytes, kind.value)
     end
 
-    def copy_device_to_device(dst : Pointer(Float64), src : Pointer(Float64), bytes : LibC::SizeT)
-      memcpy(dst.as(Pointer(Void)), src.as(Pointer(Void)), bytes, MemcpyKind::DeviceToDevice)
+    def copy_device_to_device(dst : Pointer(Void), src : Pointer(Void), bytes : LibC::SizeT)
+      memcpy(dst, src, bytes, MemcpyKind::DeviceToDevice)
     end
 
     def malloc_host(ptr : Pointer(Pointer(Void)), size : LibC::SizeT)
