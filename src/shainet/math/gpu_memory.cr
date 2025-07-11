@@ -73,7 +73,7 @@ module SHAInet
       raise ArgumentError.new("size mismatch") unless src.rows == dest.rows && src.cols == dest.cols
 
       size = src.rows * src.cols
-      bytes = (size * 8).to_u64
+      bytes = (size * dest.element_size).to_u64
 
       dest_buf = dest.raw_data_buffer
       src_buf = Slice(UInt8).new(src.data.to_unsafe.as(UInt8*), bytes)
@@ -96,7 +96,7 @@ module SHAInet
       raise ArgumentError.new("size mismatch") unless matrix.rows == dest.rows && matrix.cols == dest.cols
 
       size = matrix.rows * matrix.cols
-      bytes = (size * 8).to_u64
+      bytes = (size * dest.element_size).to_u64
 
       dest_buf = dest.raw_data_buffer
       src_buf = Slice(UInt8).new(matrix.data.to_unsafe.as(UInt8*), bytes)
@@ -117,7 +117,7 @@ module SHAInet
       raise ArgumentError.new("size mismatch") unless dest.rows == 1 && dest.cols == array.size
 
       slice = Slice(Float64).new(array.size) { |i| array[i].to_f64 }
-      bytes = (array.size * 8).to_u64
+      bytes = (array.size * dest.element_size).to_u64
 
       dest_buf = dest.raw_data_buffer
       src_buf = Slice(UInt8).new(slice.to_unsafe.as(UInt8*), bytes)
@@ -145,7 +145,7 @@ module SHAInet
         array[i].as(Array)[j].as(GenNum).to_f64
       end
 
-      bytes = (rows * cols * 8).to_u64
+      bytes = (rows * cols * dest.element_size).to_u64
       dest_buf = dest.raw_data_buffer
       src_buf = Slice(UInt8).new(flat.to_unsafe.as(UInt8*), bytes)
       dest_buf.copy_from(src_buf)
