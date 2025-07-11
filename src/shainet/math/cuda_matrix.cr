@@ -756,6 +756,32 @@ module SHAInet
       dup
     end
 
+    # Clone this matrix to a different CUDA device. Attempts a device-to-device
+    # copy and falls back to a CPU round-trip when peer access is unavailable.
+    def clone_to_device(dest_device : Int32)
+      return clone if dest_device == self.device_id
+
+      dup = CudaMatrix.new(@rows, @cols, 0.0, @precision, device_id: dest_device)
+      raise RuntimeError.new("GPU clone requires valid device pointers") unless (sptr = self.device_ptr) && (dptr = dup.device_ptr) && !sptr.null? && !dptr.null?
+
+      if device_dirty?
+        elem_size = element_size
+        bytes = (@rows * @cols * elem_size).to_u64
+        begin
+          CUDA.copy_device_to_device(dptr.as(Pointer(Void)), sptr.as(Pointer(Void)), bytes)
+          dup.mark_device_dirty!
+          return dup
+        rescue e
+          Log.error { "clone_to_device: GPU copy failed #{e}, using CPU fallback" }
+        end
+      end
+
+      # CPU fallback path
+      temp = to_simple
+      GPUMemory.to_gpu!(temp, dup)
+      dup
+    end
+
     # In-place element-wise addition - optimized with cuDNN and cuBLAS.
     def add!(other : CudaMatrix)
       raise ArgumentError.new("size mismatch") unless other.rows == @rows && other.cols == @cols
