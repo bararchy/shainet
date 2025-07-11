@@ -168,6 +168,8 @@ module SHAInet
 
     @@handle : LibCUDNN::CudnnHandle? = nil
     @@available : Bool? = nil
+    @@label_buffer : Pointer(Int32) = Pointer(Int32).null
+    @@label_buffer_size : Int32 = 0
 
     class CudnnError < Exception
       def initialize(@status : LibCUDNN::CudnnStatus)
@@ -218,6 +220,25 @@ module SHAInet
       if h = @@handle
         LibCUDNN.cudnnDestroy(h)
         @@handle = nil
+      end
+    end
+
+    # Ensure the persistent label index buffer is at least `size` elements.
+    def self.ensure_label_buffer(size : Int32)
+      if @@label_buffer.null? || @@label_buffer_size < size
+        CUDA.free(@@label_buffer.as(Pointer(Void))) unless @@label_buffer.null?
+        CUDA.malloc(pointerof(@@label_buffer).as(Pointer(Pointer(Void))), (size * 4).to_u64)
+        @@label_buffer_size = size
+      end
+      @@label_buffer
+    end
+
+    # Free the persistent label index buffer.
+    def self.free_label_buffer
+      unless @@label_buffer.null?
+        CUDA.free(@@label_buffer.as(Pointer(Void)))
+        @@label_buffer = Pointer(Int32).null
+        @@label_buffer_size = 0
       end
     end
 
@@ -725,25 +746,20 @@ module SHAInet
       end
 
       bytes = (label_ids.size * 4).to_u64
-      labels_dev = Pointer(Int32).null
-      CUDA.malloc(pointerof(labels_dev).as(Pointer(Pointer(Void))), bytes)
-      begin
-        CUDA.memcpy(labels_dev.as(Pointer(Void)), label_ids.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
+      labels_dev = ensure_label_buffer(label_ids.size)
+      CUDA.memcpy(labels_dev.as(Pointer(Void)), label_ids.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
 
-        # Compute cross-entropy using CUDA kernel
-        result = CUDA.softmax_cross_entropy_label(
-          predicted.device_ptr.not_nil!.as(Pointer(Float64)),
-          labels_dev,
-          grad_output.device_ptr.not_nil!.as(Pointer(Float64)),
-          loss,
-          predicted.rows,
-          predicted.cols
-        )
+      # Compute cross-entropy using CUDA kernel
+      result = CUDA.softmax_cross_entropy_label(
+        predicted.device_ptr.not_nil!.as(Pointer(Float64)),
+        labels_dev,
+        grad_output.device_ptr.not_nil!.as(Pointer(Float64)),
+        loss,
+        predicted.rows,
+        predicted.cols
+      )
 
-        raise "CUDA softmax cross-entropy label failed" if result != 0
-      ensure
-        CUDA.free(labels_dev.as(Pointer(Void))) unless labels_dev.null?
-      end
+      raise "CUDA softmax cross-entropy label failed" if result != 0
 
       grad_output.mark_device_dirty!
     end

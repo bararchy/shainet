@@ -918,6 +918,7 @@ module SHAInet
 
       batch_size = stream ? mini_batch_size : mini_batch_size.clamp(1, raw_data.size)
       @accumulation_counter = 0
+      CUDNN.ensure_label_buffer(batch_size) if CUDNN.responds_to?(:ensure_label_buffer)
 
       epochs.times do |epoch|
         # Reset sync counters at start of each epoch
@@ -1004,6 +1005,7 @@ module SHAInet
 
       elapsed = Time.monotonic - start_time
       Log.info { "Training completed in #{elapsed.total_seconds.round(2)} seconds" }
+      CUDNN.free_label_buffer if CUDNN.responds_to?(:free_label_buffer)
     end
 
     private def process_batch(batch, cost_proc, training_type)
