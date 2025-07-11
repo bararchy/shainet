@@ -246,6 +246,18 @@ module SHAInet
             cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
             cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
             rows, cols, @epsilon.to_f32)
+        when Precision::Fp32
+          CUDA.row_mean_var_fp32(
+            x.device_ptr.not_nil!.as(Pointer(Float32)),
+            cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
+            cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
+            rows, cols)
+          CUDA.layer_norm_fp32(
+            cuda_norm.device_ptr.not_nil!.as(Pointer(Float32)),
+            x.device_ptr.not_nil!.as(Pointer(Float32)),
+            cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
+            cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
+            rows, cols, @epsilon.to_f32)
         when Precision::Bf16
           CUDA.row_mean_var_bf16(
             x.device_ptr.not_nil!.as(Pointer(UInt16)),

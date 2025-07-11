@@ -592,9 +592,11 @@ module SHAInet
     @@row_mean_var_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
     @@row_mean_var_fp16_proc : Proc(Pointer(UInt16), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
     @@row_mean_var_bf16_proc : Proc(Pointer(UInt16), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
+    @@row_mean_var_fp32_proc : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
     @@layer_norm_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Int32, Float64, Void)? = nil
     @@layer_norm_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Pointer(Float32), Pointer(Float32), Int32, Int32, Float32, Void)? = nil
     @@layer_norm_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Pointer(Float32), Pointer(Float32), Int32, Int32, Float32, Void)? = nil
+    @@layer_norm_fp32_proc : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Int32, Float32, Void)? = nil
     @@layer_norm_backward_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Int32, Float64, Void)? = nil
     @@sum_cols_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
     @@mul_row_vector_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
@@ -1033,6 +1035,23 @@ module SHAInet
       fn.call(src, mean, var, rows, cols)
     end
 
+    def row_mean_var_fp32(src : Pointer(Float32), mean : Pointer(Float32), var : Pointer(Float32), rows : Int32, cols : Int32)
+      unless fn = @@row_mean_var_fp32_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "row_mean_var_f32")
+          unless sym.null?
+            @@row_mean_var_fp32_proc = Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@row_mean_var_fp32_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(src, mean, var, rows, cols)
+    end
+
     def layer_norm(dst : Pointer(Float64), src : Pointer(Float64), mean : Pointer(Float64), var : Pointer(Float64), rows : Int32, cols : Int32, eps : Float64)
       unless fn = @@layer_norm_proc
         if @@kernels_handle.null?
@@ -1077,6 +1096,23 @@ module SHAInet
           unless sym.null?
             @@layer_norm_bf16_proc = Proc(UInt16Ptr, UInt16Ptr, Pointer(Float32), Pointer(Float32), Int32, Int32, Float32, Void).new(sym, Pointer(Void).null)
             fn = @@layer_norm_bf16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(dst, src, mean, var, rows, cols, eps)
+    end
+
+    def layer_norm_fp32(dst : Pointer(Float32), src : Pointer(Float32), mean : Pointer(Float32), var : Pointer(Float32), rows : Int32, cols : Int32, eps : Float32)
+      unless fn = @@layer_norm_fp32_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "apply_layer_norm_f32")
+          unless sym.null?
+            @@layer_norm_fp32_proc = Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Int32, Float32, Void).new(sym, Pointer(Void).null)
+            fn = @@layer_norm_fp32_proc
           end
         end
       end

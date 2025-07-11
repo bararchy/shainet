@@ -291,6 +291,10 @@ module SHAInet
       raise "CUDA kernels not available"
     end
 
+    def row_mean_var_fp32(*args)
+      raise "CUDA kernels not available"
+    end
+
     def layer_norm(*args)
       raise "CUDA kernels not available"
     end
@@ -300,6 +304,10 @@ module SHAInet
     end
 
     def layer_norm_bf16(*args)
+      raise "CUDA kernels not available"
+    end
+
+    def layer_norm_fp32(*args)
       raise "CUDA kernels not available"
     end
 

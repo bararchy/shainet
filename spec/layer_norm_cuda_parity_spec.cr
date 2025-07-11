@@ -21,33 +21,33 @@ describe "LayerNorm GPU parity" do
     g_beta_cpu = cpu_ln.g_beta.clone
     ENV.delete("SHAINET_DISABLE_CUDA")
 
-    # GPU version with same parameters
-    gpu_ln = SHAInet::LayerNorm.new(cols)
-    # Copy the exact same gamma and beta values from CPU version
-    cols.times do |j|
-      gpu_ln.gamma[0, j] = cpu_ln.gamma[0, j]
-      gpu_ln.beta[0, j] = cpu_ln.beta[0, j]
-    end
-
-    x_gpu = SHAInet::CudaMatrix.from_a(data, SHAInet::Precision::Fp16)
-    dout_gpu = SHAInet::CudaMatrix.from_a(dout_data, SHAInet::Precision::Fp16)
-
-    out_gpu = gpu_ln.forward(x_gpu)
-    out_gpu.sync_from_device! if out_gpu.is_a?(SHAInet::CudaMatrix)
-
-    dx_gpu = gpu_ln.backward(dout_gpu)
-    dx_gpu.sync_from_device! if dx_gpu.is_a?(SHAInet::CudaMatrix)
-
-    rows.times do |i|
+    [SHAInet::Precision::Fp16, SHAInet::Precision::Fp32].each do |prec|
+      gpu_ln = SHAInet::LayerNorm.new(cols)
       cols.times do |j|
-        out_gpu[i, j].should be_close(out_cpu[i, j], 1e-6)
-        dx_gpu[i, j].should be_close(dx_cpu[i, j], 1e-6)
+        gpu_ln.gamma[0, j] = cpu_ln.gamma[0, j]
+        gpu_ln.beta[0, j] = cpu_ln.beta[0, j]
       end
-    end
 
-    cols.times do |j|
-      gpu_ln.g_gamma[0, j].should be_close(g_gamma_cpu[0, j], 1e-6)
-      gpu_ln.g_beta[0, j].should be_close(g_beta_cpu[0, j], 1e-6)
+      x_gpu = SHAInet::CudaMatrix.from_a(data, prec)
+      dout_gpu = SHAInet::CudaMatrix.from_a(dout_data, prec)
+
+      out_gpu = gpu_ln.forward(x_gpu)
+      out_gpu.sync_from_device! if out_gpu.is_a?(SHAInet::CudaMatrix)
+
+      dx_gpu = gpu_ln.backward(dout_gpu)
+      dx_gpu.sync_from_device! if dx_gpu.is_a?(SHAInet::CudaMatrix)
+
+      rows.times do |i|
+        cols.times do |j|
+          out_gpu[i, j].should be_close(out_cpu[i, j], 1e-6)
+          dx_gpu[i, j].should be_close(dx_cpu[i, j], 1e-6)
+        end
+      end
+
+      cols.times do |j|
+        gpu_ln.g_gamma[0, j].should be_close(g_gamma_cpu[0, j], 1e-6)
+        gpu_ln.g_beta[0, j].should be_close(g_beta_cpu[0, j], 1e-6)
+      end
     end
   end
 end
