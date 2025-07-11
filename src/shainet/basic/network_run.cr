@@ -608,10 +608,10 @@ module SHAInet
             grad.as(CudaMatrix)
           )
         rescue e
-          loss_value = compute_cost_and_gradient_cpu(actual_matrix, expected_output, grad, cost_function)
+          loss_value = compute_cost_and_gradient(actual_matrix, expected_output, grad, cost_function)
         end
       else
-        loss_value = compute_cost_and_gradient_cpu(actual_matrix, expected_output, grad, cost_function)
+        loss_value = compute_cost_and_gradient(actual_matrix, expected_output, grad, cost_function)
       end
 
       @error_signal = [loss_value]
@@ -1228,9 +1228,9 @@ module SHAInet
                   label = expected_matrix.as(CudaMatrix).unsafe_get(i, 0).to_i
                   one_hot[i, label] = 1.0 if label >= 0 && label < actual_matrix.cols
                 end
-                sample_error = compute_cost_and_gradient_cpu(actual_matrix, one_hot, grad_matrix, cost_proc)
+                sample_error = compute_cost_and_gradient(actual_matrix, one_hot, grad_matrix, cost_proc)
               else
-                sample_error = compute_cost_and_gradient_cpu(actual_matrix, expected_matrix, grad_matrix, cost_proc)
+                sample_error = compute_cost_and_gradient(actual_matrix, expected_matrix, grad_matrix, cost_proc)
               end
             end
           else
@@ -1241,9 +1241,9 @@ module SHAInet
                 label = expected_matrix.as(CudaMatrix).unsafe_get(i, 0).to_i
                 one_hot[i, label] = 1.0 if label >= 0 && label < actual_matrix.cols
               end
-              sample_error = compute_cost_and_gradient_cpu(actual_matrix, one_hot, grad_matrix, cost_proc)
+              sample_error = compute_cost_and_gradient(actual_matrix, one_hot, grad_matrix, cost_proc)
             else
-              sample_error = compute_cost_and_gradient_cpu(actual_matrix, expected_matrix, grad_matrix, cost_proc)
+              sample_error = compute_cost_and_gradient(actual_matrix, expected_matrix, grad_matrix, cost_proc)
             end
           end
 
@@ -1834,6 +1834,26 @@ module SHAInet
       end
       result.sync_to_device! if CUDA.fully_available?
       result
+    end
+
+    private def compute_cost_and_gradient(actual_matrix, expected_output, grad_matrix, cost_proc)
+      if CUDA.fully_available? &&
+         actual_matrix.is_a?(CudaMatrix) && expected_output.is_a?(CudaMatrix) &&
+         grad_matrix.is_a?(CudaMatrix) && cost_proc == SHAInet.quadratic_cost
+        begin
+          loss_val = 0.0
+          CUDNN.mse_loss_and_gradient(
+            actual_matrix.as(CudaMatrix),
+            expected_output.as(CudaMatrix),
+            pointerof(loss_val),
+            grad_matrix.as(CudaMatrix)
+          )
+          return loss_val
+        rescue e
+          Log.debug { "GPU MSE failed: #{e}, falling back to CPU" }
+        end
+      end
+      compute_cost_and_gradient_cpu(actual_matrix, expected_output, grad_matrix, cost_proc)
     end
 
     # CPU fallback for cost and gradient computation when GPU acceleration fails

@@ -665,8 +665,8 @@ module SHAInet
 
     # GPU-accelerated cross-entropy loss and gradient computation.
     # All matrices must use `Precision::Fp64`.
-    def self.cross_entropy_loss_and_gradient(predicted : CudaMatrix, target : CudaMatrix,
-                                             loss_output : Float64*, grad_output : CudaMatrix)
+  def self.cross_entropy_loss_and_gradient(predicted : CudaMatrix, target : CudaMatrix,
+                                           loss_output : Float64*, grad_output : CudaMatrix)
       raise "Matrices must have same dimensions" unless predicted.rows == target.rows && predicted.cols == target.cols
       unless predicted.precision.fp64? && target.precision.fp64? && grad_output.precision.fp64?
         raise ArgumentError.new("cross_entropy_loss_and_gradient only supports Fp64 precision")
@@ -692,6 +692,45 @@ module SHAInet
       )
 
       raise "CUDA cross-entropy computation failed" if result != 0
+
+      grad_output.mark_device_dirty!
+    end
+
+    # GPU-accelerated mean squared error loss and gradient computation.
+    # Supports FP64 and FP32 precisions.
+    def self.mse_loss_and_gradient(predicted : CudaMatrix, target : CudaMatrix,
+                                   loss_output : Float64*, grad_output : CudaMatrix)
+      raise "Matrices must have same dimensions" unless predicted.rows == target.rows && predicted.cols == target.cols
+
+      if predicted.precision.fp64? && target.precision.fp64? && grad_output.precision.fp64?
+        predicted.sync_to_device! unless predicted.device_dirty?
+        target.sync_to_device! unless target.device_dirty?
+        grad_output.sync_to_device! unless grad_output.device_dirty?
+        result = CUDA.mse_cost_gradient(
+          predicted.device_ptr.not_nil!,
+          target.device_ptr.not_nil!,
+          grad_output.device_ptr.not_nil!,
+          loss_output,
+          predicted.rows,
+          predicted.cols
+        )
+      elsif predicted.precision.fp32? && target.precision.fp32? && grad_output.precision.fp32?
+        predicted.sync_to_device! unless predicted.device_dirty?
+        target.sync_to_device! unless target.device_dirty?
+        grad_output.sync_to_device! unless grad_output.device_dirty?
+        result = CUDA.mse_cost_gradient_fp32(
+          predicted.device_ptr.not_nil!.as(Pointer(Float32)),
+          target.device_ptr.not_nil!.as(Pointer(Float32)),
+          grad_output.device_ptr.not_nil!.as(Pointer(Float32)),
+          loss_output,
+          predicted.rows,
+          predicted.cols
+        )
+      else
+        raise ArgumentError.new("mse_loss_and_gradient only supports Fp64 or Fp32 precision")
+      end
+
+      raise "CUDA MSE computation failed" if result != 0
 
       grad_output.mark_device_dirty!
     end
