@@ -539,9 +539,13 @@ module SHAInet
       result.sync_to_device!("cudnn_element_mul_result")
     end
 
-    # Cross-entropy loss and gradient computation on GPU
+    # Cross-entropy loss and gradient computation on GPU.
+    # All matrices must use `Precision::Fp64`.
     def self.cross_entropy_loss_gradient(predicted : CudaMatrix, target : CudaMatrix, loss_output : Float64*, grad_output : CudaMatrix)
       raise "Matrices must have same dimensions" unless predicted.rows == target.rows && predicted.cols == target.cols
+      unless predicted.precision.fp64? && target.precision.fp64? && grad_output.precision.fp64?
+        raise ArgumentError.new("cross_entropy_loss_gradient only supports Fp64 precision")
+      end
 
       # Ensure matrices are on device
       predicted.sync_to_device!("xent_pred") unless predicted.device_dirty?
@@ -562,10 +566,14 @@ module SHAInet
       grad_output.mark_device_dirty!
     end
 
-    # GPU-accelerated cross-entropy loss and gradient computation
+    # GPU-accelerated cross-entropy loss and gradient computation.
+    # All matrices must use `Precision::Fp64`.
     def self.cross_entropy_loss_and_gradient(predicted : CudaMatrix, target : CudaMatrix,
                                              loss_output : Float64*, grad_output : CudaMatrix)
       raise "Matrices must have same dimensions" unless predicted.rows == target.rows && predicted.cols == target.cols
+      unless predicted.precision.fp64? && target.precision.fp64? && grad_output.precision.fp64?
+        raise ArgumentError.new("cross_entropy_loss_and_gradient only supports Fp64 precision")
+      end
 
       # Ensure both matrices are on GPU
       predicted.sync_to_device!("cross_entropy_pred") unless predicted.device_dirty?
@@ -591,12 +599,15 @@ module SHAInet
       grad_output.mark_device_dirty!
     end
 
-    # GPU-optimized softmax + cross-entropy loss and gradient computation
+    # GPU-optimized softmax + cross-entropy loss and gradient computation.
+    # All matrices must use `Precision::Fp64`.
     def self.softmax_cross_entropy_loss_and_gradient(predicted : CudaMatrix, target : CudaMatrix,
                                                      loss : Float64*, grad_output : CudaMatrix)
       raise "Predicted and target must have same dimensions" unless predicted.rows == target.rows && predicted.cols == target.cols
       raise "Gradient output must have same dimensions as predicted" unless grad_output.rows == predicted.rows && grad_output.cols == predicted.cols
-      raise "Precision mismatch" unless grad_output.precision == predicted.precision
+      unless predicted.precision.fp64? && target.precision.fp64? && grad_output.precision.fp64?
+        raise ArgumentError.new("softmax_cross_entropy_loss_and_gradient only supports Fp64 precision")
+      end
 
       # Compute softmax of logits into grad_output
       softmax_rows(predicted, grad_output)
@@ -618,11 +629,15 @@ module SHAInet
 
     # GPU-optimized softmax + cross-entropy using label indices.
     # +labels+ should be a column vector (rows x 1) containing integer class indices.
+    # All matrices must use `Precision::Fp64`.
     def self.softmax_cross_entropy_label_loss_and_gradient(predicted : CudaMatrix, labels : CudaMatrix,
                                                            loss : Float64*, grad_output : CudaMatrix)
       raise "Labels must have one column" unless labels.cols == 1
       raise "Label rows must match predictions" unless labels.rows == predicted.rows
       raise "Gradient output must have same dimensions as predicted" unless grad_output.rows == predicted.rows && grad_output.cols == predicted.cols
+      unless predicted.precision.fp64? && grad_output.precision.fp64?
+        raise ArgumentError.new("softmax_cross_entropy_label_loss_and_gradient only supports Fp64 precision")
+      end
 
       # Do NOT compute softmax into grad_output before calling the kernel!
       # The kernel expects logits as input and writes softmax/grad to grad_output.

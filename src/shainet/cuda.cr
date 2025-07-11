@@ -1300,7 +1300,9 @@ module SHAInet
       available? && kernels_available?
     end
 
-    # Cross-entropy loss and gradient computation kernel
+    # Cross-entropy loss and gradient computation kernel.
+    # The `predicted`, `target` and `grad_output` pointers must reference
+    # `Float64` (FP64) device memory.
     def cross_entropy_loss_gradient(predicted : Pointer(Float64), target : Pointer(Float64),
                                     grad_output : Pointer(Float64), loss_output : Pointer(Float64),
                                     rows : Int32, cols : Int32) : Int32
