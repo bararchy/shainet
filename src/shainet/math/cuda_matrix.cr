@@ -581,15 +581,21 @@ module SHAInet
         if self.precision == other.precision &&
            (self.precision == Precision::Fp16 || self.precision == Precision::Bf16)
           if CUDA.gemm_ex_available?
-            dtype = CUDA.data_type_for(self.precision)
-            ctype = CUDA.data_type_for(result.precision)
-            compute = CUDA.compute_type_for(self.precision)
+            compute = CUDA.compute_type_for(self.precision).as(CUDA::LibCUBLAS::ComputeType)
             CUDA.gemm_ex(handle,
               ptr_b, ptr_a, result.device_ptr.not_nil!,
               other.cols, @rows, other.rows,
               other.cols, @cols, result.cols,
-              dtype, dtype, ctype,
+              CUDA.data_type_for(self.precision).as(CUDA::LibCUBLAS::DataType),
+              CUDA.data_type_for(self.precision).as(CUDA::LibCUBLAS::DataType),
+              CUDA.data_type_for(result.precision).as(CUDA::LibCUBLAS::DataType),
               compute)
+          elsif self.precision == Precision::Fp16 && CUDA.hgemm_available?
+            CUDA.hgemm(handle,
+              ptr_b.as(CUDA::UInt16Ptr), ptr_a.as(CUDA::UInt16Ptr),
+              result.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
+              other.cols, @rows, other.rows,
+              other.cols, @cols, result.cols)
           else
             # CPU fallback when GEMMEx is unavailable
             self.sync_from_device!("gemm_fallback") if device_dirty?
@@ -608,29 +614,21 @@ module SHAInet
         elsif self.precision == other.precision &&
               self.precision == Precision::Fp32
           if CUDA.gemm_ex_available?
-            dtype = CUDA.data_type_for(Precision::Fp32)
-            ctype = CUDA.data_type_for(result.precision)
             compute = CUDA::LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F
             CUDA.gemm_ex(handle,
               ptr_b, ptr_a, result.device_ptr.not_nil!,
               other.cols, @rows, other.rows,
               other.cols, @cols, result.cols,
-              dtype, dtype, ctype,
+              CUDA.data_type_for(Precision::Fp32).as(CUDA::LibCUBLAS::DataType),
+              CUDA.data_type_for(Precision::Fp32).as(CUDA::LibCUBLAS::DataType),
+              CUDA.data_type_for(result.precision).as(CUDA::LibCUBLAS::DataType),
               compute)
           else
-            # CPU fallback when GEMMEx is unavailable
-            self.sync_from_device!("gemm_fallback") if device_dirty?
-            other.sync_from_device!("gemm_fallback") if other.device_dirty?
-            @rows.times do |i|
-              other.cols.times do |j|
-                sum = 0.0
-                @cols.times do |k|
-                  sum += self.unsafe_get(i, k) * other.unsafe_get(k, j)
-                end
-                result.unsafe_set(i, j, sum)
-              end
-            end
-            result.sync_to_device!("gemm_fallback_result")
+            CUDA.sgemm(handle,
+              ptr_b.as(Pointer(Float32)), ptr_a.as(Pointer(Float32)),
+              result.device_ptr.not_nil!.as(Pointer(Float32)),
+              other.cols, @rows, other.rows,
+              other.cols, @cols, result.cols)
           end
         else
           # Optimized cuBLAS GEMM - account for row-major vs column-major difference
@@ -1497,48 +1495,50 @@ module SHAInet
 
         if (a.precision == Precision::Fp16 ||
            a.precision == Precision::Bf16) && CUDA.gemm_ex_available?
-          dtype = CUDA.data_type_for(a.precision)
-          compute = CUDA.compute_type_for(a.precision)
+          compute = CUDA.compute_type_for(a.precision).as(CUDA::LibCUBLAS::ComputeType)
           CUDA.gemm_ex(handle,
             ptr_b, ptr_a, ptr_c,
             b.cols, a.rows, b.rows,
             b.cols, a.cols, @cols,
-            dtype, dtype, dtype,
+            CUDA.data_type_for(a.precision).as(CUDA::LibCUBLAS::DataType),
+            CUDA.data_type_for(a.precision).as(CUDA::LibCUBLAS::DataType),
+            CUDA.data_type_for(a.precision).as(CUDA::LibCUBLAS::DataType),
             compute)
         elsif a.precision == Precision::Fp32 && CUDA.gemm_ex_available?
-          dtype = CUDA.data_type_for(Precision::Fp32)
-          compute = CUDA::LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F
+          compute = CUDA::LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F.as(CUDA::LibCUBLAS::ComputeType)
           CUDA.gemm_ex(handle,
             ptr_b, ptr_a, ptr_c,
             b.cols, a.rows, b.rows,
             b.cols, a.cols, @cols,
-            dtype, dtype, dtype,
+            CUDA.data_type_for(Precision::Fp32).as(CUDA::LibCUBLAS::DataType),
+            CUDA.data_type_for(Precision::Fp32).as(CUDA::LibCUBLAS::DataType),
+            CUDA.data_type_for(Precision::Fp32).as(CUDA::LibCUBLAS::DataType),
             compute)
-        elsif a.precision == Precision::Fp16 ||
-              a.precision == Precision::Bf16 ||
-              a.precision == Precision::Fp32
-          # CPU fallback when gemmEx is unavailable
+        elsif a.precision == Precision::Fp16 && CUDA.hgemm_available?
+          CUDA.hgemm_accumulate(handle,
+            ptr_b.as(CUDA::UInt16Ptr), ptr_a.as(CUDA::UInt16Ptr), ptr_c.as(CUDA::UInt16Ptr),
+            b.cols, a.rows, b.rows,
+            b.cols, a.cols, @cols,
+            alpha.to_f16, beta.to_f16)
+        elsif a.precision == Precision::Fp32
+          CUDA.sgemm_accumulate(handle,
+            ptr_b.as(Pointer(Float32)), ptr_a.as(Pointer(Float32)), ptr_c.as(Pointer(Float32)),
+            b.cols, a.rows, b.rows,
+            b.cols, a.cols, @cols,
+            alpha.to_f32, beta.to_f32)
+        elsif a.precision == Precision::Bf16
+          # CPU fallback when no suitable cuBLAS routine is available
           self.sync_from_device!("gemm_fallback") if device_dirty?
           a.sync_from_device!("gemm_fallback") if a.device_dirty?
           b.sync_from_device!("gemm_fallback") if b.device_dirty?
-          use_f32 = compute_in_f32?(a.precision) || compute_in_f32?(b.precision)
           @rows.times do |i|
             @cols.times do |j|
-              if use_f32
-                sum = 0.0_f32
-                a.cols.times do |k|
-                  sum += a.unsafe_get(i, k).to_f32 * b.unsafe_get(k, j).to_f32
-                end
-                val = alpha.to_f32 * sum + beta.to_f32 * self.unsafe_get(i, j).to_f32
-                self.unsafe_set(i, j, val.to_f64)
-              else
-                sum = 0.0
-                a.cols.times do |k|
-                  sum += a.unsafe_get(i, k) * b.unsafe_get(k, j)
-                end
-                val = alpha * sum + beta * self.unsafe_get(i, j)
-                self.unsafe_set(i, j, val)
+              sum = 0.0
+              a.cols.times do |k|
+                sum += a.unsafe_get(i, k) * b.unsafe_get(k, j)
               end
+              val = alpha * sum + beta * self.unsafe_get(i, j)
+              self.unsafe_set(i, j, val)
             end
           end
           self.sync_to_device!("gemm_fallback_result")
