@@ -1615,11 +1615,46 @@ module SHAInet
                            result = CudaMatrix.new(1, matrix.cols, precision: @precision)
                            # Copy last row using GPU memory copy
                            last_row_offset = (matrix.rows - 1) * matrix.cols
-                           CUDA.copy_device_to_device(
-                             result.device_ptr.not_nil!.as(Pointer(Float64)),
-                             (mptr + last_row_offset).as(Pointer(Float64)),
-                             (matrix.cols * 8).to_u64
-                           )
+                           elem_size = case matrix.precision
+                                       when Precision::Int8
+                                         1
+                                       when Precision::Fp16, Precision::Bf16
+                                         2
+                                       when Precision::Fp32
+                                         4
+                                       else
+                                         8
+                                       end
+
+                           dst_ptr = result.device_ptr.not_nil!
+                           src_ptr = (mptr + last_row_offset)
+
+                           case matrix.precision
+                           when Precision::Int8
+                             CUDA.copy_device_to_device(
+                               dst_ptr.as(Pointer(Int8)).as(Pointer(Float64)),
+                               src_ptr.as(Pointer(Int8)).as(Pointer(Float64)),
+                               (matrix.cols * elem_size).to_u64
+                             )
+                           when Precision::Fp16, Precision::Bf16
+                             CUDA.copy_device_to_device(
+                               dst_ptr.as(Pointer(UInt16)).as(Pointer(Float64)),
+                               src_ptr.as(Pointer(UInt16)).as(Pointer(Float64)),
+                               (matrix.cols * elem_size).to_u64
+                             )
+                           when Precision::Fp32
+                             CUDA.copy_device_to_device(
+                               dst_ptr.as(Pointer(Float32)).as(Pointer(Float64)),
+                               src_ptr.as(Pointer(Float32)).as(Pointer(Float64)),
+                               (matrix.cols * elem_size).to_u64
+                             )
+                           else
+                             CUDA.copy_device_to_device(
+                               dst_ptr.as(Pointer(Float64)),
+                               src_ptr.as(Pointer(Float64)),
+                               (matrix.cols * elem_size).to_u64
+                             )
+                           end
                            result.mark_device_dirty!
                            result
                          rescue e
