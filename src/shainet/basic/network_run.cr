@@ -1630,28 +1630,16 @@ module SHAInet
                            src_ptr = (mptr + last_row_offset)
 
                            case matrix.precision
-                           when Precision::Int8
+                           when Precision::Int8, Precision::Fp16, Precision::Bf16, Precision::Fp32, Precision::Fp64
                              CUDA.copy_device_to_device(
-                               dst_ptr.as(Pointer(Int8)).as(Pointer(Float64)),
-                               src_ptr.as(Pointer(Int8)).as(Pointer(Float64)),
-                               (matrix.cols * elem_size).to_u64
-                             )
-                           when Precision::Fp16, Precision::Bf16
-                             CUDA.copy_device_to_device(
-                               dst_ptr.as(Pointer(UInt16)).as(Pointer(Float64)),
-                               src_ptr.as(Pointer(UInt16)).as(Pointer(Float64)),
-                               (matrix.cols * elem_size).to_u64
-                             )
-                           when Precision::Fp32
-                             CUDA.copy_device_to_device(
-                               dst_ptr.as(Pointer(Float32)).as(Pointer(Float64)),
-                               src_ptr.as(Pointer(Float32)).as(Pointer(Float64)),
+                               dst_ptr.as(Pointer(Void)),
+                               src_ptr.as(Pointer(Void)),
                                (matrix.cols * elem_size).to_u64
                              )
                            else
                              CUDA.copy_device_to_device(
-                               dst_ptr.as(Pointer(Float64)),
-                               src_ptr.as(Pointer(Float64)),
+                               dst_ptr.as(Pointer(Void)),
+                               src_ptr.as(Pointer(Void)),
                                (matrix.cols * elem_size).to_u64
                              )
                            end

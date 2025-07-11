@@ -540,16 +540,16 @@ module SHAInet
       raise RuntimeError.new("GPU set_row! requires valid device pointers") unless dptr && sptr && !dptr.null? && !sptr.null?
 
       # Calculate pointers to the specific rows
-      dest_row_ptr = (dptr + (row_idx * @cols)).as(Pointer(Float64))
-      src_row_ptr = (sptr + (source_row * other.cols)).as(Pointer(Float64))
+      dest_row_ptr = (dptr + (row_idx * @cols)).as(Pointer(Void))
+      src_row_ptr = (sptr + (source_row * other.cols)).as(Pointer(Void))
 
       # Copy the row data taking element size into account
       elem_size = element_size
       bytes = (@cols * elem_size).to_u64
 
       CUDA.copy_device_to_device(
-        dest_row_ptr.as(Pointer(Float64)),
-        src_row_ptr.as(Pointer(Float64)),
+        dest_row_ptr,
+        src_row_ptr,
         bytes)
 
       mark_device_dirty!
@@ -1480,7 +1480,7 @@ module SHAInet
         end
 
         if (a.precision == Precision::Fp16 ||
-            a.precision == Precision::Bf16) && CUDA.gemm_ex_available?
+           a.precision == Precision::Bf16) && CUDA.gemm_ex_available?
           dtype = CUDA.data_type_for(a.precision)
           compute = CUDA.compute_type_for(a.precision)
           CUDA.gemm_ex(handle,
