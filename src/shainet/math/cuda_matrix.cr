@@ -1700,7 +1700,8 @@ module SHAInet
           elsif CUDA.axpy_ex_available?
             dtype = CUDA.data_type_for(Precision::Fp16)
             ctype = CUDA.compute_type_for(Precision::Fp16)
-            CUDA.axpy_ex(handle, -learning_rate.to_f32, grad_ptr.as(Void*), dtype, weight_ptr.as(Void*), dtype, total_elements, ctype)
+            scalar = CUDA.scalar_for_compute_type(-learning_rate, ctype)
+            CUDA.axpy_ex(handle, scalar.to_unsafe, grad_ptr.as(Void*), dtype, weight_ptr.as(Void*), dtype, total_elements, ctype)
           else
             raise "axpyEx unavailable"
           end
@@ -1710,7 +1711,8 @@ module SHAInet
           elsif CUDA.axpy_ex_available?
             dtype = CUDA.data_type_for(Precision::Bf16)
             ctype = CUDA.compute_type_for(Precision::Bf16)
-            CUDA.axpy_ex(handle, -learning_rate.to_f32, grad_ptr.as(Void*), dtype, weight_ptr.as(Void*), dtype, total_elements, ctype)
+            scalar = CUDA.scalar_for_compute_type(-learning_rate, ctype)
+            CUDA.axpy_ex(handle, scalar.to_unsafe, grad_ptr.as(Void*), dtype, weight_ptr.as(Void*), dtype, total_elements, ctype)
           else
             raise "axpyEx unavailable"
           end

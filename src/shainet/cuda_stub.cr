@@ -534,6 +534,35 @@ module SHAInet
       end
     end
 
+    def scalar_for_compute_type(value : Float64, compute_type : LibCUBLAS::ComputeType) : Bytes
+      case compute_type
+      when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_64F
+        buf = Bytes.new(sizeof(Float64))
+        buf.to_unsafe.as(Pointer(Float64))[0] = value
+        buf
+      when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F
+        buf = Bytes.new(sizeof(Float32))
+        buf.to_unsafe.as(Pointer(Float32))[0] = value.to_f32
+        buf
+      when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_16F
+        buf = Bytes.new(sizeof(Float16))
+        buf.to_unsafe.as(Pointer(Float16))[0] = Float16.new(value)
+        buf
+      when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_16BF
+        buf = Bytes.new(sizeof(BFloat16))
+        buf.to_unsafe.as(Pointer(BFloat16))[0] = BFloat16.new(value.to_f32)
+        buf
+      when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32I
+        buf = Bytes.new(sizeof(Int32))
+        buf.to_unsafe.as(Pointer(Int32))[0] = value.round.to_i32
+        buf
+      else
+        buf = Bytes.new(sizeof(Float64))
+        buf.to_unsafe.as(Pointer(Float64))[0] = value
+        buf
+      end
+    end
+
     def softmax_cross_entropy_loss_and_gradient(*args)
       raise CudnnError.new("cuDNN not available")
     end
