@@ -1952,5 +1952,9 @@ module SHAInet
         end
       end
     end
+
+    def finalize
+      CUDA.cleanup_handles if CUDA.fully_available?
+    end
   end
 end

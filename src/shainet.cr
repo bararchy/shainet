@@ -68,3 +68,7 @@ module SHAInet
   iobackend = ::Log::IOBackend.new(io: STDOUT, dispatcher: ::Log::DispatchMode::Sync)
   ::Log.setup(lvl[log_level.downcase], backend: iobackend)
 end
+
+at_exit do
+  SHAInet::CUDA.cleanup_handles if SHAInet::CUDA.fully_available?
+end
