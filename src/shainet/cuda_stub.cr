@@ -1,3 +1,37 @@
+# Minimal cuDNN FFI stubs so that the library can be compiled when CUDA support
+# is disabled. The real implementations live in `cudnn.cr` and are only
+# included when the `enable_cuda` compile flag is set.
+lib LibCUDNN
+  alias CudnnHandle = Void*
+  alias CudnnTensorDescriptor = Void*
+  alias CudnnOpTensorDescriptor = Void*
+
+  enum CudnnStatus
+    CUDNN_STATUS_SUCCESS = 0
+  end
+
+  enum CudnnDataType
+    CUDNN_DATA_FLOAT = 0
+  end
+
+  enum CudnnOpTensorOp
+    CUDNN_OP_TENSOR_MUL = 1
+  end
+
+  fun cudnnCreateOpTensorDescriptor(opTensorDesc : CudnnOpTensorDescriptor*) : CudnnStatus
+  fun cudnnDestroyOpTensorDescriptor(opTensorDesc : CudnnOpTensorDescriptor) : CudnnStatus
+  fun cudnnSetOpTensorDescriptor(opTensorDesc : CudnnOpTensorDescriptor, opTensorOp : CudnnOpTensorOp,
+                                 opTensorCompType : CudnnDataType, opTensorNanOpt : LibC::Int) : CudnnStatus
+  fun cudnnOpTensor(handle : CudnnHandle, opTensorDesc : CudnnOpTensorDescriptor,
+                    alpha1 : Void*, aDesc : CudnnTensorDescriptor, a : Void*,
+                    alpha2 : Void*, bDesc : CudnnTensorDescriptor, b : Void*,
+                    beta : Void*, cDesc : CudnnTensorDescriptor, c : Void*) : CudnnStatus
+  fun cudnnCreateTensorDescriptor(tensorDesc : CudnnTensorDescriptor*) : CudnnStatus
+  fun cudnnDestroyTensorDescriptor(tensorDesc : CudnnTensorDescriptor) : CudnnStatus
+  fun cudnnSetTensorNdDescriptor(tensorDesc : CudnnTensorDescriptor, dataType : CudnnDataType,
+                                 nbDims : Int32, dims : Int32*, strides : Int32*) : CudnnStatus
+end
+
 module SHAInet
   module CUDA
     extend self
@@ -21,6 +55,23 @@ module SHAInet
 
     lib LibCUBLAS
       type Handle = Void*
+
+      enum DataType
+        CUDA_R_32F  = 0
+        CUDA_R_64F  = 1
+        CUDA_R_16F  = 2
+        CUDA_R_16BF = 14
+        CUDA_R_8I   = 3
+        CUDA_R_32I  = 10
+      end
+
+      enum ComputeType
+        CUBLAS_COMPUTE_16F  = 64
+        CUBLAS_COMPUTE_32F  = 68
+        CUBLAS_COMPUTE_64F  = 70
+        CUBLAS_COMPUTE_16BF = 119
+        CUBLAS_COMPUTE_32I  = 82
+      end
     end
 
     def available? : Bool
@@ -63,12 +114,12 @@ module SHAInet
       false
     end
 
-    def data_type_for(*args)
-      raise "CUDA disabled"
+    def data_type_for(p : Precision) : LibCUBLAS::DataType
+      LibCUBLAS::DataType::CUDA_R_32F
     end
 
-    def compute_type_for(*args)
-      raise "CUDA disabled"
+    def compute_type_for(p : Precision) : LibCUBLAS::ComputeType
+      LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F
     end
 
     def malloc(*args) : Int32
@@ -344,6 +395,10 @@ module SHAInet
       raise CudnnError.new("cuDNN not available")
     end
 
+    def data_type_for(*args)
+      LibCUDNN::CudnnDataType::CUDNN_DATA_FLOAT
+    end
+
     def relu_forward(*args)
       raise CudnnError.new("cuDNN not available")
     end
@@ -380,8 +435,36 @@ module SHAInet
       raise CudnnError.new("cuDNN not available")
     end
 
+    # Placeholder that mimics the API of `cudnn.cr`. It returns a null
+    # descriptor so callers can compile when cuDNN is absent. The returned
+    # value should never be used because `available?` is always `false`.
+    def create_tensor_descriptor_2d(*args) : LibCUDNN::CudnnTensorDescriptor
+      Pointer(Void).null
+    end
+
     def typed_scalar(value : Float64, precision : Precision) : Bytes
-      Bytes.new(1)
+      case precision
+      when Precision::Fp32
+        buf = Bytes.new(sizeof(Float32))
+        buf.to_unsafe.as(Pointer(Float32))[0] = value.to_f32
+        buf
+      when Precision::Fp16
+        buf = Bytes.new(sizeof(Float16))
+        buf.to_unsafe.as(Pointer(Float16))[0] = Float16.new(value)
+        buf
+      when Precision::Bf16
+        buf = Bytes.new(sizeof(BFloat16))
+        buf.to_unsafe.as(Pointer(BFloat16))[0] = BFloat16.new(value.to_f32)
+        buf
+      when Precision::Int8
+        buf = Bytes.new(sizeof(Int8))
+        buf.to_unsafe.as(Pointer(Int8))[0] = value.round.to_i8
+        buf
+      else
+        buf = Bytes.new(sizeof(Float64))
+        buf.to_unsafe.as(Pointer(Float64))[0] = value
+        buf
+      end
     end
 
     def softmax_cross_entropy_loss_and_gradient(*args)
@@ -419,8 +502,8 @@ module SHAInet
       raise CudnnError.new("cuDNN not available")
     end
 
-    def handle
-      raise CudnnError.new("cuDNN not available")
+    def handle : LibCUDNN::CudnnHandle
+      Pointer(Void).null
     end
   end
 end

@@ -243,23 +243,23 @@ module SHAInet
       case precision
       when Precision::Fp32
         buf = Bytes.new(sizeof(Float32))
-        buf.as(Pointer(Float32))[0] = value.to_f32
+        buf.to_unsafe.as(Pointer(Float32))[0] = value.to_f32
         buf
       when Precision::Fp16
         buf = Bytes.new(sizeof(Float16))
-        buf.as(Pointer(Float16))[0] = Float16.new(value)
+        buf.to_unsafe.as(Pointer(Float16))[0] = Float16.new(value)
         buf
       when Precision::Bf16
         buf = Bytes.new(sizeof(BFloat16))
-        buf.as(Pointer(BFloat16))[0] = BFloat16.new(value.to_f32)
+        buf.to_unsafe.as(Pointer(BFloat16))[0] = BFloat16.new(value.to_f32)
         buf
       when Precision::Int8
         buf = Bytes.new(sizeof(Int8))
-        buf.as(Pointer(Int8))[0] = value.round.to_i8
+        buf.to_unsafe.as(Pointer(Int8))[0] = value.round.to_i8
         buf
       else
         buf = Bytes.new(sizeof(Float64))
-        buf.as(Pointer(Float64))[0] = value
+        buf.to_unsafe.as(Pointer(Float64))[0] = value
         buf
       end
     end

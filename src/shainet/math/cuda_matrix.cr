@@ -1002,6 +1002,7 @@ module SHAInet
         return self
       elsif @precision.in?({Precision::Fp16, Precision::Bf16, Precision::Fp32}) &&
             vec.precision == @precision && CUDNN.available?
+        {% if flag?(:enable_cuda) %}
         stat = LibCUDNN.cudnnCreateOpTensorDescriptor(out op_desc)
         begin
           # # Broadcast multiply using cuDNN OpTensor
@@ -1054,6 +1055,7 @@ module SHAInet
             LibCUDNN.cudnnDestroyOpTensorDescriptor(opd)
           end
         end
+        {% end %}
       end
 
       # CPU fallback
