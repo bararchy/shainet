@@ -605,6 +605,33 @@ module SHAInet
             end
             result.sync_to_device!("gemm_fallback_result")
           end
+        elsif self.precision == other.precision &&
+              self.precision == Precision::Fp32
+          if CUDA.gemm_ex_available?
+            dtype = CUDA.data_type_for(Precision::Fp32)
+            ctype = CUDA.data_type_for(result.precision)
+            compute = CUDA::LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F
+            CUDA.gemm_ex(handle,
+              ptr_b, ptr_a, result.device_ptr.not_nil!,
+              other.cols, @rows, other.rows,
+              other.cols, @cols, result.cols,
+              dtype, dtype, ctype,
+              compute)
+          else
+            # CPU fallback when GEMMEx is unavailable
+            self.sync_from_device!("gemm_fallback") if device_dirty?
+            other.sync_from_device!("gemm_fallback") if other.device_dirty?
+            @rows.times do |i|
+              other.cols.times do |j|
+                sum = 0.0
+                @cols.times do |k|
+                  sum += self.unsafe_get(i, k) * other.unsafe_get(k, j)
+                end
+                result.unsafe_set(i, j, sum)
+              end
+            end
+            result.sync_to_device!("gemm_fallback_result")
+          end
         else
           # Optimized cuBLAS GEMM - account for row-major vs column-major difference
           # To compute C = A * B in row-major, we compute C^T = B^T * A^T
@@ -1453,10 +1480,18 @@ module SHAInet
         end
 
         if (a.precision == Precision::Fp16 ||
-           a.precision == Precision::Bf16 ||
-           a.precision == Precision::Fp32) && CUDA.gemm_ex_available?
+            a.precision == Precision::Bf16) && CUDA.gemm_ex_available?
           dtype = CUDA.data_type_for(a.precision)
           compute = CUDA.compute_type_for(a.precision)
+          CUDA.gemm_ex(handle,
+            ptr_b, ptr_a, ptr_c,
+            b.cols, a.rows, b.rows,
+            b.cols, a.cols, @cols,
+            dtype, dtype, dtype,
+            compute)
+        elsif a.precision == Precision::Fp32 && CUDA.gemm_ex_available?
+          dtype = CUDA.data_type_for(Precision::Fp32)
+          compute = CUDA::LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F
           CUDA.gemm_ex(handle,
             ptr_b, ptr_a, ptr_c,
             b.cols, a.rows, b.rows,
