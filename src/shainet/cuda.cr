@@ -354,7 +354,11 @@ module SHAInet
     end
 
     def copy_device_to_device(dst : Pointer(Void), src : Pointer(Void), bytes : LibC::SizeT) : Int32
-      memcpy(dst, src, bytes, MemcpyKind::DeviceToDevice)
+      result = memcpy(dst, src, bytes, MemcpyKind::DeviceToDevice)
+      unless result.zero?
+        raise RuntimeError.new("cudaMemcpy DeviceToDevice failed: #{result}")
+      end
+      result
     end
 
     def malloc_host(ptr : Pointer(Pointer(Void)), size : LibC::SizeT)
