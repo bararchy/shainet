@@ -391,6 +391,9 @@ module SHAInet
   module CUDNN
     extend self
 
+    @@label_buffer : Pointer(Int32) = Pointer(Int32).null
+    @@label_buffer_size : Int32 = 0
+
     def available? : Bool
       false
     end
@@ -401,6 +404,24 @@ module SHAInet
 
     def data_type_for(*args)
       LibCUDNN::CudnnDataType::CUDNN_DATA_FLOAT
+    end
+
+    # Maintain a host buffer to mirror the API when CUDA/cuDNN are disabled.
+    def ensure_label_buffer(size : Int32)
+      if @@label_buffer.null? || @@label_buffer_size < size
+        LibC.free(@@label_buffer) unless @@label_buffer.null?
+        @@label_buffer = LibC.malloc((size * 4).to_u64).as(Pointer(Int32))
+        @@label_buffer_size = size
+      end
+      @@label_buffer
+    end
+
+    def free_label_buffer
+      unless @@label_buffer.null?
+        LibC.free(@@label_buffer)
+        @@label_buffer = Pointer(Int32).null
+        @@label_buffer_size = 0
+      end
     end
 
     def relu_forward(*args)
