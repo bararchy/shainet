@@ -707,9 +707,9 @@ module SHAInet
         target.sync_to_device! unless target.device_dirty?
         grad_output.sync_to_device! unless grad_output.device_dirty?
         result = CUDA.mse_cost_gradient(
-          predicted.device_ptr.not_nil!,
-          target.device_ptr.not_nil!,
-          grad_output.device_ptr.not_nil!,
+          predicted.device_ptr.not_nil!.as(Pointer(Float64)),
+          target.device_ptr.not_nil!.as(Pointer(Float64)),
+          grad_output.device_ptr.not_nil!.as(Pointer(Float64)),
           loss_output,
           predicted.rows,
           predicted.cols
