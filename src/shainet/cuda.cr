@@ -488,7 +488,7 @@ module SHAInet
     end
 
     def axpy_ex(handle : LibCUBLAS::Handle, alpha : Float32, x : Pointer(Void), x_type : LibCUBLAS::DataType,
-                y : Pointer(Void), y_type : LibCUBLAS::DataType, n : Int32, compute_type : LibCUBLAS::DataType)
+                y : Pointer(Void), y_type : LibCUBLAS::DataType, n : Int32, compute_type : LibCUBLAS::ComputeType)
       LibCUBLAS.cublasAxpyEx(handle, n,
         pointerof(alpha).as(Void*),
         x, x_type.value, 1,
