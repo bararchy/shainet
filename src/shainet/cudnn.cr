@@ -778,25 +778,36 @@ module SHAInet
       # Do NOT compute softmax into grad_output before calling the kernel!
       # The kernel expects logits as input and writes softmax/grad to grad_output.
 
-      # Pull labels to host as Int32 array
-      labels.sync_from_device!("sm_xent_labels") if labels.device_dirty?
-      label_ids = Array(Int32).new(labels.rows) do |i|
-        labels.unsafe_get(i, 0).to_i
+      if labels.device_ptr && !labels.device_ptr.not_nil!.null?
+        labels.sync_to_device!("sm_xent_labels") unless labels.device_dirty?
+        result = CUDA.softmax_cross_entropy_label_matrix(
+          predicted.device_ptr.not_nil!.as(Pointer(Float64)),
+          labels.device_ptr.not_nil!.as(Pointer(Float64)),
+          grad_output.device_ptr.not_nil!.as(Pointer(Float64)),
+          loss,
+          predicted.rows,
+          predicted.cols
+        )
+      else
+        # Pull labels to host as Int32 array
+        labels.sync_from_device!("sm_xent_labels") if labels.device_dirty?
+        label_ids = Array(Int32).new(labels.rows) do |i|
+          labels.unsafe_get(i, 0).to_i
+        end
+
+        bytes = (label_ids.size * 4).to_u64
+        labels_dev = ensure_label_buffer(label_ids.size)
+        CUDA.memcpy(labels_dev.as(Pointer(Void)), label_ids.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
+
+        result = CUDA.softmax_cross_entropy_label(
+          predicted.device_ptr.not_nil!.as(Pointer(Float64)),
+          labels_dev,
+          grad_output.device_ptr.not_nil!.as(Pointer(Float64)),
+          loss,
+          predicted.rows,
+          predicted.cols
+        )
       end
-
-      bytes = (label_ids.size * 4).to_u64
-      labels_dev = ensure_label_buffer(label_ids.size)
-      CUDA.memcpy(labels_dev.as(Pointer(Void)), label_ids.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
-
-      # Compute cross-entropy using CUDA kernel
-      result = CUDA.softmax_cross_entropy_label(
-        predicted.device_ptr.not_nil!.as(Pointer(Float64)),
-        labels_dev,
-        grad_output.device_ptr.not_nil!.as(Pointer(Float64)),
-        loss,
-        predicted.rows,
-        predicted.cols
-      )
 
       raise "CUDA softmax cross-entropy label failed" if result != 0
 

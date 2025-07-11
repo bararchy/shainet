@@ -391,6 +391,10 @@ module SHAInet
       raise "CUDA kernels not available"
     end
 
+    def softmax_cross_entropy_label_matrix(*args) : Int32
+      raise "CUDA kernels not available"
+    end
+
     def dropout(*args) : Int32
       raise "CUDA kernels not available"
     end
