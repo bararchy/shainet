@@ -318,11 +318,11 @@ module SHAInet
       LibCUDARuntime.cudaFree(ptr)
     end
 
-    def memcpy(dst : Pointer(Void), src : Pointer(Void), bytes : LibC::SizeT, kind : MemcpyKind)
+    def memcpy(dst : Pointer(Void), src : Pointer(Void), bytes : LibC::SizeT, kind : MemcpyKind) : Int32
       LibCUDARuntime.cudaMemcpy(dst, src, bytes, kind.value)
     end
 
-    def copy_device_to_device(dst : Pointer(Void), src : Pointer(Void), bytes : LibC::SizeT)
+    def copy_device_to_device(dst : Pointer(Void), src : Pointer(Void), bytes : LibC::SizeT) : Int32
       memcpy(dst, src, bytes, MemcpyKind::DeviceToDevice)
     end
 

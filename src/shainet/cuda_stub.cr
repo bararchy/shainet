@@ -129,11 +129,13 @@ module SHAInet
     def free(*args)
     end
 
-    def memcpy(*args)
+    def memcpy(*args) : Int32
+      0
     end
 
-    def copy_device_to_device(dst : Pointer(Void), src : Pointer(Void), bytes : LibC::SizeT)
+    def copy_device_to_device(dst : Pointer(Void), src : Pointer(Void), bytes : LibC::SizeT) : Int32
       # no-op when CUDA is disabled
+      0
     end
 
     def malloc_host(*args)

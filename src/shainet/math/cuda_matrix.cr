@@ -574,10 +574,14 @@ module SHAInet
       # Copy the row data taking element size into account
       bytes = (@cols * elem_size).to_u64
 
-      CUDA.copy_device_to_device(
+      copy_res = CUDA.copy_device_to_device(
         dest_row_ptr,
         src_row_ptr,
         bytes)
+      if copy_res != 0
+        Log.error { "set_row!: device copy failed with code #{copy_res}" }
+        raise RuntimeError.new("GPU memory copy failed in set_row! from other to self")
+      end
 
       mark_device_dirty!
       self
@@ -795,7 +799,11 @@ module SHAInet
         elem_size = element_size
         bytes = (@rows * @cols * elem_size).to_u64
         begin
-          CUDA.copy_device_to_device(dptr.as(Pointer(Void)), sptr.as(Pointer(Void)), bytes)
+          copy_res = CUDA.copy_device_to_device(dptr.as(Pointer(Void)), sptr.as(Pointer(Void)), bytes)
+          if copy_res != 0
+            Log.error { "clone_to_device: device copy failed with code #{copy_res}" }
+            raise RuntimeError.new("GPU memory copy failed while cloning matrix to device #{dest_device}")
+          end
           dup.mark_device_dirty!
           return dup
         rescue e
