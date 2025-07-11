@@ -94,40 +94,102 @@ module SHAInet
       layer_pairs.each_with_index do |base_layer, idx|
         next unless base_layer.is_a?(MatrixLayer)
 
-        sum_w = SimpleMatrix.zeros(base_layer.g_w.rows, base_layer.g_w.cols, base_layer.precision)
-        sum_b = SimpleMatrix.zeros(base_layer.g_b.rows, base_layer.g_b.cols, base_layer.precision)
+        if CUDA.fully_available? && base_layer.weights.is_a?(CudaMatrix)
+          device = base_layer.weights.as(CudaMatrix).device_id
+          CUDA.set_device(device)
 
-        @replicas.each do |rep|
-          rep_layer = if idx < rep.hidden_layers.size
-                        rep.hidden_layers[idx]
+          sum_w = CudaMatrix.new(base_layer.g_w.rows, base_layer.g_w.cols, 0.0,
+            base_layer.precision, device_id: device)
+          sum_w.zero!
+          sum_b = CudaMatrix.new(base_layer.g_b.rows, base_layer.g_b.cols, 0.0,
+            base_layer.precision, device_id: device)
+          sum_b.zero!
+
+          @replicas.each do |rep|
+            rep_layer = if idx < rep.hidden_layers.size
+                          rep.hidden_layers[idx]
+                        else
+                          rep.output_layers[idx - rep.hidden_layers.size]
+                        end
+            next unless rep_layer.is_a?(MatrixLayer)
+
+            gw = rep_layer.g_w
+            gb = rep_layer.g_b
+
+            gw_cuda = if gw.is_a?(CudaMatrix)
+                        mat = gw.as(CudaMatrix)
+                        mat.device_id == device ? mat : mat.clone_to_device(device)
                       else
-                        rep.output_layers[idx - rep.hidden_layers.size]
+                        temp = CudaMatrix.new(gw.rows, gw.cols, 0.0, gw.precision, device_id: device)
+                        GPUMemory.to_gpu!(gw.as(SimpleMatrix), temp)
+                        temp
                       end
-          next unless rep_layer.is_a?(MatrixLayer)
-          gw = rep_layer.g_w
-          gb = rep_layer.g_b
-          gw_simple = gw.is_a?(CudaMatrix) ? gw.as(CudaMatrix).to_simple : gw.as(SimpleMatrix)
-          gb_simple = gb.is_a?(CudaMatrix) ? gb.as(CudaMatrix).to_simple : gb.as(SimpleMatrix)
-          sum_w.add!(gw_simple)
-          sum_b.add!(gb_simple)
-        end
 
-        factor = 1.0 / @replicas.size
-        sum_w.rows.times do |r|
-          sum_w.cols.times do |c|
-            sum_w[r, c] *= factor
-          end
-        end
-        sum_b.rows.times do |r|
-          sum_b.cols.times do |c|
-            sum_b[r, c] *= factor
-          end
-        end
+            gb_cuda = if gb.is_a?(CudaMatrix)
+                        mat = gb.as(CudaMatrix)
+                        mat.device_id == device ? mat : mat.clone_to_device(device)
+                      else
+                        temp = CudaMatrix.new(gb.rows, gb.cols, 0.0, gb.precision, device_id: device)
+                        GPUMemory.to_gpu!(gb.as(SimpleMatrix), temp)
+                        temp
+                      end
 
-        base_layer.g_w = base_layer.weights.is_a?(CudaMatrix) ? sum_w.to_cuda : sum_w
-        base_layer.g_b = base_layer.biases.is_a?(CudaMatrix) ? sum_b.to_cuda : sum_b
-        base_layer.update_weights(lr, weight_decay)
-        base_layer.zero_gradients
+            sum_w.add!(gw_cuda)
+            sum_b.add!(gb_cuda)
+          end
+
+          factor = 1.0 / @replicas.size
+          sum_w.rows.times do |r|
+            sum_w.cols.times do |c|
+              sum_w[r, c] *= factor
+            end
+          end
+          sum_b.rows.times do |r|
+            sum_b.cols.times do |c|
+              sum_b[r, c] *= factor
+            end
+          end
+
+          base_layer.g_w = sum_w
+          base_layer.g_b = sum_b
+          base_layer.update_weights(lr, weight_decay)
+          base_layer.zero_gradients
+        else
+          sum_w = SimpleMatrix.zeros(base_layer.g_w.rows, base_layer.g_w.cols, base_layer.precision)
+          sum_b = SimpleMatrix.zeros(base_layer.g_b.rows, base_layer.g_b.cols, base_layer.precision)
+
+          @replicas.each do |rep|
+            rep_layer = if idx < rep.hidden_layers.size
+                          rep.hidden_layers[idx]
+                        else
+                          rep.output_layers[idx - rep.hidden_layers.size]
+                        end
+            next unless rep_layer.is_a?(MatrixLayer)
+            gw = rep_layer.g_w
+            gb = rep_layer.g_b
+            gw_simple = gw.is_a?(CudaMatrix) ? gw.as(CudaMatrix).to_simple : gw.as(SimpleMatrix)
+            gb_simple = gb.is_a?(CudaMatrix) ? gb.as(CudaMatrix).to_simple : gb.as(SimpleMatrix)
+            sum_w.add!(gw_simple)
+            sum_b.add!(gb_simple)
+          end
+
+          factor = 1.0 / @replicas.size
+          sum_w.rows.times do |r|
+            sum_w.cols.times do |c|
+              sum_w[r, c] *= factor
+            end
+          end
+          sum_b.rows.times do |r|
+            sum_b.cols.times do |c|
+              sum_b[r, c] *= factor
+            end
+          end
+
+          base_layer.g_w = sum_w
+          base_layer.g_b = sum_b
+          base_layer.update_weights(lr, weight_decay)
+          base_layer.zero_gradients
+        end
       end
 
       # Broadcast updated weights back to replicas
