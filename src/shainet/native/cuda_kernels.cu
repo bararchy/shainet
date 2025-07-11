@@ -557,6 +557,52 @@ void transpose(double *out, const double *in, int rows, int cols) {
   }
 }
 
+template <typename T>
+__global__ void transpose_kernel_t(T *out, const T *in, int rows, int cols) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= rows * cols)
+    return;
+
+  int row = idx / cols;
+  int col = idx % cols;
+
+  out[col * rows + row] = in[row * cols + col];
+}
+
+void transpose_fp32(float *out, const float *in, int rows, int cols) {
+  int threads_per_block = 256;
+  int blocks = (rows * cols + threads_per_block - 1) / threads_per_block;
+
+  transpose_kernel_t<<<blocks, threads_per_block>>>(out, in, rows, cols);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in transpose_fp32: %s\n", cudaGetErrorString(err));
+  }
+}
+
+void transpose_fp16(__half *out, const __half *in, int rows, int cols) {
+  int threads_per_block = 256;
+  int blocks = (rows * cols + threads_per_block - 1) / threads_per_block;
+
+  transpose_kernel_t<<<blocks, threads_per_block>>>(out, in, rows, cols);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in transpose_fp16: %s\n", cudaGetErrorString(err));
+  }
+}
+
+void transpose_bf16(__nv_bfloat16 *out, const __nv_bfloat16 *in, int rows,
+                    int cols) {
+  int threads_per_block = 256;
+  int blocks = (rows * cols + threads_per_block - 1) / threads_per_block;
+
+  transpose_kernel_t<<<blocks, threads_per_block>>>(out, in, rows, cols);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in transpose_bf16: %s\n", cudaGetErrorString(err));
+  }
+}
+
 __global__ void sigmoid_forward_kernel(double *activations, double *derivatives,
                                        const double *linear, int size) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;

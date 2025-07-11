@@ -46,4 +46,17 @@ describe SHAInet::CudaMatrix do
       matrix.add_bias!(bias)
     end
   end
+
+  it "checks precision support for transpose" do
+    pending! "CUDA not available" unless SHAInet::CUDA.available?
+    matrix = SHAInet::CudaMatrix.new(2, 2, 0.0, SHAInet::Precision::Fp16)
+
+    if SHAInet::CUDA.kernels_available?
+      matrix.transpose.should be_a(SHAInet::CudaMatrix)
+    else
+      expect_raises(Exception, /FP16 transpose requires CUDA kernel support/) do
+        matrix.transpose
+      end
+    end
+  end
 end
