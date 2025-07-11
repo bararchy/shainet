@@ -145,6 +145,37 @@ module SHAInet
       end
     end
 
+    # Return a small typed buffer containing `value` for the given compute type.
+    # The returned slice must be kept alive while passed to cuBLAS.
+    def scalar_for_compute_type(value : Float64, compute_type : LibCUBLAS::ComputeType) : Bytes
+      case compute_type
+      when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_64F
+        buf = Bytes.new(sizeof(Float64))
+        buf.to_unsafe.as(Pointer(Float64))[0] = value
+        buf
+      when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F
+        buf = Bytes.new(sizeof(Float32))
+        buf.to_unsafe.as(Pointer(Float32))[0] = value.to_f32
+        buf
+      when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_16F
+        buf = Bytes.new(sizeof(Float16))
+        buf.to_unsafe.as(Pointer(Float16))[0] = Float16.new(value)
+        buf
+      when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_16BF
+        buf = Bytes.new(sizeof(BFloat16))
+        buf.to_unsafe.as(Pointer(BFloat16))[0] = BFloat16.new(value.to_f32)
+        buf
+      when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32I
+        buf = Bytes.new(sizeof(Int32))
+        buf.to_unsafe.as(Pointer(Int32))[0] = value.round.to_i32
+        buf
+      else
+        buf = Bytes.new(sizeof(Float64))
+        buf.to_unsafe.as(Pointer(Float64))[0] = value
+        buf
+      end
+    end
+
     @@gemm_ex_available : Bool? = nil
     @@axpy_ex_available : Bool? = nil
 
@@ -616,10 +647,10 @@ module SHAInet
       LibCUBLAS.cublasSaxpy_v2(handle, n, pointerof(alpha), x, 1, y, 1)
     end
 
-    def axpy_ex(handle : LibCUBLAS::Handle, alpha : Float32, x : Pointer(Void), x_type : LibCUBLAS::DataType,
+    def axpy_ex(handle : LibCUBLAS::Handle, alpha : Void*, x : Pointer(Void), x_type : LibCUBLAS::DataType,
                 y : Pointer(Void), y_type : LibCUBLAS::DataType, n : Int32, compute_type : LibCUBLAS::ComputeType)
       LibCUBLAS.cublasAxpyEx(handle, n,
-        pointerof(alpha).as(Void*),
+        alpha,
         x, x_type.value, 1,
         y, y_type.value, 1,
         compute_type.value)

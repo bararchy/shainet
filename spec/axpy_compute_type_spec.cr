@@ -18,7 +18,7 @@ module SHAInet::CUDA
 
   @@recorded_types = [] of ComputeType
 
-  def self.axpy_ex(handle : LibCUBLAS::Handle, alpha : Float32, x : Pointer(Void), x_type : DataType,
+  def self.axpy_ex(handle : LibCUBLAS::Handle, alpha : Void*, x : Pointer(Void), x_type : DataType,
                    y : Pointer(Void), y_type : DataType, n : Int32, compute_type : ComputeType)
     @@recorded_types << compute_type
   end
@@ -66,12 +66,12 @@ describe "CUDA.axpy_ex compute type" do
     handle = Pointer(Void).null.as(SHAInet::CUDA::LibCUBLAS::Handle)
     dtype = SHAInet::CUDA.data_type_for(SHAInet::Precision::Fp16)
     ctype = SHAInet::CUDA.compute_type_for(SHAInet::Precision::Fp16)
-    SHAInet::CUDA.axpy_ex(handle, 0.0_f32, Pointer(Void).null, dtype, Pointer(Void).null, dtype, 1, ctype)
+    SHAInet::CUDA.axpy_ex(handle, Pointer(Void).null, Pointer(Void).null, dtype, Pointer(Void).null, dtype, 1, ctype)
     SHAInet::CUDA.recorded_types.last.should eq(ctype)
 
     dtype = SHAInet::CUDA.data_type_for(SHAInet::Precision::Bf16)
     ctype = SHAInet::CUDA.compute_type_for(SHAInet::Precision::Bf16)
-    SHAInet::CUDA.axpy_ex(handle, 0.0_f32, Pointer(Void).null, dtype, Pointer(Void).null, dtype, 1, ctype)
+    SHAInet::CUDA.axpy_ex(handle, Pointer(Void).null, Pointer(Void).null, dtype, Pointer(Void).null, dtype, 1, ctype)
     SHAInet::CUDA.recorded_types.last.should eq(ctype)
   end
 end
