@@ -56,7 +56,7 @@ module SHAInet
 
     getter rows, cols
 
-    private def element_size : Int32
+    def element_size : Int32
       case @precision
       when Precision::Int8
         1
