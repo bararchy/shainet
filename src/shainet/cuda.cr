@@ -447,15 +447,44 @@ module SHAInet
                 m : Int32, n : Int32, k : Int32, lda : Int32, ldb : Int32, ldc : Int32,
                 atype : LibCUBLAS::DataType, btype : LibCUBLAS::DataType, ctype : LibCUBLAS::DataType,
                 compute_type : LibCUBLAS::ComputeType)
-      alpha = 1.0_f32
-      beta = 0.0_f32
+      alpha_ptr = Pointer(Void).null
+      beta_ptr = Pointer(Void).null
+
+      case compute_type
+      when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_16F
+        alpha = SHAInet::Float16.new(1.0_f32)
+        beta = SHAInet::Float16.new(0.0_f32)
+        alpha_ptr = pointerof(alpha).as(Void*)
+        beta_ptr = pointerof(beta).as(Void*)
+      when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_16BF
+        alpha = SHAInet::BFloat16.new(1.0_f32)
+        beta = SHAInet::BFloat16.new(0.0_f32)
+        alpha_ptr = pointerof(alpha).as(Void*)
+        beta_ptr = pointerof(beta).as(Void*)
+      when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_64F
+        alpha = 1.0_f64
+        beta = 0.0_f64
+        alpha_ptr = pointerof(alpha).as(Void*)
+        beta_ptr = pointerof(beta).as(Void*)
+      when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32I
+        alpha = 1_i32
+        beta = 0_i32
+        alpha_ptr = pointerof(alpha).as(Void*)
+        beta_ptr = pointerof(beta).as(Void*)
+      else
+        alpha = 1.0_f32
+        beta = 0.0_f32
+        alpha_ptr = pointerof(alpha).as(Void*)
+        beta_ptr = pointerof(beta).as(Void*)
+      end
+
       LibCUBLAS.cublasGemmEx(handle,
         Operation::N.value, Operation::N.value,
         m, n, k,
-        pointerof(alpha).as(Void*),
+        alpha_ptr,
         a, atype.value, lda,
         b, btype.value, ldb,
-        pointerof(beta).as(Void*),
+        beta_ptr,
         c, ctype.value, ldc,
         compute_type.value, 0)
     end

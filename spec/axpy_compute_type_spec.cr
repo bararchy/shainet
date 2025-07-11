@@ -23,6 +23,13 @@ module SHAInet::CUDA
     @@recorded_types << compute_type
   end
 
+  def self.gemm_ex(handle : LibCUBLAS::Handle, a : Pointer(Void), b : Pointer(Void), c : Pointer(Void),
+                   m : Int32, n : Int32, k : Int32, lda : Int32, ldb : Int32, ldc : Int32,
+                   atype : DataType, btype : DataType, ctype : DataType,
+                   compute_type : ComputeType)
+    @@recorded_types << compute_type
+  end
+
   def self.recorded_types
     @@recorded_types
   end
@@ -65,6 +72,24 @@ describe "CUDA.axpy_ex compute type" do
     dtype = SHAInet::CUDA.data_type_for(SHAInet::Precision::Bf16)
     ctype = SHAInet::CUDA.compute_type_for(SHAInet::Precision::Bf16)
     SHAInet::CUDA.axpy_ex(handle, 0.0_f32, Pointer(Void).null, dtype, Pointer(Void).null, dtype, 1, ctype)
+    SHAInet::CUDA.recorded_types.last.should eq(ctype)
+  end
+end
+
+describe "CUDA.gemm_ex compute type" do
+  it "passes compute_type_for value for fp16 and fp64" do
+    handle = Pointer(Void).null.as(SHAInet::CUDA::LibCUBLAS::Handle)
+
+    dtype = SHAInet::CUDA.data_type_for(SHAInet::Precision::Fp16)
+    ctype = SHAInet::CUDA.compute_type_for(SHAInet::Precision::Fp16)
+    SHAInet::CUDA.gemm_ex(handle, Pointer(Void).null, Pointer(Void).null, Pointer(Void).null,
+      1, 1, 1, 1, 1, 1, dtype, dtype, dtype, ctype)
+    SHAInet::CUDA.recorded_types.last.should eq(ctype)
+
+    dtype = SHAInet::CUDA.data_type_for(SHAInet::Precision::Fp64)
+    ctype = SHAInet::CUDA.compute_type_for(SHAInet::Precision::Fp64)
+    SHAInet::CUDA.gemm_ex(handle, Pointer(Void).null, Pointer(Void).null, Pointer(Void).null,
+      1, 1, 1, 1, 1, 1, dtype, dtype, dtype, ctype)
     SHAInet::CUDA.recorded_types.last.should eq(ctype)
   end
 end
