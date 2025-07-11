@@ -223,6 +223,10 @@ module SHAInet
       raise "CUDA kernels not available"
     end
 
+    def softmax_rows_fp32(*args)
+      raise "CUDA kernels not available"
+    end
+
     def dropout(*args)
       raise "CUDA kernels not available"
     end
@@ -232,6 +236,10 @@ module SHAInet
     end
 
     def dropout_bf16(*args)
+      raise "CUDA kernels not available"
+    end
+
+    def dropout_fp32(*args)
       raise "CUDA kernels not available"
     end
 
@@ -315,7 +323,15 @@ module SHAInet
       raise "CUDA kernels not available"
     end
 
+    def sigmoid_forward_fp32(*args)
+      raise "CUDA kernels not available"
+    end
+
     def gelu_forward(*args)
+      raise "CUDA kernels not available"
+    end
+
+    def gelu_forward_fp32(*args)
       raise "CUDA kernels not available"
     end
 

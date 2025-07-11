@@ -575,9 +575,11 @@ module SHAInet
     @@softmax_rows_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
     @@softmax_rows_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Void)? = nil
     @@softmax_rows_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Void)? = nil
+    @@softmax_rows_fp32_proc : Proc(Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
     @@dropout_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Float64, UInt64, Void)? = nil
     @@dropout_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Float64, UInt64, Void)? = nil
     @@dropout_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Float64, UInt64, Void)? = nil
+    @@dropout_fp32_proc : Proc(Pointer(Float32), Pointer(Float32), Int32, Int32, Float64, UInt64, Void)? = nil
     @@weight_update_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Float32, Int32, Void)? = nil
     @@weight_update_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Float32, Int32, Void)? = nil
     @@add_bias_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Void)? = nil
@@ -598,7 +600,9 @@ module SHAInet
     @@mul_row_vector_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
     @@transpose_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
     @@sigmoid_forward_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Void)? = nil
+    @@sigmoid_forward_fp32_proc : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Void)? = nil
     @@gelu_forward_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Void)? = nil
+    @@gelu_forward_fp32_proc : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Void)? = nil
     @@apply_gradient_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Void)? = nil
     @@accumulate_bias_grad_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
     @@row_sum_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
@@ -679,6 +683,23 @@ module SHAInet
       fn.call(dst, src, rows, cols)
     end
 
+    def softmax_rows_fp32(dst : Pointer(Float32), src : Pointer(Float32), rows : Int32, cols : Int32)
+      unless fn = @@softmax_rows_fp32_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "softmax_rows_f32")
+          unless sym.null?
+            @@softmax_rows_fp32_proc = Proc(Pointer(Float32), Pointer(Float32), Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@softmax_rows_fp32_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(dst, src, rows, cols)
+    end
+
     def dropout(dst : Pointer(Float64), src : Pointer(Float64), rows : Int32, cols : Int32, drop_p : Float64, seed : UInt64)
       unless fn = @@dropout_proc
         if @@kernels_handle.null?
@@ -706,6 +727,23 @@ module SHAInet
           unless sym.null?
             @@dropout_fp16_proc = Proc(UInt16Ptr, UInt16Ptr, Int32, Int32, Float64, UInt64, Void).new(sym, Pointer(Void).null)
             fn = @@dropout_fp16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(dst, src, rows, cols, drop_p, seed)
+    end
+
+    def dropout_fp32(dst : Pointer(Float32), src : Pointer(Float32), rows : Int32, cols : Int32, drop_p : Float64, seed : UInt64)
+      unless fn = @@dropout_fp32_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "dropout_f32")
+          unless sym.null?
+            @@dropout_fp32_proc = Proc(Pointer(Float32), Pointer(Float32), Int32, Int32, Float64, UInt64, Void).new(sym, Pointer(Void).null)
+            fn = @@dropout_fp32_proc
           end
         end
       end
@@ -1145,6 +1183,23 @@ module SHAInet
       fn.call(activations, derivatives, linear, size)
     end
 
+    def sigmoid_forward_fp32(activations : Pointer(Float32), derivatives : Pointer(Float32), linear : Pointer(Float32), size : Int32)
+      unless fn = @@sigmoid_forward_fp32_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "sigmoid_forward_f32")
+          unless sym.null?
+            @@sigmoid_forward_fp32_proc = Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@sigmoid_forward_fp32_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(activations, derivatives, linear, size)
+    end
+
     def gelu_forward(activations : Pointer(Float64), derivatives : Pointer(Float64), linear : Pointer(Float64), size : Int32)
       unless fn = @@gelu_forward_proc
         if @@kernels_handle.null?
@@ -1155,6 +1210,23 @@ module SHAInet
           unless sym.null?
             @@gelu_forward_proc = Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Void).new(sym, Pointer(Void).null)
             fn = @@gelu_forward_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(activations, derivatives, linear, size)
+    end
+
+    def gelu_forward_fp32(activations : Pointer(Float32), derivatives : Pointer(Float32), linear : Pointer(Float32), size : Int32)
+      unless fn = @@gelu_forward_fp32_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "gelu_forward_f32")
+          unless sym.null?
+            @@gelu_forward_fp32_proc = Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@gelu_forward_fp32_proc
           end
         end
       end
