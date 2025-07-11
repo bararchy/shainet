@@ -113,9 +113,9 @@ module SHAInet
                 @rows, @cols, prob, seed)
             {% else %}
               CUDA.dropout(
-                rptr.as(Pointer(Float64)),
-                dptr.as(Pointer(Float64)),
-                @rows, @cols, prob, seed)
+                rptr.as(Pointer(Void)),
+                dptr.as(Pointer(Void)),
+                @rows, @cols, prob, seed, @precision)
             {% end %}
           when Precision::Bf16
             {% if flag?(:cuda_bf16) %}
@@ -125,15 +125,15 @@ module SHAInet
                 @rows, @cols, prob, seed)
             {% else %}
               CUDA.dropout(
-                rptr.as(Pointer(Float64)),
-                dptr.as(Pointer(Float64)),
-                @rows, @cols, prob, seed)
+                rptr.as(Pointer(Void)),
+                dptr.as(Pointer(Void)),
+                @rows, @cols, prob, seed, @precision)
             {% end %}
           else
             CUDA.dropout(
-              rptr.as(Pointer(Float64)),
-              dptr.as(Pointer(Float64)),
-              @rows, @cols, prob, seed)
+              rptr.as(Pointer(Void)),
+              dptr.as(Pointer(Void)),
+              @rows, @cols, prob, seed, @precision)
           end
 
           # Mark result as having newer GPU data

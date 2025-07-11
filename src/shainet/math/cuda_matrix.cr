@@ -905,8 +905,8 @@ module SHAInet
 
         mark_device_dirty!
         return self
-      elsif !(self.precision == Precision::Fp64 && bias.precision == Precision::Fp64)
-        raise "CUDA fallback for add_bias! only supports Precision::Fp64; non-FP64 precisions require cuDNN"
+      elsif !({Precision::Fp64, Precision::Fp32}.includes?(self.precision)) || bias.precision != self.precision
+        raise "CUDA fallback for add_bias! only supports Precision::Fp64/Fp32; other precisions require cuDNN"
       end
 
       raise RuntimeError.new("GPU add_bias! requires valid device pointers") unless (dptr = self.device_ptr) && (bptr = bias.device_ptr) && !dptr.null? && !bptr.null?
@@ -916,9 +916,9 @@ module SHAInet
       bias.sync_to_device!("bias_addition") unless bias.device_dirty?
 
       CUDA.add_bias(
-        dptr.as(Pointer(Float64)),
-        bptr.as(Pointer(Float64)),
-        @rows, @cols)
+        dptr.as(Pointer(Void)),
+        bptr.as(Pointer(Void)),
+        @rows, @cols, @precision)
 
       # Mark self as having newer GPU data
       mark_device_dirty!
@@ -944,8 +944,9 @@ module SHAInet
       self.sync_to_device!("relu_activation") unless device_dirty?
 
       CUDA.relu(
-        dptr.as(Pointer(Float64)),
-        (@rows*@cols))
+        dptr.as(Pointer(Void)),
+        (@rows*@cols),
+        @precision)
 
       # Mark self as having newer GPU data
       mark_device_dirty!
@@ -960,11 +961,16 @@ module SHAInet
       size = @rows * @cols
 
       begin
-        CUDA.gelu_forward(
-          dptr.as(Pointer(Float64)),
-          dptr.as(Pointer(Float64)),
-          dptr.as(Pointer(Float64)),
-          size)
+        if @precision == Precision::Fp64
+          CUDA.gelu_forward(
+            dptr.as(Pointer(Void)),
+            dptr.as(Pointer(Void)),
+            dptr.as(Pointer(Void)),
+            size,
+            @precision)
+        else
+          raise "unsupported precision"
+        end
       rescue e
         Log.error { "CUDA GELU failed: #{e}, falling back to CPU" }
         self.sync_from_device!("gelu_fallback")
@@ -1714,9 +1720,9 @@ module SHAInet
                 @rows, @cols, prob, seed)
             {% else %}
               CUDA.dropout(
-                dptr.as(Pointer(Float64)),
-                dptr.as(Pointer(Float64)),
-                @rows, @cols, prob, seed)
+                dptr.as(Pointer(Void)),
+                dptr.as(Pointer(Void)),
+                @rows, @cols, prob, seed, @precision)
             {% end %}
           when Precision::Bf16
             {% if flag?(:cuda_bf16) %}
@@ -1726,15 +1732,15 @@ module SHAInet
                 @rows, @cols, prob, seed)
             {% else %}
               CUDA.dropout(
-                dptr.as(Pointer(Float64)),
-                dptr.as(Pointer(Float64)),
-                @rows, @cols, prob, seed)
+                dptr.as(Pointer(Void)),
+                dptr.as(Pointer(Void)),
+                @rows, @cols, prob, seed, @precision)
             {% end %}
           else
             CUDA.dropout(
-              dptr.as(Pointer(Float64)),
-              dptr.as(Pointer(Float64)),
-              @rows, @cols, prob, seed)
+              dptr.as(Pointer(Void)),
+              dptr.as(Pointer(Void)),
+              @rows, @cols, prob, seed, @precision)
           end
 
           mark_device_dirty!

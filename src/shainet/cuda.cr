@@ -677,21 +677,38 @@ module SHAInet
       fn.call(dst, src, rows, cols)
     end
 
-    def dropout(dst : Pointer(Float64), src : Pointer(Float64), rows : Int32, cols : Int32, drop_p : Float64, seed : UInt64)
-      unless fn = @@dropout_proc
-        if @@kernels_handle.null?
-          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+    def dropout(dst : Pointer(Void), src : Pointer(Void), rows : Int32, cols : Int32, drop_p : Float64, seed : UInt64, precision : Precision)
+      case precision
+      when Precision::Fp16
+        dropout_fp16(dst.as(UInt16Ptr), src.as(UInt16Ptr), rows, cols, drop_p, seed)
+      when Precision::Bf16
+        dropout_bf16(dst.as(UInt16Ptr), src.as(UInt16Ptr), rows, cols, drop_p, seed)
+      when Precision::Fp32
+        len = rows * cols
+        bytes = len * 4
+        host = Array(Float32).new(len, 0f32)
+        memcpy(host.to_unsafe.as(Pointer(Void)), src, bytes.to_u64, MemcpyKind::DeviceToHost)
+        rng = Random.new(seed)
+        len.times do |i|
+          host[i] = rng.rand < drop_p ? 0f32 : host[i]
         end
-        unless @@kernels_handle.null?
-          sym = LibC.dlsym(@@kernels_handle, "dropout")
-          unless sym.null?
-            @@dropout_proc = Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Float64, UInt64, Void).new(sym, Pointer(Void).null)
-            fn = @@dropout_proc
+        memcpy(dst, host.to_unsafe.as(Pointer(Void)), bytes.to_u64, MemcpyKind::HostToDevice)
+      else
+        unless fn = @@dropout_proc
+          if @@kernels_handle.null?
+            @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+          end
+          unless @@kernels_handle.null?
+            sym = LibC.dlsym(@@kernels_handle, "dropout")
+            unless sym.null?
+              @@dropout_proc = Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Float64, UInt64, Void).new(sym, Pointer(Void).null)
+              fn = @@dropout_proc
+            end
           end
         end
+        raise "CUDA kernels not available" unless fn
+        fn.call(dst.as(Pointer(Float64)), src.as(Pointer(Float64)), rows, cols, drop_p, seed)
       end
-      raise "CUDA kernels not available" unless fn
-      fn.call(dst, src, rows, cols, drop_p, seed)
     end
 
     def dropout_fp16(dst : UInt16Ptr, src : UInt16Ptr, rows : Int32, cols : Int32, drop_p : Float64, seed : UInt64)
@@ -1143,21 +1160,51 @@ module SHAInet
       fn.call(activations, derivatives, linear, size)
     end
 
-    def gelu_forward(activations : Pointer(Float64), derivatives : Pointer(Float64), linear : Pointer(Float64), size : Int32)
-      unless fn = @@gelu_forward_proc
-        if @@kernels_handle.null?
-          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
-        end
-        unless @@kernels_handle.null?
-          sym = LibC.dlsym(@@kernels_handle, "gelu_forward")
-          unless sym.null?
-            @@gelu_forward_proc = Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Void).new(sym, Pointer(Void).null)
-            fn = @@gelu_forward_proc
+    def gelu_forward(activations : Pointer(Void), derivatives : Pointer(Void), linear : Pointer(Void), size : Int32, precision : Precision)
+      if precision == Precision::Fp64
+        unless fn = @@gelu_forward_proc
+          if @@kernels_handle.null?
+            @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+          end
+          unless @@kernels_handle.null?
+            sym = LibC.dlsym(@@kernels_handle, "gelu_forward")
+            unless sym.null?
+              @@gelu_forward_proc = Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Void).new(sym, Pointer(Void).null)
+              fn = @@gelu_forward_proc
+            end
           end
         end
+        raise "CUDA kernels not available" unless fn
+        fn.call(activations.as(Pointer(Float64)), derivatives.as(Pointer(Float64)), linear.as(Pointer(Float64)), size)
+      else
+        elem_size = element_size_for(precision)
+        bytes = size * elem_size
+        host_in = Array(Float32).new(size, 0f32)
+        memcpy(host_in.to_unsafe.as(Pointer(Void)), linear, bytes.to_u64, MemcpyKind::DeviceToHost)
+        host_act = Array(Float32).new(size, 0f32)
+        host_der = Array(Float32).new(size, 0f32)
+        size.times do |i|
+          x = host_in[i]
+          cdf = 0.5_f32 * (1.0_f32 + Math.erf(x / Math.sqrt(2.0_f32)))
+          host_act[i] = x * cdf
+          host_der[i] = cdf + x * Math.exp(-0.5_f32*x*x) / Math.sqrt(2.0_f32*Math::PI)
+        end
+        case precision
+        when Precision::Fp16
+          out_a = host_act.map { |v| Float16.new(v) }
+          out_d = host_der.map { |v| Float16.new(v) }
+          memcpy(activations, out_a.to_unsafe.as(Pointer(Void)), bytes.to_u64, MemcpyKind::HostToDevice)
+          memcpy(derivatives, out_d.to_unsafe.as(Pointer(Void)), bytes.to_u64, MemcpyKind::HostToDevice)
+        when Precision::Bf16
+          out_a = host_act.map { |v| BFloat16.new(v) }
+          out_d = host_der.map { |v| BFloat16.new(v) }
+          memcpy(activations, out_a.to_unsafe.as(Pointer(Void)), bytes.to_u64, MemcpyKind::HostToDevice)
+          memcpy(derivatives, out_d.to_unsafe.as(Pointer(Void)), bytes.to_u64, MemcpyKind::HostToDevice)
+        else
+          memcpy(activations, host_act.to_unsafe.as(Pointer(Void)), bytes.to_u64, MemcpyKind::HostToDevice)
+          memcpy(derivatives, host_der.to_unsafe.as(Pointer(Void)), bytes.to_u64, MemcpyKind::HostToDevice)
+        end
       end
-      raise "CUDA kernels not available" unless fn
-      fn.call(activations, derivatives, linear, size)
     end
 
     def apply_gradient(local_grad : Pointer(Float64), grad : Pointer(Float64), derivatives : Pointer(Float64), size : Int32)
@@ -1285,26 +1332,82 @@ module SHAInet
     # copies the data to the host, applies ReLU and writes the result back. It
     # avoids additional synchronization logic in the caller while still keeping
     # the computation on the GPU when proper kernels are available.
-    def relu(ptr : Pointer(Float64), len : Int32)
-      host = Array(Float64).new(len, 0.0)
-      bytes = (len * 8).to_u64
-      memcpy(host.to_unsafe.as(Pointer(Void)), ptr.as(Pointer(Void)), bytes, MemcpyKind::DeviceToHost)
-      len.times do |i|
-        v = host[i]
-        host[i] = v > 0 ? v : 0.0
+    def element_size_for(p : Precision) : Int32
+      case p
+      when Precision::Int8
+        1
+      when Precision::Fp16, Precision::Bf16
+        2
+      when Precision::Fp32
+        4
+      else
+        8
       end
-      memcpy(ptr.as(Pointer(Void)), host.to_unsafe.as(Pointer(Void)), bytes, MemcpyKind::HostToDevice)
+    end
+
+    def relu(ptr : Pointer(Void), len : Int32, precision : Precision)
+      elem_size = element_size_for(precision)
+      bytes = (len * elem_size).to_u64
+
+      case precision
+      when Precision::Fp16
+        host = Array(Float16).new(len) { Float16.new(0f32) }
+        memcpy(host.to_unsafe.as(Pointer(Void)), ptr, bytes, MemcpyKind::DeviceToHost)
+        len.times do |i|
+          v = host[i].to_f32
+          host[i] = Float16.new(v > 0 ? v : 0f32)
+        end
+        memcpy(ptr, host.to_unsafe.as(Pointer(Void)), bytes, MemcpyKind::HostToDevice)
+      when Precision::Bf16
+        host = Array(BFloat16).new(len) { BFloat16.new(0f32) }
+        memcpy(host.to_unsafe.as(Pointer(Void)), ptr, bytes, MemcpyKind::DeviceToHost)
+        len.times do |i|
+          v = host[i].to_f32
+          host[i] = BFloat16.new(v > 0 ? v : 0f32)
+        end
+        memcpy(ptr, host.to_unsafe.as(Pointer(Void)), bytes, MemcpyKind::HostToDevice)
+      when Precision::Fp32
+        host = Array(Float32).new(len, 0f32)
+        memcpy(host.to_unsafe.as(Pointer(Void)), ptr, bytes, MemcpyKind::DeviceToHost)
+        len.times do |i|
+          v = host[i]
+          host[i] = v > 0f32 ? v : 0f32
+        end
+        memcpy(ptr, host.to_unsafe.as(Pointer(Void)), bytes, MemcpyKind::HostToDevice)
+      else
+        host = Array(Float64).new(len, 0.0)
+        memcpy(host.to_unsafe.as(Pointer(Void)), ptr, bytes, MemcpyKind::DeviceToHost)
+        len.times do |i|
+          v = host[i]
+          host[i] = v > 0 ? v : 0.0
+        end
+        memcpy(ptr, host.to_unsafe.as(Pointer(Void)), bytes, MemcpyKind::HostToDevice)
+      end
     end
 
     # Add a bias row vector to each row of a matrix in GPU memory.
     # Uses multiple AXPY operations instead of DGER to avoid row-major/column-major issues.
-    def add_bias(mat : Pointer(Float64), bias : Pointer(Float64), rows : Int32, cols : Int32)
+    def add_bias(mat : Pointer(Void), bias : Pointer(Void), rows : Int32, cols : Int32, precision : Precision)
       handle = create_handle
 
-      # Add bias to each row using AXPY: row_i += 1.0 * bias
       rows.times do |i|
-        row_start = mat + (i * cols) # Pointer to start of row i
-        axpy(handle, 1.0, bias, row_start, cols)
+        row_start = mat.as(UInt8*) + i * cols * element_size_for(precision)
+        case precision
+        when Precision::Fp16
+          axpy_ex(handle, 1.0_f32,
+            bias, LibCUBLAS::DataType::CUDA_R_16F,
+            row_start.as(Void*), LibCUBLAS::DataType::CUDA_R_16F,
+            cols, LibCUBLAS::ComputeType::CUBLAS_COMPUTE_16F)
+        when Precision::Bf16
+          axpy_ex(handle, 1.0_f32,
+            bias, LibCUBLAS::DataType::CUDA_R_16BF,
+            row_start.as(Void*), LibCUBLAS::DataType::CUDA_R_16BF,
+            cols, LibCUBLAS::ComputeType::CUBLAS_COMPUTE_16BF)
+        when Precision::Fp32
+          saxpy(handle, 1.0_f32, bias.as(Pointer(Float32)), row_start.as(Pointer(Float32)), cols)
+        else
+          axpy(handle, 1.0, bias.as(Pointer(Float64)), row_start.as(Pointer(Float64)), cols)
+        end
       end
 
       destroy_handle(handle)
@@ -1440,32 +1543,70 @@ module SHAInet
 
     # Dropout kernel using cuRAND/cuDNN. Applies dropout in-place on a contiguous
     # buffer of `size` Float64 values. Returns 0 on success and 1 on failure.
-    def dropout(data : Pointer(Float64), size : Int32, dropout_prob : Float32, seed : UInt64) : Int32
+    def dropout(data : Pointer(Void), size : Int32, dropout_prob : Float32, seed : UInt64, precision : Precision) : Int32
       return 1 if data.null? || size <= 0
 
-      begin
-        unless fn = @@dropout_proc
-          if @@kernels_handle.null?
-            @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
-          end
-          unless @@kernels_handle.null?
-            sym = LibC.dlsym(@@kernels_handle, "dropout")
-            unless sym.null?
-              @@dropout_proc = Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Float64, UInt64, Void).new(sym, Pointer(Void).null)
-              fn = @@dropout_proc
+      case precision
+      when Precision::Fp16
+        len = size
+        bytes = len * 2
+        host = Array(Float16).new(len) { Float16.new(0f32) }
+        memcpy(host.to_unsafe.as(Pointer(Void)), data, bytes.to_u64, MemcpyKind::DeviceToHost)
+        rng = Random.new(seed)
+        len.times do |i|
+          v = host[i].to_f32
+          host[i] = Float16.new(rng.rand < dropout_prob ? 0f32 : v)
+        end
+        memcpy(data, host.to_unsafe.as(Pointer(Void)), bytes.to_u64, MemcpyKind::HostToDevice)
+        0
+      when Precision::Bf16
+        len = size
+        bytes = len * 2
+        host = Array(BFloat16).new(len) { BFloat16.new(0f32) }
+        memcpy(host.to_unsafe.as(Pointer(Void)), data, bytes.to_u64, MemcpyKind::DeviceToHost)
+        rng = Random.new(seed)
+        len.times do |i|
+          v = host[i].to_f32
+          host[i] = BFloat16.new(rng.rand < dropout_prob ? 0f32 : v)
+        end
+        memcpy(data, host.to_unsafe.as(Pointer(Void)), bytes.to_u64, MemcpyKind::HostToDevice)
+        0
+      when Precision::Fp32
+        len = size
+        bytes = len * 4
+        host = Array(Float32).new(len, 0f32)
+        memcpy(host.to_unsafe.as(Pointer(Void)), data, bytes.to_u64, MemcpyKind::DeviceToHost)
+        rng = Random.new(seed)
+        len.times do |i|
+          host[i] = rng.rand < dropout_prob ? 0f32 : host[i]
+        end
+        memcpy(data, host.to_unsafe.as(Pointer(Void)), bytes.to_u64, MemcpyKind::HostToDevice)
+        0
+      else
+        begin
+          unless fn = @@dropout_proc
+            if @@kernels_handle.null?
+              @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+            end
+            unless @@kernels_handle.null?
+              sym = LibC.dlsym(@@kernels_handle, "dropout")
+              unless sym.null?
+                @@dropout_proc = Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Float64, UInt64, Void).new(sym, Pointer(Void).null)
+                fn = @@dropout_proc
+              end
             end
           end
+
+          if fn
+            fn.call(data.as(Pointer(Float64)), data.as(Pointer(Float64)), size, 1, dropout_prob.to_f64, seed)
+            return 0
+          end
+        rescue e
+          Log.error { "CUDA dropout kernel failed: #{e}" }
         end
 
-        if fn
-          fn.call(data, data, size, 1, dropout_prob.to_f64, seed)
-          return 0
-        end
-      rescue e
-        Log.error { "CUDA dropout kernel failed: #{e}" }
+        1
       end
-
-      1
     end
 
     # ReLU backward kernel
