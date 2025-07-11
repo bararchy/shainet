@@ -1617,43 +1617,41 @@ module SHAInet
         # For transformer architectures, use only the last token's representation
         if @hidden_layers.any? &.is_a?(TransformerLayer)
           # Extract last token (row) from transformer output for language modeling using GPU kernel
-          last_token = if CUDA.fully_available? && (mptr = matrix.device_ptr) && (wptr = weights.device_ptr) && !mptr.null? && !wptr.null?
-                         begin
-                           # Ensure GPU operations occur on the correct device
-                           CUDA.set_device(matrix.device_id)
-                           # Use more efficient GPU slice operation for last row
-                           result = CudaMatrix.new(1, matrix.cols, precision: @precision, device_id: matrix.device_id)
-                           # Copy last row using GPU memory copy
-                           last_row_offset = (matrix.rows - 1) * matrix.cols
-                           elem_size = case matrix.precision
-                                       when Precision::Int8
-                                         1
-                                       when Precision::Fp16, Precision::Bf16
-                                         2
-                                       when Precision::Fp32
-                                         4
-                                       else
-                                         8
-                                       end
-                           byte_offset = last_row_offset * elem_size
+          last_token = if CUDA.fully_available? && (mptr = matrix.device_ptr) &&
+                           (wptr = weights.device_ptr) && !mptr.null? && !wptr.null?
+                        begin
+                          # Ensure GPU operations occur on the correct device
+                          CUDA.set_device(matrix.device_id)
+                          # Use more efficient GPU slice operation for last row
+                          result = CudaMatrix.new(1, matrix.cols, precision: @precision, device_id: matrix.device_id)
+                          # Copy last row using GPU memory copy
+                          last_row_offset = (matrix.rows - 1) * matrix.cols
+                          elem_size = matrix.element_size
+                          byte_offset = last_row_offset * elem_size
+                          dst_ptr = result.device_ptr.not_nil!
+                          src_ptr = (mptr + byte_offset)
 
-                           dst_ptr = result.device_ptr.not_nil!
-                           src_ptr = (mptr + byte_offset)
+                          copy_bytes = (matrix.cols * elem_size)
+                          total_bytes = (matrix.rows * matrix.cols * elem_size)
+                          if byte_offset + copy_bytes > total_bytes
+                            Log.error { "safe_output_transform: copy exceeds buffer size" }
+                            raise RuntimeError.new("GPU memory copy out of bounds in safe_output_transform")
+                          end
 
-                           copy_res = CUDA.copy_device_to_device(
-                             dst_ptr.as(Pointer(Void)),
-                             src_ptr.as(Pointer(Void)),
-                             (matrix.cols * elem_size).to_u64
-                           )
-                           if copy_res != 0
-                             Log.error { "safe_output_transform: device copy failed with code #{copy_res}" }
-                             raise RuntimeError.new("GPU memory copy failed in safe_output_transform for transformer output")
-                           end
-                           result.mark_device_dirty!
-                           result
-                         rescue e
-                           # Fallback to elementwise copy if GPU operation fails
-                           last_token_fallback = CudaMatrix.new(1, matrix.cols, precision: @precision, device_id: matrix.device_id)
+                          copy_res = CUDA.copy_device_to_device(
+                            dst_ptr.as(Pointer(Void)),
+                            src_ptr.as(Pointer(Void)),
+                            copy_bytes.to_u64
+                          )
+                          if copy_res != 0
+                            Log.error { "safe_output_transform: device copy failed with code #{copy_res}" }
+                            raise RuntimeError.new("GPU memory copy failed in safe_output_transform for transformer output")
+                          end
+                          result.mark_device_dirty!
+                          result
+                        rescue e
+                          # Fallback to elementwise copy if GPU operation fails
+                          last_token_fallback = CudaMatrix.new(1, matrix.cols, precision: @precision, device_id: matrix.device_id)
                            matrix.cols.times do |j|
                              last_token_fallback[0, j] = matrix[matrix.rows - 1, j]
                            end
