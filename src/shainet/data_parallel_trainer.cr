@@ -31,6 +31,7 @@ module SHAInet
               log_each : Int32 = 1, error_threshold : Float64 = 0.0)
       cost_proc = cost_function.is_a?(Proc) ? cost_function.as(CostFunction) : @net.get_cost_proc(cost_function.to_s)
       batch_size = mini_batch_size.clamp(1, data.size)
+      CUDNN.ensure_label_buffer(batch_size) if CUDNN.responds_to?(:ensure_label_buffer)
 
       epochs.times do |epoch|
         total_error = 0.0
@@ -62,6 +63,8 @@ module SHAInet
         Log.info { "Epoch: #{epoch}, Error: #{avg_error}" } if epoch % log_each == 0
         break if avg_error < error_threshold
       end
+
+      CUDNN.free_label_buffer if CUDNN.responds_to?(:free_label_buffer)
     end
 
     private def clone_network(net : Network) : Network
