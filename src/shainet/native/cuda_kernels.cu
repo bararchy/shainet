@@ -191,6 +191,18 @@ __global__ void row_mean_var_kernel_t(const T *in, float *mean, float *var,
 }
 
 template <typename T>
+__global__ void transpose_kernel_t(T *out, const T *in, int rows, int cols) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= rows * cols)
+    return;
+
+  int row = idx / cols;
+  int col = idx % cols;
+
+  out[col * rows + row] = in[row * cols + col];
+}
+
+template <typename T>
 __global__ void apply_layer_norm_kernel_t(T *out, const T *in,
                                           const float *mean, const float *var,
                                           int rows, int cols, float epsilon) {
@@ -555,18 +567,6 @@ void transpose(double *out, const double *in, int rows, int cols) {
   if (err != cudaSuccess) {
     printf("CUDA Error in transpose: %s\n", cudaGetErrorString(err));
   }
-}
-
-template <typename T>
-__global__ void transpose_kernel_t(T *out, const T *in, int rows, int cols) {
-  int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  if (idx >= rows * cols)
-    return;
-
-  int row = idx / cols;
-  int col = idx % cols;
-
-  out[col * rows + row] = in[row * cols + col];
 }
 
 void transpose_fp32(float *out, const float *in, int rows, int cols) {
