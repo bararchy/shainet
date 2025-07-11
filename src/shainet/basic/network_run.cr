@@ -1625,9 +1625,10 @@ module SHAInet
                                        else
                                          8
                                        end
+                           byte_offset = last_row_offset * elem_size
 
                            dst_ptr = result.device_ptr.not_nil!
-                           src_ptr = (mptr + last_row_offset)
+                           src_ptr = (mptr + byte_offset)
 
                            case matrix.precision
                            when Precision::Int8, Precision::Fp16, Precision::Bf16, Precision::Fp32, Precision::Fp64
