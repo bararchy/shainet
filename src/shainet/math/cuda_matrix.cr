@@ -345,8 +345,22 @@ module SHAInet
       # Make sure source data is on GPU
       self.sync_to_device!("transpose_operation") unless device_dirty?
 
-      # Use GPU kernel for transpose
-      CUDA.transpose(dst_ptr.as(Pointer(Float64)), src_ptr.as(Pointer(Float64)), @rows, @cols)
+      # Use GPU kernel for transpose based on precision
+      case @precision
+      when Precision::Fp64
+        CUDA.transpose(dst_ptr.as(Pointer(Float64)), src_ptr.as(Pointer(Float64)), @rows, @cols)
+      when Precision::Fp32
+        raise "FP32 transpose requires CUDA kernel support" unless CUDA.kernels_available?
+        CUDA.transpose_fp32(dst_ptr.as(Pointer(Float32)), src_ptr.as(Pointer(Float32)), @rows, @cols)
+      when Precision::Fp16
+        raise "FP16 transpose requires CUDA kernel support" unless CUDA.kernels_available?
+        CUDA.transpose_fp16(dst_ptr.as(CUDA::UInt16Ptr), src_ptr.as(CUDA::UInt16Ptr), @rows, @cols)
+      when Precision::Bf16
+        raise "BF16 transpose requires CUDA kernel support" unless CUDA.kernels_available?
+        CUDA.transpose_bf16(dst_ptr.as(CUDA::UInt16Ptr), src_ptr.as(CUDA::UInt16Ptr), @rows, @cols)
+      else
+        raise "transpose not supported for precision #{@precision}"
+      end
 
       # Mark result as dirty on device
       result.mark_device_dirty!
@@ -362,8 +376,22 @@ module SHAInet
       # Ensure source data is on the GPU
       self.sync_to_device!("transpose_into") unless device_dirty?
 
-      # Perform transpose using CUDA kernel
-      CUDA.transpose(dst_ptr.as(Pointer(Float64)), src_ptr.as(Pointer(Float64)), @rows, @cols)
+      # Perform transpose using CUDA kernel based on precision
+      case @precision
+      when Precision::Fp64
+        CUDA.transpose(dst_ptr.as(Pointer(Float64)), src_ptr.as(Pointer(Float64)), @rows, @cols)
+      when Precision::Fp32
+        raise "FP32 transpose requires CUDA kernel support" unless CUDA.kernels_available?
+        CUDA.transpose_fp32(dst_ptr.as(Pointer(Float32)), src_ptr.as(Pointer(Float32)), @rows, @cols)
+      when Precision::Fp16
+        raise "FP16 transpose requires CUDA kernel support" unless CUDA.kernels_available?
+        CUDA.transpose_fp16(dst_ptr.as(CUDA::UInt16Ptr), src_ptr.as(CUDA::UInt16Ptr), @rows, @cols)
+      when Precision::Bf16
+        raise "BF16 transpose requires CUDA kernel support" unless CUDA.kernels_available?
+        CUDA.transpose_bf16(dst_ptr.as(CUDA::UInt16Ptr), src_ptr.as(CUDA::UInt16Ptr), @rows, @cols)
+      else
+        raise "transpose_into! not supported for precision #{@precision}"
+      end
       dest.mark_device_dirty!
       dest
     end

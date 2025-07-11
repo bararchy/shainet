@@ -311,6 +311,18 @@ module SHAInet
       raise "CUDA kernels not available"
     end
 
+    def transpose_fp32(*args)
+      raise "CUDA kernels not available"
+    end
+
+    def transpose_fp16(*args)
+      raise "CUDA kernels not available"
+    end
+
+    def transpose_bf16(*args)
+      raise "CUDA kernels not available"
+    end
+
     def sigmoid_forward(*args)
       raise "CUDA kernels not available"
     end

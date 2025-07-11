@@ -597,6 +597,9 @@ module SHAInet
     @@sum_cols_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
     @@mul_row_vector_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
     @@transpose_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
+    @@transpose_fp32_proc : Proc(Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
+    @@transpose_fp16_proc : Proc(UInt16Ptr, UInt16Ptr, Int32, Int32, Void)? = nil
+    @@transpose_bf16_proc : Proc(UInt16Ptr, UInt16Ptr, Int32, Int32, Void)? = nil
     @@sigmoid_forward_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Void)? = nil
     @@gelu_forward_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Void)? = nil
     @@apply_gradient_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Void)? = nil
@@ -1126,6 +1129,57 @@ module SHAInet
         # GPU operation failed - let the caller handle the fallback
         raise e
       end
+    end
+
+    def transpose_fp32(output : Pointer(Float32), input : Pointer(Float32), rows : Int32, cols : Int32)
+      unless fn = @@transpose_fp32_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "transpose_fp32")
+          unless sym.null?
+            @@transpose_fp32_proc = Proc(Pointer(Float32), Pointer(Float32), Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@transpose_fp32_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(output, input, rows, cols)
+    end
+
+    def transpose_fp16(output : UInt16Ptr, input : UInt16Ptr, rows : Int32, cols : Int32)
+      unless fn = @@transpose_fp16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "transpose_fp16")
+          unless sym.null?
+            @@transpose_fp16_proc = Proc(UInt16Ptr, UInt16Ptr, Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@transpose_fp16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(output, input, rows, cols)
+    end
+
+    def transpose_bf16(output : UInt16Ptr, input : UInt16Ptr, rows : Int32, cols : Int32)
+      unless fn = @@transpose_bf16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "transpose_bf16")
+          unless sym.null?
+            @@transpose_bf16_proc = Proc(UInt16Ptr, UInt16Ptr, Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@transpose_bf16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(output, input, rows, cols)
     end
 
     def sigmoid_forward(activations : Pointer(Float64), derivatives : Pointer(Float64), linear : Pointer(Float64), size : Int32)
