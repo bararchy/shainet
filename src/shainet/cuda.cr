@@ -339,6 +339,26 @@ module SHAInet
       LibCUDARuntime.cudaFreeHost(ptr)
     end
 
+    # Ensure the persistent loss buffer is allocated and return its pointer.
+    def ensure_loss_buffer : Pointer(Float64)
+      @@loss_buffer_mutex.synchronize do
+        if @@loss_buffer.null?
+          CUDA.malloc(pointerof(@@loss_buffer).as(Pointer(Pointer(Void))), 8_u64)
+        end
+      end
+      @@loss_buffer
+    end
+
+    # Free the persistent loss buffer if allocated.
+    def free_loss_buffer
+      @@loss_buffer_mutex.synchronize do
+        unless @@loss_buffer.null?
+          CUDA.free(@@loss_buffer.as(Pointer(Void)))
+          @@loss_buffer = Pointer(Float64).null
+        end
+      end
+    end
+
     # Returns a hash with free and total memory in bytes for the active CUDA device.
     def memory_info
       return nil unless fully_available?
@@ -369,6 +389,11 @@ module SHAInet
     @@handle_pool = [] of LibCUBLAS::Handle
     @@handle_pool_mutex = Mutex.new
     @@max_pool_size = 4 # Limit pool size to avoid resource exhaustion
+
+    # Persistent device buffer used to hold scalar loss values returned by
+    # various kernels. Lazily allocated on first use and freed during cleanup.
+    @@loss_buffer : Pointer(Float64) = Pointer(Float64).null
+    @@loss_buffer_mutex = Mutex.new
 
     def create_handle
       @@handle_pool_mutex.synchronize do
@@ -401,6 +426,8 @@ module SHAInet
         end
         @@handle_pool.clear
       end
+      # Release persistent loss buffer
+      free_loss_buffer
     end
 
     def gemm(handle : LibCUBLAS::Handle, a : Pointer(Float64), b : Pointer(Float64), c : Pointer(Float64),
@@ -1559,13 +1586,10 @@ module SHAInet
       raise "CUDA kernels not available" unless fn
 
       begin
-        loss_device = Pointer(Float64).null
-        # Allocate device memory for the scalar loss
-        CUDA.malloc(pointerof(loss_device).as(Pointer(Pointer(Void))), 8)
+        loss_device = ensure_loss_buffer
         fn.call(predicted, target, grad_output, loss_device, rows, cols)
         # Copy loss back to host
         CUDA.memcpy(loss_output.as(Pointer(Void)), loss_device.as(Pointer(Void)), 8_u64, MemcpyKind::DeviceToHost)
-        CUDA.free(loss_device.as(Pointer(Void)))
         0
       rescue e
         Log.error { "CUDA Error in cross_entropy_loss_gradient: #{e}" }
@@ -1591,11 +1615,9 @@ module SHAInet
       raise "CUDA kernels not available" unless fn
 
       begin
-        loss_device = Pointer(Float64).null
-        CUDA.malloc(pointerof(loss_device).as(Pointer(Pointer(Void))), 8)
+        loss_device = ensure_loss_buffer
         fn.call(predicted, labels, grad_out, loss_device, rows, cols)
         CUDA.memcpy(loss_out.as(Pointer(Void)), loss_device.as(Pointer(Void)), 8_u64, MemcpyKind::DeviceToHost)
-        CUDA.free(loss_device.as(Pointer(Void)))
         0
       rescue e
         Log.error { "CUDA Error in softmax_cross_entropy_label: #{e}" }
@@ -1621,11 +1643,9 @@ module SHAInet
       raise "CUDA kernels not available" unless fn
 
       begin
-        loss_device = Pointer(Float64).null
-        CUDA.malloc(pointerof(loss_device).as(Pointer(Pointer(Void))), 8)
+        loss_device = ensure_loss_buffer
         fn.call(predicted, labels, grad_out, loss_device, rows, cols)
         CUDA.memcpy(loss_out.as(Pointer(Void)), loss_device.as(Pointer(Void)), 8_u64, MemcpyKind::DeviceToHost)
-        CUDA.free(loss_device.as(Pointer(Void)))
         0
       rescue e
         Log.error { "CUDA Error in softmax_cross_entropy_label_matrix: #{e}" }
@@ -1768,11 +1788,9 @@ module SHAInet
       raise "CUDA kernels not available" unless fn
 
       begin
-        loss_dev = Pointer(Float64).null
-        CUDA.malloc(pointerof(loss_dev).as(Pointer(Pointer(Void))), 8)
+        loss_dev = ensure_loss_buffer
         fn.call(actual_ptr, expected_ptr, grad_ptr, loss_dev, rows, cols)
         CUDA.memcpy(loss_ptr.as(Pointer(Void)), loss_dev.as(Pointer(Void)), 8_u64, MemcpyKind::DeviceToHost)
-        CUDA.free(loss_dev.as(Pointer(Void)))
         0
       rescue e
         Log.error { "CUDA Error in mse_cost_gradient: #{e}" }
@@ -1798,11 +1816,9 @@ module SHAInet
       raise "CUDA kernels not available" unless fn
 
       begin
-        loss_dev = Pointer(Float64).null
-        CUDA.malloc(pointerof(loss_dev).as(Pointer(Pointer(Void))), 8)
+        loss_dev = ensure_loss_buffer
         fn.call(actual_ptr, expected_ptr, grad_ptr, loss_dev, rows, cols)
         CUDA.memcpy(loss_ptr.as(Pointer(Void)), loss_dev.as(Pointer(Void)), 8_u64, MemcpyKind::DeviceToHost)
-        CUDA.free(loss_dev.as(Pointer(Void)))
         0
       rescue e
         Log.error { "CUDA Error in mse_cost_gradient_fp32: #{e}" }
