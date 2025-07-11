@@ -324,7 +324,12 @@ module SHAInet
     # Return the transposed matrix - CREATE NEW MATRIX (used sparingly)
     def transpose
       # Create new matrix directly - transpose is unavoidable allocation
-      result = CudaMatrix.new(@cols, @rows, device_id: self.device_id)
+      result = CudaMatrix.new(
+        @cols,
+        @rows,
+        precision: @precision,
+        device_id: self.device_id
+      )
 
       # Use GPU kernel for transpose - fail fast if not available
       raise RuntimeError.new("GPU transpose requires valid device pointers") unless (src_ptr = self.device_ptr) && (dst_ptr = result.device_ptr) && !src_ptr.null? && !dst_ptr.null?
@@ -476,7 +481,12 @@ module SHAInet
     end
 
     def slice_cols(start_col : Int32, length : Int32)
-      result = CudaMatrix.new(@rows, length, device_id: self.device_id)
+      result = CudaMatrix.new(
+        @rows,
+        length,
+        precision: @precision,
+        device_id: self.device_id
+      )
       slice_cols_into!(result, start_col, length)
       result
     end
@@ -544,7 +554,13 @@ module SHAInet
       other.sync_to_device!("matrix_multiply") unless other.device_dirty?
 
       # Create result matrix directly - matrix multiplication creates new data
-      result = CudaMatrix.new(@rows, other.cols, device_id: self.device_id)
+      res_prec = self.precision if self.precision == other.precision
+      result = CudaMatrix.new(
+        @rows,
+        other.cols,
+        precision: res_prec || Precision::Fp64,
+        device_id: self.device_id
+      )
       raise RuntimeError.new("Failed to allocate result matrix on GPU") unless result.device_ptr && !result.device_ptr.not_nil!.null?
 
       handle = CUDA.create_handle
@@ -604,7 +620,13 @@ module SHAInet
       other.sync_to_device!("matrix_addition") unless other.device_dirty?
 
       # Create result matrix directly - don't use workspace pool for arithmetic operations
-      result = CudaMatrix.new(@rows, @cols, device_id: self.device_id)
+      res_prec = self.precision if self.precision == other.precision
+      result = CudaMatrix.new(
+        @rows,
+        @cols,
+        precision: res_prec || Precision::Fp64,
+        device_id: self.device_id
+      )
       raise RuntimeError.new("Failed to allocate result matrix on GPU") unless result.device_ptr && !result.device_ptr.not_nil!.null?
 
       # Try cuDNN first for element-wise operations
@@ -640,7 +662,13 @@ module SHAInet
       other.sync_to_device!("matrix_subtraction") unless other.device_dirty?
 
       # Create result matrix directly - don't use workspace pool for arithmetic operations
-      result = CudaMatrix.new(@rows, @cols, device_id: self.device_id)
+      res_prec = self.precision if self.precision == other.precision
+      result = CudaMatrix.new(
+        @rows,
+        @cols,
+        precision: res_prec || Precision::Fp64,
+        device_id: self.device_id
+      )
       raise RuntimeError.new("Failed to allocate result matrix on GPU") unless result.device_ptr && !result.device_ptr.not_nil!.null?
 
       handle = CUDA.create_handle
@@ -1216,7 +1244,13 @@ module SHAInet
       raise ArgumentError.new("size mismatch") unless @rows == other.rows && @cols == other.cols
       ensure_same_device(other)
 
-      result = CudaMatrix.new(@rows, @cols, device_id: self.device_id)
+      res_prec = self.precision if self.precision == other.precision
+      result = CudaMatrix.new(
+        @rows,
+        @cols,
+        precision: res_prec || Precision::Fp64,
+        device_id: self.device_id
+      )
 
       if CUDA.fully_available? && (sptr = self.device_ptr) && (optr = other.device_ptr) && (dptr = result.device_ptr) && !sptr.null? && !optr.null? && !dptr.null?
         # Ensure both operands have up-to-date GPU data
