@@ -29,6 +29,38 @@ module SHAInet
       @data_i8.not_nil!
     end
 
+    # Size of a single element in bytes based on the matrix precision
+    def element_size : Int32
+      case @precision
+      when Precision::Int8
+        1
+      when Precision::Fp16, Precision::Bf16
+        2
+      when Precision::Fp32
+        4
+      else
+        8
+      end
+    end
+
+    # Provide a mutable slice of the underlying data buffer
+    def raw_data_buffer : Bytes
+      bytes = @rows * @cols * element_size
+      ptr = case @precision
+            when Precision::Int8
+              @data_i8.not_nil!.to_unsafe.as(UInt8*)
+            when Precision::Fp16
+              @data_f16.not_nil!.to_unsafe.as(UInt8*)
+            when Precision::Bf16
+              @data_bf16.not_nil!.to_unsafe.as(UInt8*)
+            when Precision::Fp32
+              @data_f32.not_nil!.to_unsafe.as(UInt8*)
+            else
+              @data_f64.not_nil!.to_unsafe.as(UInt8*)
+            end
+      Slice(UInt8).new(ptr, bytes)
+    end
+
     # Return the matrix data as an `Array(Float64)` regardless of the
     # underlying storage type.  This keeps compatibility with older
     # code which accessed `matrix.data` directly.
@@ -440,12 +472,10 @@ module SHAInet
     # Convert SimpleMatrix to CudaMatrix for GPU operations
     def to_cuda : CudaMatrix
       result = CudaMatrix.new(@rows, @cols, precision: @precision, device_id: CUDA.current_device || 0)
-      # Use batch copy through raw data for better performance
-      @rows.times do |i|
-        @cols.times do |j|
-          result.unsafe_set(i, j, self[i, j])
-        end
-      end
+      dest_buf = result.raw_data_buffer
+      src_buf  = raw_data_buffer
+      dest_buf.copy_from(src_buf)
+      result.mark_device_dirty!
       result.sync_to_device!("simple_to_cuda_conversion")
       result
     end
