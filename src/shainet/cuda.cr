@@ -710,6 +710,10 @@ module SHAInet
     @@scale_fp16_proc : Proc(Pointer(UInt16), Float32, Int32, Void)? = nil
     @@scale_bf16_proc : Proc(Pointer(UInt16), Float32, Int32, Void)? = nil
     @@element_div_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Void)? = nil
+    @@element_mul_proc : Proc(Pointer(Float64), Pointer(Float64), Float64, Float64, Int32, Void)? = nil
+    @@element_mul_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Float64, Float64, Int32, Void)? = nil
+    @@element_mul_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Float64, Float64, Int32, Void)? = nil
+    @@element_mul_fp32_proc : Proc(Pointer(Float32), Pointer(Float32), Float64, Float64, Int32, Void)? = nil
     @@count_pairs_proc : Proc(Pointer(Int32), Pointer(Int32), Pointer(Int32), Pointer(Int32), Int32, Int32, Void)? = nil
     @@relu_backward_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Void)? = nil
     @@softmax_backward_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
@@ -1592,6 +1596,78 @@ module SHAInet
         Log.error { "CUDA Error in element_div: #{e}" }
         raise e
       end
+    end
+
+    def element_mul(dst : Pointer(Float64), other : Pointer(Float64), alpha : Float64, beta : Float64, size : Int32)
+      unless fn = @@element_mul_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "element_mul")
+          unless sym.null?
+            @@element_mul_proc = Proc(Pointer(Float64), Pointer(Float64), Float64, Float64, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@element_mul_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+
+      fn.call(dst, other, alpha, beta, size)
+    end
+
+    def element_mul_fp16(dst : UInt16Ptr, other : UInt16Ptr, alpha : Float64, beta : Float64, size : Int32)
+      unless fn = @@element_mul_fp16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "element_mul_fp16")
+          unless sym.null?
+            @@element_mul_fp16_proc = Proc(UInt16Ptr, UInt16Ptr, Float64, Float64, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@element_mul_fp16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+
+      fn.call(dst, other, alpha, beta, size)
+    end
+
+    def element_mul_bf16(dst : UInt16Ptr, other : UInt16Ptr, alpha : Float64, beta : Float64, size : Int32)
+      unless fn = @@element_mul_bf16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "element_mul_bf16")
+          unless sym.null?
+            @@element_mul_bf16_proc = Proc(UInt16Ptr, UInt16Ptr, Float64, Float64, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@element_mul_bf16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+
+      fn.call(dst, other, alpha, beta, size)
+    end
+
+    def element_mul_fp32(dst : Pointer(Float32), other : Pointer(Float32), alpha : Float64, beta : Float64, size : Int32)
+      unless fn = @@element_mul_fp32_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "element_mul_fp32")
+          unless sym.null?
+            @@element_mul_fp32_proc = Proc(Pointer(Float32), Pointer(Float32), Float64, Float64, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@element_mul_fp32_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+
+      fn.call(dst, other, alpha, beta, size)
     end
 
     # In-place element-wise ReLU on GPU memory. This fallback implementation
