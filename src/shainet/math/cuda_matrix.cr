@@ -1418,12 +1418,42 @@ module SHAInet
         other.sync_to_device!("element_division") unless other.device_dirty?
 
         size = @rows * @cols
-        CUDA.element_div(dptr.as(Pointer(Float64)),
-          sptr.as(Pointer(Float64)),
-          optr.as(Pointer(Float64)),
-          size)
+        gpu_done = false
+        if self.precision == other.precision && result.precision == self.precision && CUDA.kernels_available?
+          case @precision
+          when Precision::Fp16
+            CUDA.element_div_fp16(dptr.as(Pointer(UInt16)), sptr.as(Pointer(UInt16)), optr.as(Pointer(UInt16)), size)
+            gpu_done = true
+          when Precision::Bf16
+            CUDA.element_div_bf16(dptr.as(Pointer(UInt16)), sptr.as(Pointer(UInt16)), optr.as(Pointer(UInt16)), size)
+            gpu_done = true
+          when Precision::Fp32
+            CUDA.element_div_fp32(dptr.as(Pointer(Float32)), sptr.as(Pointer(Float32)), optr.as(Pointer(Float32)), size)
+            gpu_done = true
+          when Precision::Fp64
+            CUDA.element_div(dptr.as(Pointer(Float64)), sptr.as(Pointer(Float64)), optr.as(Pointer(Float64)), size)
+            gpu_done = true
+          end
+        elsif @precision == Precision::Fp64 && other.precision == Precision::Fp64
+          CUDA.element_div(dptr.as(Pointer(Float64)), sptr.as(Pointer(Float64)), optr.as(Pointer(Float64)), size)
+          gpu_done = true
+        end
 
-        result.mark_device_dirty!
+        if gpu_done
+          result.mark_device_dirty!
+        else
+          # GPU not used - fall back to CPU
+          self.sync_from_device!("element_division")
+          other.sync_from_device!("element_division")
+          @rows.times do |i|
+            @cols.times do |j|
+              self_val = self.unsafe_get(i, j)
+              other_val = other.unsafe_get(i, j)
+              result.unsafe_set(i, j, other_val == 0.0 ? 0.0 : self_val / other_val)
+            end
+          end
+          result.sync_to_device!("element_division_result") if CUDA.available?
+        end
       else
         # Fallback to CPU implementation
         self.sync_from_device!("element_division") if device_dirty?
