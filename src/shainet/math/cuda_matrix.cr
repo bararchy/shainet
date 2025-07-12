@@ -1623,7 +1623,7 @@ module SHAInet
         if (a.precision == Precision::Fp16 ||
            a.precision == Precision::Bf16) && CUDA.gemm_ex_available?
           compute = CUDA.compute_type_for(a.precision).as(CUDA::LibCUBLAS::ComputeType)
-          CUDA.gemm_ex(handle,
+          status = CUDA.gemm_ex(handle,
             ptr_b, ptr_a, ptr_c,
             b.cols, a.rows, b.rows,
             b.cols, a.cols, @cols,
@@ -1631,9 +1631,13 @@ module SHAInet
             CUDA.data_type_for(a.precision).as(CUDA::LibCUBLAS::DataType),
             CUDA.data_type_for(a.precision).as(CUDA::LibCUBLAS::DataType),
             compute)
+          if status != 0
+            Log.error { "gemm_ex failed with status #{status} for A #{a.rows}x#{a.cols} B #{b.rows}x#{b.cols} (precision #{a.precision})" }
+            raise RuntimeError.new("CUDA.gemm_ex failed with status #{status} for #{a.rows}x#{a.cols}x#{b.cols} (precision #{a.precision})")
+          end
         elsif a.precision == Precision::Fp32 && CUDA.gemm_ex_available?
           compute = CUDA::LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F.as(CUDA::LibCUBLAS::ComputeType)
-          CUDA.gemm_ex(handle,
+          status = CUDA.gemm_ex(handle,
             ptr_b, ptr_a, ptr_c,
             b.cols, a.rows, b.rows,
             b.cols, a.cols, @cols,
@@ -1641,18 +1645,30 @@ module SHAInet
             CUDA.data_type_for(Precision::Fp32).as(CUDA::LibCUBLAS::DataType),
             CUDA.data_type_for(Precision::Fp32).as(CUDA::LibCUBLAS::DataType),
             compute)
+          if status != 0
+            Log.error { "gemm_ex failed with status #{status} for A #{a.rows}x#{a.cols} B #{b.rows}x#{b.cols} (precision #{a.precision})" }
+            raise RuntimeError.new("CUDA.gemm_ex failed with status #{status} for #{a.rows}x#{a.cols}x#{b.cols} (precision #{a.precision})")
+          end
         elsif a.precision == Precision::Fp16 && CUDA.hgemm_available?
-          CUDA.hgemm_accumulate(handle,
+          status = CUDA.hgemm_accumulate(handle,
             ptr_b.as(CUDA::UInt16Ptr), ptr_a.as(CUDA::UInt16Ptr), ptr_c.as(CUDA::UInt16Ptr),
             b.cols, a.rows, b.rows,
             b.cols, a.cols, @cols,
             alpha.to_f16, beta.to_f16)
+          if status != 0
+            Log.error { "hgemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}" }
+            raise RuntimeError.new("CUDA.hgemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}")
+          end
         elsif a.precision == Precision::Fp32
-          CUDA.sgemm_accumulate(handle,
+          status = CUDA.sgemm_accumulate(handle,
             ptr_b.as(Pointer(Float32)), ptr_a.as(Pointer(Float32)), ptr_c.as(Pointer(Float32)),
             b.cols, a.rows, b.rows,
             b.cols, a.cols, @cols,
             alpha.to_f32, beta.to_f32)
+          if status != 0
+            Log.error { "sgemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}" }
+            raise RuntimeError.new("CUDA.sgemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}")
+          end
         elsif a.precision == Precision::Bf16
           # CPU fallback when no suitable cuBLAS routine is available
           self.sync_from_device!("gemm_fallback") if device_dirty?
@@ -1675,9 +1691,13 @@ module SHAInet
           # transpose trick used in `*` by swapping operands and dimensions.
           # Treating row-major A,B as column-major A^T,B^T results in:
           # C^T = B^T * A^T
-          CUDA.gemm_accumulate(handle, ptr_b.as(Pointer(Float64)), ptr_a.as(Pointer(Float64)), ptr_c.as(Pointer(Float64)),
+          status = CUDA.gemm_accumulate(handle, ptr_b.as(Pointer(Float64)), ptr_a.as(Pointer(Float64)), ptr_c.as(Pointer(Float64)),
             b.cols, a.rows, b.rows,
             b.cols, a.cols, @cols, alpha, beta)
+          if status != 0
+            Log.error { "gemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}" }
+            raise RuntimeError.new("CUDA.gemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}")
+          end
         end
       ensure
         CUDA.destroy_handle(handle)
@@ -1706,17 +1726,21 @@ module SHAInet
       bytes = (size * 4).to_u64
       CUDA.malloc(pointerof(out_ptr).as(Pointer(Pointer(Void))), bytes)
       begin
-        CUDA.gemm_int8(handle,
+        status = CUDA.gemm_int8(handle,
           b.device_ptr.not_nil!.as(Pointer(Int8)),
           a.device_ptr.not_nil!.as(Pointer(Int8)),
           out_ptr,
           b.cols, a.rows, b.rows,
           b.cols, a.cols, b.cols)
+        if status != 0
+          Log.error { "gemm_int8 failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}" }
+          raise RuntimeError.new("CUDA.gemm_int8 failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}")
+        end
 
         buf = Array(Int32).new(size)
         CUDA.memcpy(buf.to_unsafe.as(Pointer(Void)), out_ptr.as(Pointer(Void)), bytes, CUDA::MemcpyKind::DeviceToHost)
         buf.each_with_index do |v, idx|
-          r = idx / result.cols
+          r = idx // result.cols
           c = idx % result.cols
           result.unsafe_set(r, c, v.to_f64)
         end
