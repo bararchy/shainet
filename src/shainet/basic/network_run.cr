@@ -1501,6 +1501,11 @@ module SHAInet
         if matrix.device_id != weights.device_id
           raise RuntimeError.new("CUDA device mismatch: #{matrix.device_id} vs #{weights.device_id}")
         end
+
+        if matrix.rows == 0 || matrix.cols == 0
+          raise RuntimeError.new("safe_output_transform: matrix has zero rows or columns")
+        end
+
         matrix.sync_to_device!("safe_output_transform")
         weights.sync_to_device!("safe_output_transform")
         # For transformer architectures, use only the last token's representation

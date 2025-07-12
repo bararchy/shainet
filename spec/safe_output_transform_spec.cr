@@ -37,4 +37,34 @@ describe "safe_output_transform" do
     output.cols.should eq 1
     output[0, 0].should be_close(input[1, 0]*1.0 + input[1, 1]*2.0, 1e-6)
   end
+
+  it "raises on zero rows" do
+    pending! "CUDA not available" unless SHAInet::CUDA.available?
+
+    net = SHAInet::Network.new
+    net.precision = SHAInet::Precision::Fp32
+    net.hidden_layers << SHAInet::TransformerBlock.new(2, 1, 2)
+
+    input = SHAInet::CudaMatrix.new(0, 2, precision: SHAInet::Precision::Fp32)
+    weights = SHAInet::CudaMatrix.new(2, 1, precision: SHAInet::Precision::Fp32)
+
+    expect_raises(RuntimeError) do
+      net.call_safe_output_transform(input, weights)
+    end
+  end
+
+  it "raises on zero columns" do
+    pending! "CUDA not available" unless SHAInet::CUDA.available?
+
+    net = SHAInet::Network.new
+    net.precision = SHAInet::Precision::Fp32
+    net.hidden_layers << SHAInet::TransformerBlock.new(2, 1, 2)
+
+    input = SHAInet::CudaMatrix.new(2, 0, precision: SHAInet::Precision::Fp32)
+    weights = SHAInet::CudaMatrix.new(0, 1, precision: SHAInet::Precision::Fp32)
+
+    expect_raises(RuntimeError) do
+      net.call_safe_output_transform(input, weights)
+    end
+  end
 end
