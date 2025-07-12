@@ -122,7 +122,6 @@ module SHAInet
       LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F
     end
 
-
     # Provide a typed scalar buffer matching the given compute type so
     # routines relying on cuBLAS APIs can compile when CUDA is disabled.
     def scalar_for_compute_type(value : Float64, compute_type : LibCUBLAS::ComputeType) : Bytes
@@ -153,6 +152,7 @@ module SHAInet
         buf
       end
     end
+
     def malloc(*args) : Int32
       raise "CUDA disabled"
     end
@@ -576,7 +576,6 @@ module SHAInet
         buf
       end
     end
-
 
     def softmax_cross_entropy_loss_and_gradient(*args)
       raise CudnnError.new("cuDNN not available")

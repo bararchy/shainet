@@ -473,7 +473,7 @@ module SHAInet
     def to_cuda : CudaMatrix
       result = CudaMatrix.new(@rows, @cols, precision: @precision, device_id: CUDA.current_device || 0)
       dest_buf = result.raw_data_buffer
-      src_buf  = raw_data_buffer
+      src_buf = raw_data_buffer
       dest_buf.copy_from(src_buf)
       result.mark_device_dirty!
       result.sync_to_device!("simple_to_cuda_conversion")
