@@ -234,6 +234,44 @@ __global__ void zero_matrix_kernel_t(T *matrix, int size) {
   matrix[idx] = Convert<T>::from_float(0.0f);
 }
 
+template <typename T>
+__global__ void element_div_kernel_t(T *out, const T *a, const T *b, int size) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= size)
+    return;
+
+  float denom = Convert<T>::to_float(b[idx]);
+  float numer = Convert<T>::to_float(a[idx]);
+  float res = denom == 0.0f ? 0.0f : numer / denom;
+  out[idx] = Convert<T>::from_float(res);
+}
+
+template <typename T>
+__global__ void sum_cols_kernel_t(T *out, const T *in, int rows, int cols) {
+  int col = blockIdx.x;
+  if (col >= cols)
+    return;
+  float sum = 0.0f;
+  for (int i = 0; i < rows; ++i) {
+    sum += Convert<T>::to_float(in[i * cols + col]);
+  }
+  out[col] = Convert<T>::from_float(sum);
+}
+
+template <typename T>
+__global__ void row_sum_kernel_t(T *dst, const T *src, int rows, int cols) {
+  int col = blockIdx.x * blockDim.x + threadIdx.x;
+  if (col >= cols)
+    return;
+
+  float sum = 0.0f;
+  for (int row = 0; row < rows; ++row) {
+    sum += Convert<T>::to_float(src[row * cols + col]);
+  }
+  float prev = Convert<T>::to_float(dst[col]);
+  dst[col] = Convert<T>::from_float(prev + sum);
+}
+
 // Host wrapper functions
 extern "C" {
 void softmax_rows(double *out, const double *in, int rows, int cols) {
@@ -569,18 +607,6 @@ void sum_cols(double *out, const double *in, int rows, int cols) {
   cudaDeviceSynchronize();
 }
 
-template <typename T>
-__global__ void sum_cols_kernel_t(T *out, const T *in, int rows, int cols) {
-  int col = blockIdx.x;
-  if (col >= cols)
-    return;
-  float sum = 0.0f;
-  for (int i = 0; i < rows; ++i) {
-    sum += Convert<T>::to_float(in[i * cols + col]);
-  }
-  out[col] = Convert<T>::from_float(sum);
-}
-
 void sum_cols_fp16(__half *out, const __half *in, int rows, int cols) {
   sum_cols_kernel_t<<<cols, 1>>>(out, in, rows, cols);
   cudaDeviceSynchronize();
@@ -856,20 +882,6 @@ void row_sum(double *dst, const double *src, int rows, int cols) {
   }
 }
 
-template <typename T>
-__global__ void row_sum_kernel_t(T *dst, const T *src, int rows, int cols) {
-  int col = blockIdx.x * blockDim.x + threadIdx.x;
-  if (col >= cols)
-    return;
-
-  float sum = 0.0f;
-  for (int row = 0; row < rows; ++row) {
-    sum += Convert<T>::to_float(src[row * cols + col]);
-  }
-  float prev = Convert<T>::to_float(dst[col]);
-  dst[col] = Convert<T>::from_float(prev + sum);
-}
-
 void row_sum_fp16(__half *dst, const __half *src, int rows, int cols) {
   int threads_per_block = 256;
   int blocks = (cols + threads_per_block - 1) / threads_per_block;
@@ -1055,18 +1067,6 @@ void element_div(double *out, const double *a, const double *b, int size) {
   if (err != cudaSuccess) {
     printf("CUDA Error in element_div: %s\n", cudaGetErrorString(err));
   }
-}
-
-template <typename T>
-__global__ void element_div_kernel_t(T *out, const T *a, const T *b, int size) {
-  int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  if (idx >= size)
-    return;
-
-  float denom = Convert<T>::to_float(b[idx]);
-  float numer = Convert<T>::to_float(a[idx]);
-  float res = denom == 0.0f ? 0.0f : numer / denom;
-  out[idx] = Convert<T>::from_float(res);
 }
 
 void element_div_fp16(__half *out, const __half *a, const __half *b, int size) {
