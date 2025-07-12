@@ -569,6 +569,34 @@ void sum_cols(double *out, const double *in, int rows, int cols) {
   cudaDeviceSynchronize();
 }
 
+template <typename T>
+__global__ void sum_cols_kernel_t(T *out, const T *in, int rows, int cols) {
+  int col = blockIdx.x;
+  if (col >= cols)
+    return;
+  float sum = 0.0f;
+  for (int i = 0; i < rows; ++i) {
+    sum += Convert<T>::to_float(in[i * cols + col]);
+  }
+  out[col] = Convert<T>::from_float(sum);
+}
+
+void sum_cols_fp16(__half *out, const __half *in, int rows, int cols) {
+  sum_cols_kernel_t<<<cols, 1>>>(out, in, rows, cols);
+  cudaDeviceSynchronize();
+}
+
+void sum_cols_bf16(__nv_bfloat16 *out, const __nv_bfloat16 *in, int rows,
+                    int cols) {
+  sum_cols_kernel_t<<<cols, 1>>>(out, in, rows, cols);
+  cudaDeviceSynchronize();
+}
+
+void sum_cols_f32(float *out, const float *in, int rows, int cols) {
+  sum_cols_kernel_t<<<cols, 1>>>(out, in, rows, cols);
+  cudaDeviceSynchronize();
+}
+
 __global__ void mul_row_vector_kernel(double *matrix, const double *vec,
                                       int rows, int cols) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -828,6 +856,51 @@ void row_sum(double *dst, const double *src, int rows, int cols) {
   }
 }
 
+template <typename T>
+__global__ void row_sum_kernel_t(T *dst, const T *src, int rows, int cols) {
+  int col = blockIdx.x * blockDim.x + threadIdx.x;
+  if (col >= cols)
+    return;
+
+  float sum = 0.0f;
+  for (int row = 0; row < rows; ++row) {
+    sum += Convert<T>::to_float(src[row * cols + col]);
+  }
+  float prev = Convert<T>::to_float(dst[col]);
+  dst[col] = Convert<T>::from_float(prev + sum);
+}
+
+void row_sum_fp16(__half *dst, const __half *src, int rows, int cols) {
+  int threads_per_block = 256;
+  int blocks = (cols + threads_per_block - 1) / threads_per_block;
+  row_sum_kernel_t<<<blocks, threads_per_block>>>(dst, src, rows, cols);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in row_sum_fp16: %s\n", cudaGetErrorString(err));
+  }
+}
+
+void row_sum_bf16(__nv_bfloat16 *dst, const __nv_bfloat16 *src, int rows,
+                   int cols) {
+  int threads_per_block = 256;
+  int blocks = (cols + threads_per_block - 1) / threads_per_block;
+  row_sum_kernel_t<<<blocks, threads_per_block>>>(dst, src, rows, cols);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in row_sum_bf16: %s\n", cudaGetErrorString(err));
+  }
+}
+
+void row_sum_f32(float *dst, const float *src, int rows, int cols) {
+  int threads_per_block = 256;
+  int blocks = (cols + threads_per_block - 1) / threads_per_block;
+  row_sum_kernel_t<<<blocks, threads_per_block>>>(dst, src, rows, cols);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in row_sum_f32: %s\n", cudaGetErrorString(err));
+  }
+}
+
 void add_bias_fp16(__half *mat, const __half *bias, int rows, int cols) {
   int threads_per_block = 256;
   int blocks = (rows * cols + threads_per_block - 1) / threads_per_block;
@@ -981,6 +1054,49 @@ void element_div(double *out, const double *a, const double *b, int size) {
   cudaError_t err = cudaDeviceSynchronize();
   if (err != cudaSuccess) {
     printf("CUDA Error in element_div: %s\n", cudaGetErrorString(err));
+  }
+}
+
+template <typename T>
+__global__ void element_div_kernel_t(T *out, const T *a, const T *b, int size) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= size)
+    return;
+
+  float denom = Convert<T>::to_float(b[idx]);
+  float numer = Convert<T>::to_float(a[idx]);
+  float res = denom == 0.0f ? 0.0f : numer / denom;
+  out[idx] = Convert<T>::from_float(res);
+}
+
+void element_div_fp16(__half *out, const __half *a, const __half *b, int size) {
+  int threads_per_block = 256;
+  int blocks = (size + threads_per_block - 1) / threads_per_block;
+  element_div_kernel_t<<<blocks, threads_per_block>>>(out, a, b, size);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in element_div_fp16: %s\n", cudaGetErrorString(err));
+  }
+}
+
+void element_div_bf16(__nv_bfloat16 *out, const __nv_bfloat16 *a,
+                       const __nv_bfloat16 *b, int size) {
+  int threads_per_block = 256;
+  int blocks = (size + threads_per_block - 1) / threads_per_block;
+  element_div_kernel_t<<<blocks, threads_per_block>>>(out, a, b, size);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in element_div_bf16: %s\n", cudaGetErrorString(err));
+  }
+}
+
+void element_div_f32(float *out, const float *a, const float *b, int size) {
+  int threads_per_block = 256;
+  int blocks = (size + threads_per_block - 1) / threads_per_block;
+  element_div_kernel_t<<<blocks, threads_per_block>>>(out, a, b, size);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in element_div_f32: %s\n", cudaGetErrorString(err));
   }
 }
 

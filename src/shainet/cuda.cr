@@ -690,6 +690,9 @@ module SHAInet
     @@layer_norm_fp32_proc : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Int32, Float32, Void)? = nil
     @@layer_norm_backward_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Int32, Float64, Void)? = nil
     @@sum_cols_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
+    @@sum_cols_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Void)? = nil
+    @@sum_cols_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Void)? = nil
+    @@sum_cols_fp32_proc : Proc(Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
     @@mul_row_vector_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
     @@transpose_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
     @@transpose_fp32_proc : Proc(Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
@@ -702,6 +705,9 @@ module SHAInet
     @@apply_gradient_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Void)? = nil
     @@accumulate_bias_grad_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
     @@row_sum_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
+    @@row_sum_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Void)? = nil
+    @@row_sum_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Void)? = nil
+    @@row_sum_fp32_proc : Proc(Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
     @@zero_matrix_proc : Proc(Pointer(Float64), Int32, Void)? = nil
     @@zero_matrix_fp16_proc : Proc(Pointer(UInt16), Int32, Void)? = nil
     @@zero_matrix_bf16_proc : Proc(Pointer(UInt16), Int32, Void)? = nil
@@ -710,6 +716,9 @@ module SHAInet
     @@scale_fp16_proc : Proc(Pointer(UInt16), Float32, Int32, Void)? = nil
     @@scale_bf16_proc : Proc(Pointer(UInt16), Float32, Int32, Void)? = nil
     @@element_div_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Void)? = nil
+    @@element_div_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Pointer(UInt16), Int32, Void)? = nil
+    @@element_div_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Pointer(UInt16), Int32, Void)? = nil
+    @@element_div_fp32_proc : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Void)? = nil
     @@count_pairs_proc : Proc(Pointer(Int32), Pointer(Int32), Pointer(Int32), Pointer(Int32), Int32, Int32, Void)? = nil
     @@relu_backward_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Void)? = nil
     @@softmax_backward_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
@@ -1252,6 +1261,57 @@ module SHAInet
       fn.call(dst, src, rows, cols)
     end
 
+    def sum_cols_fp16(dst : Pointer(UInt16), src : Pointer(UInt16), rows : Int32, cols : Int32)
+      unless fn = @@sum_cols_fp16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "sum_cols_fp16")
+          unless sym.null?
+            @@sum_cols_fp16_proc = Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@sum_cols_fp16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(dst, src, rows, cols)
+    end
+
+    def sum_cols_bf16(dst : Pointer(UInt16), src : Pointer(UInt16), rows : Int32, cols : Int32)
+      unless fn = @@sum_cols_bf16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "sum_cols_bf16")
+          unless sym.null?
+            @@sum_cols_bf16_proc = Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@sum_cols_bf16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(dst, src, rows, cols)
+    end
+
+    def sum_cols_fp32(dst : Pointer(Float32), src : Pointer(Float32), rows : Int32, cols : Int32)
+      unless fn = @@sum_cols_fp32_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "sum_cols_f32")
+          unless sym.null?
+            @@sum_cols_fp32_proc = Proc(Pointer(Float32), Pointer(Float32), Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@sum_cols_fp32_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(dst, src, rows, cols)
+    end
+
     def mul_row_vector(matrix : Pointer(Float64), vec : Pointer(Float64), rows : Int32, cols : Int32)
       unless fn = @@mul_row_vector_proc
         if @@kernels_handle.null?
@@ -1594,6 +1654,60 @@ module SHAInet
       end
     end
 
+    def element_div_fp16(dst : Pointer(UInt16), a : Pointer(UInt16), b : Pointer(UInt16), size : Int32)
+      return if dst.null? || a.null? || b.null? || size <= 0
+      unless fn = @@element_div_fp16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "element_div_fp16")
+          unless sym.null?
+            @@element_div_fp16_proc = Proc(Pointer(UInt16), Pointer(UInt16), Pointer(UInt16), Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@element_div_fp16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(dst, a, b, size)
+    end
+
+    def element_div_bf16(dst : Pointer(UInt16), a : Pointer(UInt16), b : Pointer(UInt16), size : Int32)
+      return if dst.null? || a.null? || b.null? || size <= 0
+      unless fn = @@element_div_bf16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "element_div_bf16")
+          unless sym.null?
+            @@element_div_bf16_proc = Proc(Pointer(UInt16), Pointer(UInt16), Pointer(UInt16), Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@element_div_bf16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(dst, a, b, size)
+    end
+
+    def element_div_fp32(dst : Pointer(Float32), a : Pointer(Float32), b : Pointer(Float32), size : Int32)
+      return if dst.null? || a.null? || b.null? || size <= 0
+      unless fn = @@element_div_fp32_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "element_div_f32")
+          unless sym.null?
+            @@element_div_fp32_proc = Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@element_div_fp32_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(dst, a, b, size)
+    end
+
     # In-place element-wise ReLU on GPU memory. This fallback implementation
     # copies the data to the host, applies ReLU and writes the result back. It
     # avoids additional synchronization logic in the caller while still keeping
@@ -1661,6 +1775,57 @@ module SHAInet
         axpy(handle, 1.0, row_start, dst, cols)
       end
       destroy_handle(handle)
+    end
+
+    def row_sum_fp16(dst : Pointer(UInt16), src : Pointer(UInt16), rows : Int32, cols : Int32)
+      unless fn = @@row_sum_fp16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "row_sum_fp16")
+          unless sym.null?
+            @@row_sum_fp16_proc = Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@row_sum_fp16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(dst, src, rows, cols)
+    end
+
+    def row_sum_bf16(dst : Pointer(UInt16), src : Pointer(UInt16), rows : Int32, cols : Int32)
+      unless fn = @@row_sum_bf16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "row_sum_bf16")
+          unless sym.null?
+            @@row_sum_bf16_proc = Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@row_sum_bf16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(dst, src, rows, cols)
+    end
+
+    def row_sum_fp32(dst : Pointer(Float32), src : Pointer(Float32), rows : Int32, cols : Int32)
+      unless fn = @@row_sum_fp32_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "row_sum_f32")
+          unless sym.null?
+            @@row_sum_fp32_proc = Proc(Pointer(Float32), Pointer(Float32), Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@row_sum_fp32_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(dst, src, rows, cols)
     end
 
     # Count token pairs using a custom CUDA kernel when available.
