@@ -612,14 +612,14 @@ module SHAInet
         if self.precision == other.precision &&
            (self.precision == Precision::Fp16 || self.precision == Precision::Bf16)
           if CUDA.gemm_ex_available?
-            compute = CUDA.compute_type_for(self.precision).as(CUDA::LibCUBLAS::ComputeType)
+            compute = CUDA.compute_type_for(self.precision)
             CUDA.gemm_ex(handle,
               ptr_b, ptr_a, result.device_ptr.not_nil!,
               other.cols, @rows, other.rows,
               other.cols, @cols, result.cols,
-              CUDA.data_type_for(self.precision).as(CUDA::LibCUBLAS::DataType),
-              CUDA.data_type_for(self.precision).as(CUDA::LibCUBLAS::DataType),
-              CUDA.data_type_for(result.precision).as(CUDA::LibCUBLAS::DataType),
+              CUDA.data_type_for(self.precision),
+              CUDA.data_type_for(self.precision),
+              CUDA.data_type_for(result.precision),
               compute)
           elsif self.precision == Precision::Fp16 && CUDA.hgemm_available?
             CUDA.hgemm(handle,
@@ -646,13 +646,17 @@ module SHAInet
               self.precision == Precision::Fp32
           if CUDA.gemm_ex_available?
             compute = CUDA::LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F
+            dtype_a = CUDA.data_type_for(Precision::Fp32)
+            dtype_a_lib = dtype_a.is_a?(CUDA::LibCUBLAS::DataType) ? dtype_a : CUDA::LibCUBLAS::DataType.new(dtype_a.value)
+            dtype_c = CUDA.data_type_for(result.precision)
+            dtype_c_lib = dtype_c.is_a?(CUDA::LibCUBLAS::DataType) ? dtype_c : CUDA::LibCUBLAS::DataType.new(dtype_c.value)
             CUDA.gemm_ex(handle,
               ptr_b, ptr_a, result.device_ptr.not_nil!,
               other.cols, @rows, other.rows,
               other.cols, @cols, result.cols,
-              CUDA.data_type_for(Precision::Fp32).as(CUDA::LibCUBLAS::DataType),
-              CUDA.data_type_for(Precision::Fp32).as(CUDA::LibCUBLAS::DataType),
-              CUDA.data_type_for(result.precision).as(CUDA::LibCUBLAS::DataType),
+              dtype_a_lib,
+              dtype_a_lib,
+              dtype_c_lib,
               compute)
           else
             CUDA.sgemm(handle,
@@ -1622,28 +1626,30 @@ module SHAInet
 
         if (a.precision == Precision::Fp16 ||
            a.precision == Precision::Bf16) && CUDA.gemm_ex_available?
-          compute = CUDA.compute_type_for(a.precision).as(CUDA::LibCUBLAS::ComputeType)
+          compute = CUDA.compute_type_for(a.precision)
           status = CUDA.gemm_ex(handle,
             ptr_b, ptr_a, ptr_c,
             b.cols, a.rows, b.rows,
             b.cols, a.cols, @cols,
-            CUDA.data_type_for(a.precision).as(CUDA::LibCUBLAS::DataType),
-            CUDA.data_type_for(a.precision).as(CUDA::LibCUBLAS::DataType),
-            CUDA.data_type_for(a.precision).as(CUDA::LibCUBLAS::DataType),
+            CUDA.data_type_for(a.precision),
+            CUDA.data_type_for(a.precision),
+            CUDA.data_type_for(a.precision),
             compute)
           if status != 0
             Log.error { "gemm_ex failed with status #{status} for A #{a.rows}x#{a.cols} B #{b.rows}x#{b.cols} (precision #{a.precision})" }
             raise RuntimeError.new("CUDA.gemm_ex failed with status #{status} for #{a.rows}x#{a.cols}x#{b.cols} (precision #{a.precision})")
           end
         elsif a.precision == Precision::Fp32 && CUDA.gemm_ex_available?
-          compute = CUDA::LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F.as(CUDA::LibCUBLAS::ComputeType)
+          compute = CUDA::LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F
+          dtype_a = CUDA.data_type_for(Precision::Fp32)
+          dtype_a_lib = dtype_a.is_a?(CUDA::LibCUBLAS::DataType) ? dtype_a : CUDA::LibCUBLAS::DataType.new(dtype_a.value)
           status = CUDA.gemm_ex(handle,
             ptr_b, ptr_a, ptr_c,
             b.cols, a.rows, b.rows,
             b.cols, a.cols, @cols,
-            CUDA.data_type_for(Precision::Fp32).as(CUDA::LibCUBLAS::DataType),
-            CUDA.data_type_for(Precision::Fp32).as(CUDA::LibCUBLAS::DataType),
-            CUDA.data_type_for(Precision::Fp32).as(CUDA::LibCUBLAS::DataType),
+            dtype_a_lib,
+            dtype_a_lib,
+            dtype_a_lib,
             compute)
           if status != 0
             Log.error { "gemm_ex failed with status #{status} for A #{a.rows}x#{a.cols} B #{b.rows}x#{b.cols} (precision #{a.precision})" }
@@ -1778,9 +1784,11 @@ module SHAInet
             CUDA.weight_update_fp16(weight_ptr.as(Pointer(UInt16)), grad_ptr.as(Pointer(UInt16)), -learning_rate.to_f32, total_elements)
           elsif CUDA.axpy_ex_available?
             dtype = CUDA.data_type_for(Precision::Fp16)
+            dtype_lib = dtype.is_a?(CUDA::LibCUBLAS::DataType) ? dtype : CUDA::LibCUBLAS::DataType.new(dtype.value)
             ctype = CUDA.compute_type_for(Precision::Fp16)
-            scalar = CUDA.scalar_for_compute_type(-learning_rate, ctype)
-            CUDA.axpy_ex(handle, scalar.to_unsafe.as(Void*), grad_ptr.as(Void*), dtype, weight_ptr.as(Void*), dtype, total_elements, ctype)
+            ctype_lib = ctype.is_a?(CUDA::LibCUBLAS::ComputeType) ? ctype : CUDA::LibCUBLAS::ComputeType.new(ctype.value)
+            scalar = CUDA.scalar_for_compute_type(-learning_rate, ctype_lib)
+            CUDA.axpy_ex(handle, scalar.to_unsafe.as(Void*), grad_ptr.as(Void*), dtype_lib, weight_ptr.as(Void*), dtype_lib, total_elements, ctype_lib)
           else
             raise "axpyEx unavailable"
           end
@@ -1789,9 +1797,11 @@ module SHAInet
             CUDA.weight_update_bf16(weight_ptr.as(Pointer(UInt16)), grad_ptr.as(Pointer(UInt16)), -learning_rate.to_f32, total_elements)
           elsif CUDA.axpy_ex_available?
             dtype = CUDA.data_type_for(Precision::Bf16)
+            dtype_lib = dtype.is_a?(CUDA::LibCUBLAS::DataType) ? dtype : CUDA::LibCUBLAS::DataType.new(dtype.value)
             ctype = CUDA.compute_type_for(Precision::Bf16)
-            scalar = CUDA.scalar_for_compute_type(-learning_rate, ctype)
-            CUDA.axpy_ex(handle, scalar.to_unsafe.as(Void*), grad_ptr.as(Void*), dtype, weight_ptr.as(Void*), dtype, total_elements, ctype)
+            ctype_lib = ctype.is_a?(CUDA::LibCUBLAS::ComputeType) ? ctype : CUDA::LibCUBLAS::ComputeType.new(ctype.value)
+            scalar = CUDA.scalar_for_compute_type(-learning_rate, ctype_lib)
+            CUDA.axpy_ex(handle, scalar.to_unsafe.as(Void*), grad_ptr.as(Void*), dtype_lib, weight_ptr.as(Void*), dtype_lib, total_elements, ctype_lib)
           else
             raise "axpyEx unavailable"
           end

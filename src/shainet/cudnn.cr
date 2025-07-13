@@ -650,9 +650,9 @@ module SHAInet
       grad_output.sync_to_device!("xent_grad") unless grad_output.device_dirty?
 
       result = CUDA.cross_entropy_loss_gradient(
-        predicted.device_ptr.not_nil!,
-        target.device_ptr.not_nil!,
-        grad_output.device_ptr.not_nil!,
+        predicted.device_ptr.not_nil!.as(Pointer(Float64)),
+        target.device_ptr.not_nil!.as(Pointer(Float64)),
+        grad_output.device_ptr.not_nil!.as(Pointer(Float64)),
         loss_output,
         predicted.rows,
         predicted.cols
@@ -687,7 +687,10 @@ module SHAInet
       # Use CUDA kernel for cross-entropy computation
       total_elements = predicted.rows * predicted.cols
       result = CUDA.cross_entropy_loss_gradient(
-        pred_ptr, target_ptr, grad_ptr, loss_output,
+        pred_ptr.as(Pointer(Float64)),
+        target_ptr.as(Pointer(Float64)),
+        grad_ptr.as(Pointer(Float64)),
+        loss_output,
         predicted.rows, predicted.cols
       )
 
