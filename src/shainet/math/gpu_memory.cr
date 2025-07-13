@@ -68,20 +68,20 @@ module SHAInet
       to_gpu!(matrix, target)
     end
 
-      # Copy values from +src+ into existing GPU matrix +dest+
-      # Handles precision conversion on the CPU before syncing to the GPU.
-      def to_gpu!(src : SimpleMatrix, dest : CudaMatrix)
-        raise ArgumentError.new("size mismatch") unless src.rows == dest.rows && src.cols == dest.cols
+    # Copy values from +src+ into existing GPU matrix +dest+
+    # Handles precision conversion on the CPU before syncing to the GPU.
+    def to_gpu!(src : SimpleMatrix, dest : CudaMatrix)
+      raise ArgumentError.new("size mismatch") unless src.rows == dest.rows && src.cols == dest.cols
 
-        src.rows.times do |i|
-          src.cols.times do |j|
-            dest[i, j] = src[i, j]
-          end
+      src.rows.times do |i|
+        src.cols.times do |j|
+          dest[i, j] = src[i, j]
         end
-
-        dest.sync_to_device!("to_gpu!")
-        dest
       end
+
+      dest.sync_to_device!("to_gpu!")
+      dest
+    end
 
     # Copy data from +matrix+ into an existing CudaMatrix +dest+
     # and sync it to the device. The destination must have the
