@@ -23,9 +23,7 @@ describe "GELU activation" do
     expected = base.clone
     expected.rows.times do |i|
       expected.cols.times do |j|
-        # Use the tanh-based approximation to match CUDA implementation
-        x = expected[i, j]
-        expected[i, j] = 0.5 * x * (1.0 + Math.tanh(Math.sqrt(2.0 / Math::PI) * (x + 0.044715 * x ** 3)))
+        expected[i, j] = SHAInet._gelu(expected[i, j])
       end
     end
     mat = SHAInet::GPUMemory.to_gpu(base).as(SHAInet::CudaMatrix)
