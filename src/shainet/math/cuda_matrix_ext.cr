@@ -28,20 +28,33 @@ module SHAInet
           # Run the kernel
           case @precision
           when Precision::Fp16
-            CUDA.softmax_rows_fp16(rptr.as(Pointer(UInt16)),
+            CUDA.softmax_rows_fp16(
+              rptr.as(Pointer(UInt16)),
               dptr.as(Pointer(UInt16)),
               @rows,
-              @cols)
+              @cols
+            )
           when Precision::Bf16
-            CUDA.softmax_rows_bf16(rptr.as(Pointer(UInt16)),
+            CUDA.softmax_rows_bf16(
+              rptr.as(Pointer(UInt16)),
               dptr.as(Pointer(UInt16)),
               @rows,
-              @cols)
+              @cols
+            )
+          when Precision::Fp32
+            CUDA.softmax_rows_fp32(
+              rptr.as(Pointer(Float32)),
+              dptr.as(Pointer(Float32)),
+              @rows,
+              @cols
+            )
           else
-            CUDA.softmax_rows(rptr.as(Pointer(Float64)),
+            CUDA.softmax_rows(
+              rptr.as(Pointer(Float64)),
               dptr.as(Pointer(Float64)),
               @rows,
-              @cols)
+              @cols
+            )
           end
 
           # Mark result as having newer GPU data
