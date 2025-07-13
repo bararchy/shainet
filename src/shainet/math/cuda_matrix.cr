@@ -1112,8 +1112,6 @@ module SHAInet
         {% if flag?(:enable_cuda) %}
           stat = LibCUDNN.cudnnCreateOpTensorDescriptor(out op_desc)
           begin
-            # # Broadcast multiply using cuDNN OpTensor
-            # op_desc = uninitialized LibCUDNN::CudnnOpTensorDescriptor
             CUDNN.check_status(stat)
 
             begin
@@ -1137,30 +1135,36 @@ module SHAInet
               self.sync_to_device!("mul_row_vector") unless device_dirty?
               vec.sync_to_device!("mul_row_vector") unless vec.device_dirty?
 
-              CUDNN.check_status(LibCUDNN.cudnnOpTensor(
-                CUDNN.handle,
-                op_desc,
-                alpha1_buf.to_unsafe.as(Pointer(Void)),
-                mat_desc,
-                dptr.as(Pointer(Void)),
-                alpha2_buf.to_unsafe.as(Pointer(Void)),
-                vec_desc,
-                vptr.as(Pointer(Void)),
-                beta_buf.to_unsafe.as(Pointer(Void)),
-                mat_desc,
-                dptr.as(Pointer(Void))
-              ))
+              begin
+                CUDNN.check_status(LibCUDNN.cudnnOpTensor(
+                  CUDNN.handle,
+                  op_desc,
+                  alpha1_buf.to_unsafe.as(Pointer(Void)),
+                  mat_desc,
+                  dptr.as(Pointer(Void)),
+                  alpha2_buf.to_unsafe.as(Pointer(Void)),
+                  vec_desc,
+                  vptr.as(Pointer(Void)),
+                  beta_buf.to_unsafe.as(Pointer(Void)),
+                  mat_desc,
+                  dptr.as(Pointer(Void))
+                ))
 
-              mark_device_dirty!
-              return self
+                mark_device_dirty!
+                return self
+              rescue e : SHAInet::CUDNN::CudnnError
+                Log.warn { "cuDNN mul_row_vector failed: #{e.message}, falling back to CPU" }
+              ensure
+                LibCUDNN.cudnnDestroyTensorDescriptor(mat_desc.not_nil!)
+                LibCUDNN.cudnnDestroyTensorDescriptor(vec_desc.not_nil!)
+              end
             ensure
-              LibCUDNN.cudnnDestroyTensorDescriptor(mat_desc.not_nil!)
-              LibCUDNN.cudnnDestroyTensorDescriptor(vec_desc.not_nil!)
+              if opd = op_desc
+                LibCUDNN.cudnnDestroyOpTensorDescriptor(opd)
+              end
             end
-          ensure
-            if opd = op_desc
-              LibCUDNN.cudnnDestroyOpTensorDescriptor(opd)
-            end
+          rescue e : SHAInet::CUDNN::CudnnError
+            Log.warn { "cuDNN mul_row_vector setup failed: #{e.message}, falling back to CPU" }
           end
         {% end %}
       end
