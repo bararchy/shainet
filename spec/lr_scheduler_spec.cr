@@ -20,7 +20,8 @@ describe "Learning rate scheduler" do
       cost_function: :mse,
       epochs: 3,
       mini_batch_size: 1,
-      log_each: 10
+      log_each: 10,
+      error_threshold: 0.0
     )
 
     net.time_step.should eq(3)
@@ -32,7 +33,8 @@ describe "Learning rate scheduler" do
       cost_function: :mse,
       epochs: 2,
       mini_batch_size: 1,
-      log_each: 10
+      log_each: 10,
+      error_threshold: 0.0
     )
 
     net.time_step.should eq(5)
