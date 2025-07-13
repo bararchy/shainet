@@ -1830,10 +1830,34 @@ module SHAInet
           Log.error { "cuDNN element_mul failed: #{e}, falling back to CPU" }
         end
       end
-
-      # CPU fallback
       raise ArgumentError.new("size mismatch") unless @rows == other.rows && @cols == other.cols
       ensure_same_device(other)
+
+      if CUDA.fully_available? && (sptr = self.device_ptr) && (optr = other.device_ptr) && !sptr.null? && !optr.null?
+        begin
+          self.sync_to_device!("element_mul") unless device_dirty?
+          other.sync_to_device!("element_mul") unless other.device_dirty?
+          size = @rows * @cols
+
+          case @precision
+          when Precision::Fp16
+            CUDA.element_mul_fp16(sptr.as(Pointer(UInt16)), sptr.as(Pointer(UInt16)), optr.as(Pointer(UInt16)), alpha, beta, size)
+          when Precision::Bf16
+            CUDA.element_mul_bf16(sptr.as(Pointer(UInt16)), sptr.as(Pointer(UInt16)), optr.as(Pointer(UInt16)), alpha, beta, size)
+          when Precision::Fp32
+            CUDA.element_mul_fp32(sptr.as(Pointer(Float32)), sptr.as(Pointer(Float32)), optr.as(Pointer(Float32)), alpha, beta, size)
+          else
+            CUDA.element_mul(sptr.as(Pointer(Float64)), sptr.as(Pointer(Float64)), optr.as(Pointer(Float64)), alpha, beta, size)
+          end
+
+          mark_device_dirty!
+          return self
+        rescue e : Exception
+          Log.error { "CUDA element_mul kernel failed: #{e}, falling back to CPU" }
+        end
+      end
+
+      # CPU fallback
       self.sync_from_device!("cudnn_element_mul_fallback") if device_dirty?
       other.sync_from_device!("cudnn_element_mul_fallback") if other.device_dirty?
 
