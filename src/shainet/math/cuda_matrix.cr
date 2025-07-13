@@ -1031,21 +1031,37 @@ module SHAInet
           CUDNN.relu_forward(self, self)
           return self
         rescue e : Exception
-          Log.error { "cuDNN ReLU failed: #{e}, falling back to CUDA kernel" }
+          Log.error { "cuDNN ReLU failed: #{e}, falling back to CUDA" }
         end
       end
 
-      # Fallback to CUDA kernel
       raise RuntimeError.new("GPU ReLU requires valid device pointer") unless (dptr = self.device_ptr) && !dptr.null?
 
       # Ensure self has up-to-date GPU data
       self.sync_to_device!("relu_activation") unless device_dirty?
 
-      CUDA.relu(
-        dptr.as(Pointer(Float64)),
-        (@rows*@cols))
+      kernel_used = false
 
-      # Mark self as having newer GPU data
+      if @precision == Precision::Fp64
+        begin
+          CUDA.relu(dptr.as(Pointer(Float64)), (@rows * @cols))
+          kernel_used = true
+        rescue e
+          Log.error { "CUDA ReLU failed: #{e}, falling back to CPU" }
+        end
+      end
+
+      unless kernel_used
+        self.sync_from_device!("relu_fallback") if device_dirty?
+        @rows.times do |i|
+          @cols.times do |j|
+            val = unsafe_get(i, j)
+            unsafe_set(i, j, val > 0 ? val : 0.0)
+          end
+        end
+        self.sync_to_device!("relu_result")
+      end
+
       mark_device_dirty!
       self
     end
