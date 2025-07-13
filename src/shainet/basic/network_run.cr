@@ -1543,7 +1543,10 @@ module SHAInet
                              copy_bytes.to_u64
                            )
                            if copy_res != 0
-                             Log.error { "safe_output_transform: device copy failed with code #{copy_res}" }
+                             Log.error {
+                               "safe_output_transform: device copy failed with code #{copy_res} " \
+                               "(dst #{result.rows}x#{result.cols}, src #{matrix.rows}x#{matrix.cols})"
+                             }
                              raise RuntimeError.new("GPU memory copy failed in safe_output_transform for transformer output")
                            end
                            result.mark_device_dirty!
