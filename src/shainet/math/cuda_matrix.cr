@@ -579,7 +579,10 @@ module SHAInet
         src_row_ptr,
         bytes)
       if copy_res != 0
-        Log.error { "set_row!: device copy failed with code #{copy_res}" }
+        Log.error {
+          "set_row!: device copy failed with code #{copy_res} " \
+          "(dst #{rows}x#{cols}, src #{other.rows}x#{other.cols})"
+        }
         raise RuntimeError.new("GPU memory copy failed in set_row! from other to self")
       end
 
