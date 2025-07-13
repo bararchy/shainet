@@ -10,12 +10,12 @@ module SHAInet
     property precision : Precision
 
     private def compute_in_f32?(other_precision : Precision? = nil)
+      return false if @precision == Precision::Int8 || other_precision == Precision::Int8
       true
     end
 
     # Backing storage for the matrix.  Depending on the precision we
     # allocate arrays of different element types.
-    @data_f64 : Array(Float64)?
     @data_f32 : Array(Float32)?
     @data_f16 : Array(Float16)?
     @data_bf16 : Array(BFloat16)?
@@ -36,7 +36,7 @@ module SHAInet
       when Precision::Fp32
         4
       else
-        8
+        4
       end
     end
 
@@ -53,7 +53,7 @@ module SHAInet
             when Precision::Fp32
               @data_f32.not_nil!.to_unsafe.as(UInt8*)
             else
-              @data_f64.not_nil!.to_unsafe.as(UInt8*)
+              @data_f32.not_nil!.to_unsafe.as(UInt8*)
             end
       Slice(UInt8).new(ptr, bytes)
     end
@@ -78,7 +78,7 @@ module SHAInet
       when Precision::Int8
         @data_i8 = Array(Int8).new(@rows * @cols, init.round.to_i8)
       else
-        @data_f64 = Array(Float64).new(@rows * @cols, init)
+        @data_f32 = Array(Float32).new(@rows * @cols, init.to_f32)
       end
     end
 
@@ -106,7 +106,7 @@ module SHAInet
       when Precision::Bf16
         @data_bf16.not_nil![idx].to_f64
       else
-        @data_f64.not_nil![idx]
+        @data_f32.not_nil![idx].to_f64
       end
     end
 
@@ -122,7 +122,7 @@ module SHAInet
       when Precision::Bf16
         @data_bf16.not_nil![idx] = BFloat16.new(v.to_f32)
       else
-        @data_f64.not_nil![idx] = v
+        @data_f32.not_nil![idx] = v.to_f32
       end
     end
 
