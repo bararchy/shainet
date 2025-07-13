@@ -67,4 +67,19 @@ describe "safe_output_transform" do
       net.call_safe_output_transform(input, weights)
     end
   end
+
+  it "raises on dimension mismatch instead of CUDA error" do
+    pending! "CUDA not available" unless SHAInet::CUDA.available?
+
+    net = SHAInet::Network.new
+    net.precision = SHAInet::Precision::Fp32
+    net.hidden_layers << SHAInet::TransformerBlock.new(2, 1, 2)
+
+    input = SHAInet::CudaMatrix.new(2, 2, precision: SHAInet::Precision::Fp32)
+    weights = SHAInet::CudaMatrix.new(4, 1, precision: SHAInet::Precision::Fp32)
+
+    expect_raises(ArgumentError, /dimension mismatch/) do
+      net.call_safe_output_transform(input, weights)
+    end
+  end
 end
