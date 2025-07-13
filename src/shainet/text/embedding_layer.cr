@@ -113,10 +113,12 @@ module SHAInet
               CUDA.gather_rows(r_ptr.as(Pointer(Float64)), e_ptr.as(Pointer(Float64)), ids_dev, ids.size, @l_size)
             end
           rescue
+            elem_size = @embeddings.as(CudaMatrix).element_size
+            row_bytes = @l_size * elem_size
             ids.each_with_index do |id, row|
-              src = e_ptr + id*@l_size
-              dst = r_ptr + row*@l_size
-              CUDA.memcpy(dst.as(Pointer(Void)), src.as(Pointer(Void)), (@l_size*8).to_u64, CUDA::MemcpyKind::DeviceToDevice)
+              src = e_ptr + id * row_bytes
+              dst = r_ptr + row * row_bytes
+              CUDA.memcpy(dst.as(Pointer(Void)), src.as(Pointer(Void)), row_bytes.to_u64, CUDA::MemcpyKind::DeviceToDevice)
             end
           end
           CUDA.free(ids_dev.as(Pointer(Void)))
