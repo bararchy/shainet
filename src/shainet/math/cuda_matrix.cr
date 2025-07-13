@@ -12,15 +12,14 @@ module SHAInet
   # to avoid method resolution conflicts.
   class CudaMatrix
     # Device pointer is stored as `Void*` so we can handle different
-    # element types (Float64 or Int8).  Existing code casting to
-    # `Pointer(Float64)` continues to work for Float64 matrices.
+    # element types. Existing code casting to `Pointer(Float32)`
+    # continues to work for FP32 matrices.
     property device_ptr : Pointer(Void)?
     property precision : Precision
     property device_id : Int32
     @device_dirty : Bool = false # Track if GPU data is newer than CPU data
     @rows : Int32
     @cols : Int32
-    @data_f64 : Array(Float64)?
     @data_f32_master : Array(Float32)?
     @data_f16 : Array(Float16)?
     @data_bf16 : Array(BFloat16)?
@@ -65,7 +64,7 @@ module SHAInet
       when Precision::Fp32
         4
       else
-        8
+        4
       end
     end
 
@@ -76,6 +75,7 @@ module SHAInet
     end
 
     private def compute_in_f32?(other_precision : Precision? = nil)
+      return false if @precision == Precision::Int8 || other_precision == Precision::Int8
       true
     end
 
@@ -143,24 +143,19 @@ module SHAInet
       case precision
       when Precision::Int8
         @data_i8 = Array(Int8).new(@rows * @cols, init.round.to_i8)
-        @data_f64 = nil
       when Precision::Fp16
         @data_f16 = Array(Float16).new(@rows * @cols) { Float16.new(init.to_f32) }
         @data_f32_master = Array(Float32).new(@rows * @cols, init.to_f32)
-        @data_f64 = nil
         @data_i8 = nil
       when Precision::Bf16
         @data_bf16 = Array(BFloat16).new(@rows * @cols) { BFloat16.new(init.to_f32) }
         @data_f32_master = Array(Float32).new(@rows * @cols, init.to_f32)
-        @data_f64 = nil
         @data_i8 = nil
       when Precision::Fp32
         @data_f32_master = Array(Float32).new(@rows * @cols, init.to_f32)
-        @data_f64 = nil
         @data_i8 = nil
       else
         @data_f32_master = Array(Float32).new(@rows * @cols, init.to_f32)
-        @data_f64 = nil
         @data_i8 = nil
       end
       @device_ptr = Pointer(Void).null
@@ -219,7 +214,7 @@ module SHAInet
       when Precision::Fp16, Precision::Bf16, Precision::Fp32
         @data_f32_master.not_nil![idx].to_f64
       else
-        @data_f64.not_nil![idx]
+        @data_f32_master.not_nil![idx].to_f64
       end
     end
 
@@ -237,7 +232,7 @@ module SHAInet
       when Precision::Fp32
         @data_f32_master.not_nil![idx] = value.to_f32
       else
-        @data_f64.not_nil![idx] = value
+        @data_f32_master.not_nil![idx] = value.to_f32
       end
       # CPU data is now newer, need to sync to device before next GPU op
       mark_device_clean!
@@ -252,7 +247,7 @@ module SHAInet
       when Precision::Fp16, Precision::Bf16, Precision::Fp32
         @data_f32_master.not_nil![idx].to_f64
       else
-        @data_f64.not_nil![idx]
+        @data_f32_master.not_nil![idx].to_f64
       end
     end
 
@@ -271,7 +266,7 @@ module SHAInet
       when Precision::Fp32
         @data_f32_master.not_nil![idx] = value.to_f32
       else
-        @data_f64.not_nil![idx] = value
+        @data_f32_master.not_nil![idx] = value.to_f32
       end
     end
 
@@ -432,7 +427,7 @@ module SHAInet
               when Precision::Fp32
                 @data_f32_master.not_nil!.to_unsafe.as(Pointer(Void))
               else
-                @data_f64.not_nil!.to_unsafe.as(Pointer(Void))
+                @data_f32_master.not_nil!.to_unsafe.as(Pointer(Void))
               end
         copy_result = CUDA.memcpy(dptr.as(Pointer(Void)), ptr, bytes, CUDA::MemcpyKind::HostToDevice)
 
@@ -482,7 +477,7 @@ module SHAInet
                       arr_f32 = @data_f32_master.not_nil!
                       {arr_f32.to_unsafe.as(Pointer(Void)), -> { }}
                     else
-                      {@data_f64.not_nil!.to_unsafe.as(Pointer(Void)), -> { }}
+                      {@data_f32_master.not_nil!.to_unsafe.as(Pointer(Void)), -> { }}
                     end
         copy_result = CUDA.memcpy(ptr, dptr.as(Pointer(Void)), bytes, CUDA::MemcpyKind::DeviceToHost)
 
@@ -1007,7 +1002,6 @@ module SHAInet
       end
       self.sync_to_device!("relu_result")
 
-
       mark_device_dirty!
       self
     end
@@ -1028,7 +1022,7 @@ module SHAInet
             dptr.as(Pointer(Float32)),
             size)
         else
-          raise "no GELU kernel for #{@precision}" 
+          raise "no GELU kernel for #{@precision}"
         end
       rescue e
         Log.error { "CUDA GELU failed: #{e}, falling back to CPU" }
@@ -1054,7 +1048,7 @@ module SHAInet
 
       # Try precision-specific GPU implementations
       if @precision.in?({Precision::Fp16, Precision::Bf16, Precision::Fp32}) &&
-            vec.precision == @precision && CUDNN.available?
+         vec.precision == @precision && CUDNN.available?
         {% if flag?(:enable_cuda) %}
           stat = LibCUDNN.cudnnCreateOpTensorDescriptor(out op_desc)
           begin
@@ -1178,7 +1172,7 @@ module SHAInet
       when Precision::Fp16, Precision::Bf16, Precision::Fp32
         @data_f32_master.not_nil!.dup.map(&.to_f64)
       else
-        @data_f64.not_nil!.dup
+        @data_f32_master.not_nil!.dup.map(&.to_f64)
       end
     end
 
@@ -1207,7 +1201,7 @@ module SHAInet
       when Precision::Fp16, Precision::Bf16, Precision::Fp32
         @data_f32_master.not_nil!.map(&.to_f64)
       else
-        @data_f64.not_nil!
+        @data_f32_master.not_nil!
       end
     end
 
@@ -1226,7 +1220,7 @@ module SHAInet
             when Precision::Fp32
               @data_f32_master.not_nil!.to_unsafe.as(UInt8*)
             else
-              @data_f64.not_nil!.to_unsafe.as(UInt8*)
+              @data_f32_master.not_nil!.to_unsafe.as(UInt8*)
             end
       Slice(UInt8).new(ptr, bytes)
     end

@@ -32,14 +32,14 @@ module SHAInet
 
     private def convert_num(v : GenNum)
       case @precision
-      when Precision::Fp32
-        v.to_f32
       when Precision::Fp16
         Float16.new(v.to_f32)
       when Precision::Bf16
         BFloat16.new(v.to_f32)
-      else
+      when Precision::Int8
         v.to_f32.to_f64
+      else
+        v.to_f32
       end
     end
 
