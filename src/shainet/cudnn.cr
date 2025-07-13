@@ -254,7 +254,7 @@ module SHAInet
       when Precision::Int8
         LibCUDNN::CudnnDataType::CUDNN_DATA_INT8
       else
-        LibCUDNN::CudnnDataType::CUDNN_DATA_DOUBLE
+        LibCUDNN::CudnnDataType::CUDNN_DATA_FLOAT
       end
     end
 
@@ -279,8 +279,8 @@ module SHAInet
         buf.to_unsafe.as(Pointer(Int8))[0] = value.round.to_i8
         buf
       else
-        buf = Bytes.new(sizeof(Float64))
-        buf.to_unsafe.as(Pointer(Float64))[0] = value
+        buf = Bytes.new(sizeof(Float32))
+        buf.to_unsafe.as(Pointer(Float32))[0] = value.to_f32
         buf
       end
     end
