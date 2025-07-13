@@ -653,7 +653,7 @@ module SHAInet
             dtype_a_lib = dtype_a.is_a?(CUDA::LibCUBLAS::DataType) ? dtype_a : CUDA::LibCUBLAS::DataType.new(dtype_a.value)
             dtype_c = CUDA.data_type_for(result.precision)
             dtype_c_lib = dtype_c.is_a?(CUDA::LibCUBLAS::DataType) ? dtype_c : CUDA::LibCUBLAS::DataType.new(dtype_c.value)
-            CUDA.gemm_ex(handle,
+            status = CUDA.gemm_ex(handle,
               ptr_b, ptr_a, result.device_ptr.not_nil!,
               other.cols, @rows, other.rows,
               other.cols, @cols, result.cols,
@@ -661,12 +661,42 @@ module SHAInet
               dtype_a_lib,
               dtype_c_lib,
               compute)
+            if status != 0
+              Log.error { "gemm_ex failed with status #{status} for A #{@rows}x#{@cols} B #{other.rows}x#{other.cols}" }
+              self.sync_from_device!("gemm_fallback") if device_dirty?
+              other.sync_from_device!("gemm_fallback") if other.device_dirty?
+              @rows.times do |i|
+                other.cols.times do |j|
+                  sum = 0.0
+                  @cols.times do |k|
+                    sum += self.unsafe_get(i, k) * other.unsafe_get(k, j)
+                  end
+                  result.unsafe_set(i, j, sum)
+                end
+              end
+              result.sync_to_device!("gemm_fallback_result")
+            end
           else
-            CUDA.sgemm(handle,
+            status = CUDA.sgemm(handle,
               ptr_b.as(Pointer(Float32)), ptr_a.as(Pointer(Float32)),
               result.device_ptr.not_nil!.as(Pointer(Float32)),
               other.cols, @rows, other.rows,
               other.cols, @cols, result.cols)
+            if status != 0
+              Log.error { "sgemm failed with status #{status} for A #{@rows}x#{@cols} B #{other.rows}x#{other.cols}" }
+              self.sync_from_device!("gemm_fallback") if device_dirty?
+              other.sync_from_device!("gemm_fallback") if other.device_dirty?
+              @rows.times do |i|
+                other.cols.times do |j|
+                  sum = 0.0
+                  @cols.times do |k|
+                    sum += self.unsafe_get(i, k) * other.unsafe_get(k, j)
+                  end
+                  result.unsafe_set(i, j, sum)
+                end
+              end
+              result.sync_to_device!("gemm_fallback_result")
+            end
           end
         else
           # Optimized cuBLAS GEMM - account for row-major vs column-major difference
