@@ -247,6 +247,19 @@ __global__ void element_div_kernel_t(T *out, const T *a, const T *b, int size) {
 }
 
 template <typename T>
+__global__ void element_mul_kernel_t(T *out, const T *a, const T *b,
+                                     float alpha, float beta, int size) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= size)
+    return;
+
+  float av = Convert<T>::to_float(a[idx]);
+  float bv = Convert<T>::to_float(b[idx]);
+  float ov = Convert<T>::to_float(out[idx]);
+  out[idx] = Convert<T>::from_float(alpha * av * bv + beta * ov);
+}
+
+template <typename T>
 __global__ void sum_cols_kernel_t(T *out, const T *in, int rows, int cols) {
   int col = blockIdx.x;
   if (col >= cols)
@@ -363,8 +376,8 @@ void dropout_bf16(__nv_bfloat16 *out, const __nv_bfloat16 *in, int rows,
   }
 }
 
-void dropout_f32(float *out, const float *in, int rows, int cols,
-                 double drop_p, unsigned long long seed) {
+void dropout_f32(float *out, const float *in, int rows, int cols, double drop_p,
+                 unsigned long long seed) {
   dropout_kernel_t<<<rows, 1>>>(out, in, rows, cols, (float)drop_p, seed);
   cudaError_t err = cudaDeviceSynchronize();
   if (err != cudaSuccess) {
@@ -483,8 +496,7 @@ void apply_layer_norm_bf16(__nv_bfloat16 *out, const __nv_bfloat16 *in,
 }
 
 void apply_layer_norm_f32(float *out, const float *in, const float *mean,
-                          const float *var, int rows, int cols,
-                          float epsilon) {
+                          const float *var, int rows, int cols, float epsilon) {
   apply_layer_norm_kernel_t<<<rows, 1>>>(out, in, mean, var, rows, cols,
                                          epsilon);
   cudaDeviceSynchronize();
@@ -613,7 +625,7 @@ void sum_cols_fp16(__half *out, const __half *in, int rows, int cols) {
 }
 
 void sum_cols_bf16(__nv_bfloat16 *out, const __nv_bfloat16 *in, int rows,
-                    int cols) {
+                   int cols) {
   sum_cols_kernel_t<<<cols, 1>>>(out, in, rows, cols);
   cudaDeviceSynchronize();
 }
@@ -744,7 +756,8 @@ void gelu_forward(double *activations, double *derivatives,
   }
 }
 
-__global__ void sigmoid_forward_kernel_f32(float *activations, float *derivatives,
+__global__ void sigmoid_forward_kernel_f32(float *activations,
+                                           float *derivatives,
                                            const float *linear, int size) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx >= size)
@@ -775,8 +788,8 @@ void gelu_forward_f32(float *activations, float *derivatives,
   int threads_per_block = 256;
   int blocks = (size + threads_per_block - 1) / threads_per_block;
 
-  gelu_forward_kernel_f32<<<blocks, threads_per_block>>>(activations, derivatives,
-                                                         linear, size);
+  gelu_forward_kernel_f32<<<blocks, threads_per_block>>>(
+      activations, derivatives, linear, size);
   cudaError_t err = cudaDeviceSynchronize();
   if (err != cudaSuccess) {
     printf("CUDA Error in gelu_forward_f32: %s\n", cudaGetErrorString(err));
@@ -788,8 +801,8 @@ void sigmoid_forward_f32(float *activations, float *derivatives,
   int threads_per_block = 256;
   int blocks = (size + threads_per_block - 1) / threads_per_block;
 
-  sigmoid_forward_kernel_f32<<<blocks, threads_per_block>>>(activations, derivatives,
-                                                            linear, size);
+  sigmoid_forward_kernel_f32<<<blocks, threads_per_block>>>(
+      activations, derivatives, linear, size);
   cudaError_t err = cudaDeviceSynchronize();
   if (err != cudaSuccess) {
     printf("CUDA Error in sigmoid_forward_f32: %s\n", cudaGetErrorString(err));
@@ -893,7 +906,7 @@ void row_sum_fp16(__half *dst, const __half *src, int rows, int cols) {
 }
 
 void row_sum_bf16(__nv_bfloat16 *dst, const __nv_bfloat16 *src, int rows,
-                   int cols) {
+                  int cols) {
   int threads_per_block = 256;
   int blocks = (cols + threads_per_block - 1) / threads_per_block;
   row_sum_kernel_t<<<blocks, threads_per_block>>>(dst, src, rows, cols);
@@ -941,7 +954,6 @@ __global__ void zero_matrix_kernel(double *matrix, int size) {
 
   matrix[idx] = 0.0;
 }
-
 
 void zero_matrix(double *matrix, int size) {
   int threads_per_block = 256;
@@ -1080,7 +1092,7 @@ void element_div_fp16(__half *out, const __half *a, const __half *b, int size) {
 }
 
 void element_div_bf16(__nv_bfloat16 *out, const __nv_bfloat16 *a,
-                       const __nv_bfloat16 *b, int size) {
+                      const __nv_bfloat16 *b, int size) {
   int threads_per_block = 256;
   int blocks = (size + threads_per_block - 1) / threads_per_block;
   element_div_kernel_t<<<blocks, threads_per_block>>>(out, a, b, size);
@@ -1100,21 +1112,9 @@ void element_div_f32(float *out, const float *a, const float *b, int size) {
   }
 }
 
-template <typename T>
-__global__ void element_mul_kernel_t(T *out, const T *a, const T *b, float alpha,
-                                     float beta, int size) {
-  int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  if (idx >= size)
-    return;
-
-  float av = Convert<T>::to_float(a[idx]);
-  float bv = Convert<T>::to_float(b[idx]);
-  float ov = Convert<T>::to_float(out[idx]);
-  out[idx] = Convert<T>::from_float(alpha * av * bv + beta * ov);
-}
-
-__global__ void element_mul_kernel(double *out, const double *a, const double *b,
-                                   double alpha, double beta, int size) {
+__global__ void element_mul_kernel(double *out, const double *a,
+                                   const double *b, double alpha, double beta,
+                                   int size) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx >= size)
     return;
@@ -1134,12 +1134,12 @@ void element_mul(double *out, const double *a, const double *b, double alpha,
   }
 }
 
-void element_mul_fp16(__half *out, const __half *a, const __half *b, double alpha,
-                      double beta, int size) {
+void element_mul_fp16(__half *out, const __half *a, const __half *b,
+                      double alpha, double beta, int size) {
   int threads_per_block = 256;
   int blocks = (size + threads_per_block - 1) / threads_per_block;
-  element_mul_kernel_t<<<blocks, threads_per_block>>>(
-      out, a, b, (float)alpha, (float)beta, size);
+  element_mul_kernel_t<<<blocks, threads_per_block>>>(out, a, b, (float)alpha,
+                                                      (float)beta, size);
   cudaError_t err = cudaDeviceSynchronize();
   if (err != cudaSuccess) {
     printf("CUDA Error in element_mul_fp16: %s\n", cudaGetErrorString(err));
@@ -1151,8 +1151,8 @@ void element_mul_bf16(__nv_bfloat16 *out, const __nv_bfloat16 *a,
                       int size) {
   int threads_per_block = 256;
   int blocks = (size + threads_per_block - 1) / threads_per_block;
-  element_mul_kernel_t<<<blocks, threads_per_block>>>(
-      out, a, b, (float)alpha, (float)beta, size);
+  element_mul_kernel_t<<<blocks, threads_per_block>>>(out, a, b, (float)alpha,
+                                                      (float)beta, size);
   cudaError_t err = cudaDeviceSynchronize();
   if (err != cudaSuccess) {
     printf("CUDA Error in element_mul_bf16: %s\n", cudaGetErrorString(err));
@@ -1160,11 +1160,11 @@ void element_mul_bf16(__nv_bfloat16 *out, const __nv_bfloat16 *a,
 }
 
 void element_mul_f32(float *out, const float *a, const float *b, double alpha,
-                      double beta, int size) {
+                     double beta, int size) {
   int threads_per_block = 256;
   int blocks = (size + threads_per_block - 1) / threads_per_block;
-  element_mul_kernel_t<<<blocks, threads_per_block>>>(
-      out, a, b, (float)alpha, (float)beta, size);
+  element_mul_kernel_t<<<blocks, threads_per_block>>>(out, a, b, (float)alpha,
+                                                      (float)beta, size);
   cudaError_t err = cudaDeviceSynchronize();
   if (err != cudaSuccess) {
     printf("CUDA Error in element_mul_f32: %s\n", cudaGetErrorString(err));
@@ -1330,7 +1330,8 @@ void softmax_cross_entropy_label(double *pred, const int *labels, double *grad,
 
 __global__ void softmax_cross_entropy_label_matrix_kernel(const double *pred,
                                                           const double *labels,
-                                                          double *grad, double *loss,
+                                                          double *grad,
+                                                          double *loss,
                                                           int rows, int cols) {
   int row = blockIdx.x;
   if (row >= rows)
@@ -1366,11 +1367,12 @@ __global__ void softmax_cross_entropy_label_matrix_kernel(const double *pred,
   }
 }
 
-void softmax_cross_entropy_label_matrix(double *pred, const double *labels, double *grad,
-                                         double *loss, int rows, int cols) {
+void softmax_cross_entropy_label_matrix(double *pred, const double *labels,
+                                        double *grad, double *loss, int rows,
+                                        int cols) {
   cudaMemset(loss, 0, sizeof(double));
-  softmax_cross_entropy_label_matrix_kernel<<<rows, 1>>>(pred, labels, grad, loss,
-                                                         rows, cols);
+  softmax_cross_entropy_label_matrix_kernel<<<rows, 1>>>(pred, labels, grad,
+                                                         loss, rows, cols);
   cudaError_t err = cudaDeviceSynchronize();
   if (err != cudaSuccess) {
     printf("CUDA Error in softmax_cross_entropy_label_matrix: %s\n",
