@@ -276,7 +276,7 @@ The JSON contains training attributes and residual connections:
 {
   "learning_rate": 0.005,
   "momentum": 0.05,
-  "precision": "Fp64",
+  "precision": "Fp32",
   "warmup_steps": 0,
   "decay_type": null,
   "decay_rate": 0.0,

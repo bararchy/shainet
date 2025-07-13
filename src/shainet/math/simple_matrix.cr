@@ -10,9 +10,6 @@ module SHAInet
     property precision : Precision
 
     private def compute_in_f32?(other_precision : Precision? = nil)
-      p1 = @precision
-      p2 = other_precision || @precision
-      return false if p1 == Precision::Fp64 && p2 == Precision::Fp64
       true
     end
 
@@ -70,10 +67,8 @@ module SHAInet
 
     def initialize(@rows : Int32, @cols : Int32,
                    init : Float64 = 0.0,
-                   @precision : Precision = Precision::Fp64)
+                   @precision : Precision = Precision::Fp32)
       case @precision
-      when Precision::Fp64
-        @data_f64 = Array(Float64).new(@rows * @cols, init)
       when Precision::Fp32
         @data_f32 = Array(Float32).new(@rows * @cols, init.to_f32)
       when Precision::Fp16
@@ -82,14 +77,16 @@ module SHAInet
         @data_bf16 = Array(BFloat16).new(@rows * @cols, BFloat16.new(init.to_f32))
       when Precision::Int8
         @data_i8 = Array(Int8).new(@rows * @cols, init.round.to_i8)
+      else
+        @data_f64 = Array(Float64).new(@rows * @cols, init)
       end
     end
 
-    def self.zeros(rows : Int32, cols : Int32, precision : Precision = Precision::Fp64)
+    def self.zeros(rows : Int32, cols : Int32, precision : Precision = Precision::Fp32)
       new(rows, cols, 0.0, precision)
     end
 
-    def self.ones(rows : Int32, cols : Int32, precision : Precision = Precision::Fp64)
+    def self.ones(rows : Int32, cols : Int32, precision : Precision = Precision::Fp32)
       new(rows, cols, 1.0, precision)
     end
 
@@ -249,7 +246,7 @@ module SHAInet
     end
 
     # Construct a matrix from a nested Array
-    def self.from_a(array : Array(Array(GenNum)), precision : Precision = Precision::Fp64)
+    def self.from_a(array : Array(Array(GenNum)), precision : Precision = Precision::Fp32)
       rows = array.size
       cols = array.first.size
       m = SimpleMatrix.new(rows, cols, 0.0, precision)
@@ -265,8 +262,6 @@ module SHAInet
     # storage precision.
     def to_f32 : Array(Float32)
       case @precision
-      when Precision::Fp64
-        @data_f64.not_nil!.map(&.to_f32)
       when Precision::Fp32
         @data_f32.not_nil!
       when Precision::Fp16
@@ -284,8 +279,6 @@ module SHAInet
     # storage precision.
     def to_f64 : Array(Float64)
       case @precision
-      when Precision::Fp64
-        @data_f64.not_nil!
       when Precision::Fp32
         @data_f32.not_nil!.map(&.to_f64)
       when Precision::Fp16
@@ -487,7 +480,7 @@ module SHAInet
       raise ArgumentError.new("precision mismatch") unless a.precision == Precision::Int8 && b.precision == Precision::Int8
       raise ArgumentError.new("size mismatch") unless a.cols == b.rows
 
-      result = SimpleMatrix.new(a.rows, b.cols, 0.0, Precision::Fp64)
+      result = SimpleMatrix.new(a.rows, b.cols, 0.0, Precision::Fp32)
       a.rows.times do |i|
         b.cols.times do |j|
           sum = 0_i32

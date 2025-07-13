@@ -113,8 +113,6 @@ module SHAInet
     # Map SHAInet precision values to cuBLAS data and compute types
     def data_type_for(p : Precision) : LibCUBLAS::DataType
       case p
-      when Precision::Fp64
-        LibCUBLAS::DataType::CUDA_R_64F
       when Precision::Fp32
         LibCUBLAS::DataType::CUDA_R_32F
       when Precision::Fp16
@@ -124,14 +122,12 @@ module SHAInet
       when Precision::Int8
         LibCUBLAS::DataType::CUDA_R_8I
       else
-        LibCUBLAS::DataType::CUDA_R_64F
+        LibCUBLAS::DataType::CUDA_R_32F
       end
     end
 
     def compute_type_for(p : Precision) : LibCUBLAS::ComputeType
       case p
-      when Precision::Fp64
-        LibCUBLAS::ComputeType::CUBLAS_COMPUTE_64F
       when Precision::Fp32
         LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F
       when Precision::Fp16
@@ -141,7 +137,7 @@ module SHAInet
       when Precision::Int8
         LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32I
       else
-        LibCUBLAS::ComputeType::CUBLAS_COMPUTE_64F
+        LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F
       end
     end
 

@@ -572,7 +572,7 @@ module SHAInet
     private def ensure_workspace_matrices(batch_size : Int32)
       return unless CUDA.fully_available?
 
-      precision = @w1.is_a?(CudaMatrix) ? @w1.as(CudaMatrix).precision : Precision::Fp64
+      precision = @w1.is_a?(CudaMatrix) ? @w1.as(CudaMatrix).precision : Precision::Fp32
 
       d_model = @w1.rows
       hidden = @w1.cols

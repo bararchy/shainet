@@ -26,7 +26,7 @@ module SHAInet
     @forward_workspace : CudaMatrix | Nil
     @grad_workspace : CudaMatrix | Nil
 
-    def initialize(in_size : Int32, @size : Int32, *, precision : Precision = Precision::Fp64)
+    def initialize(in_size : Int32, @size : Int32, *, precision : Precision = Precision::Fp32)
       @l_size = @size
       @precision = precision
       @activation_function = SHAInet.sigmoid
@@ -55,11 +55,11 @@ module SHAInet
     end
 
     def initialize(in_size : Int32, size : Int32)
-      initialize(in_size, size, SHAInet.sigmoid, precision: Precision::Fp64)
+      initialize(in_size, size, SHAInet.sigmoid, precision: Precision::Fp32)
     end
 
     # Constructor for compatibility with Layer API
-    def initialize(@size : Int32, @activation_function : ActivationFunction = SHAInet.sigmoid, *, precision : Precision = Precision::Fp64)
+    def initialize(@size : Int32, @activation_function : ActivationFunction = SHAInet.sigmoid, *, precision : Precision = Precision::Fp32)
       @l_size = @size
       @precision = precision
       mat_klass = CUDA.fully_available? ? CudaMatrix : SimpleMatrix
@@ -87,7 +87,7 @@ module SHAInet
     end
 
     # Constructor with custom activation function
-    def initialize(in_size : Int32, @size : Int32, @activation_function : ActivationFunction, *, precision : Precision = Precision::Fp64)
+    def initialize(in_size : Int32, @size : Int32, @activation_function : ActivationFunction, *, precision : Precision = Precision::Fp32)
       @l_size = @size
       @precision = precision
       mat_klass = CUDA.fully_available? ? CudaMatrix : SimpleMatrix
@@ -198,13 +198,6 @@ module SHAInet
             activations_cuda.device_ptr.not_nil!.as(Pointer(Float32)),
             sigma_primes_cuda.device_ptr.not_nil!.as(Pointer(Float32)),
             linear_result.device_ptr.not_nil!.as(Pointer(Float32)),
-            size
-          )
-        when Precision::Fp64
-          CUDA.sigmoid_forward(
-            activations_cuda.device_ptr.not_nil!.as(Pointer(Float64)),
-            sigma_primes_cuda.device_ptr.not_nil!.as(Pointer(Float64)),
-            linear_result.device_ptr.not_nil!.as(Pointer(Float64)),
             size
           )
         else
@@ -340,18 +333,10 @@ module SHAInet
       # Apply activation derivative: grad ⊙ σ'
       local_grad = grad.clone
 
-      if @precision == Precision::Fp64 && grad.precision == Precision::Fp64
-        local_grad.rows.times do |i|
-          local_grad.cols.times do |j|
-            local_grad[i, j] = grad[i, j] * sigma_primes[i, j]
-          end
-        end
-      else
-        local_grad.rows.times do |i|
-          local_grad.cols.times do |j|
-            v = grad[i, j].to_f32 * sigma_primes[i, j].to_f32
-            local_grad[i, j] = v.to_f64
-          end
+      local_grad.rows.times do |i|
+        local_grad.cols.times do |j|
+          v = grad[i, j].to_f32 * sigma_primes[i, j].to_f32
+          local_grad[i, j] = v.to_f64
         end
       end
 
@@ -361,12 +346,8 @@ module SHAInet
       # Accumulate bias gradients: ∂L/∂b += sum(local_grad, axis=0)
       local_grad.rows.times do |i|
         local_grad.cols.times do |j|
-          if @precision == Precision::Fp64
-            @g_b[0, j] += local_grad[i, j]
-          else
-            val = @g_b[0, j].to_f32 + local_grad[i, j].to_f32
-            @g_b[0, j] = val.to_f64
-          end
+          val = @g_b[0, j].to_f32 + local_grad[i, j].to_f32
+          @g_b[0, j] = val.to_f64
         end
       end
 
@@ -405,7 +386,7 @@ module SHAInet
         w_cuda = @weights.as(CudaMatrix)
         w_cuda.weight_update!(@g_w.as(CudaMatrix), learning_rate)
         if weight_decay != 0.0
-          if w_cuda.precision == Precision::Fp64
+          if w_cuda.precision.fp32?
             w_cuda.scale!(1.0 - weight_decay)
           else
             # CPU fallback for precisions lacking cuBLAS scal
