@@ -1402,12 +1402,17 @@ module SHAInet
           rows = arr.size
           cols = arr[0].as(Array).size
           mat = CudaMatrix.new(rows, cols, precision: @precision)
-          GPUMemory.to_gpu!(arr.as(Array(Array(GenNum))), mat)
+          arr_typed = Array(Array(GenNum)).new(rows) do |i|
+            row = arr[i].as(Array)
+            Array(GenNum).new(cols) { |j| row[j].as(GenNum) }
+          end
+          GPUMemory.to_gpu!(arr_typed, mat)
           mat
         else
           cols = arr.size
           mat = CudaMatrix.new(1, cols, precision: @precision)
-          GPUMemory.to_gpu!(arr.as(Array(GenNum)), mat)
+          arr_typed = Array(GenNum).new(cols) { |i| arr[i].as(GenNum) }
+          GPUMemory.to_gpu!(arr_typed, mat)
           mat
         end
       else
