@@ -551,6 +551,8 @@ module SHAInet
       b.sync_to_device!("cudnn_element_add_b") unless b.device_dirty?
       result.sync_to_device!("cudnn_element_add_out") unless result.device_dirty?
 
+      cudnn_failed = false
+
       if available?
         # Attempt to use cuDNN OpTensor for the addition
         op_desc = uninitialized LibCUDNN::CudnnOpTensorDescriptor
@@ -586,6 +588,10 @@ module SHAInet
             ))
 
             result.mark_device_dirty!
+            return
+          rescue e : CudnnError
+            cudnn_failed = true
+            Log.warn { "cuDNN element_add failed: #{e} - falling back to CPU" }
           ensure
             LibCUDNN.cudnnDestroyTensorDescriptor(a_desc)
             LibCUDNN.cudnnDestroyTensorDescriptor(b_desc)
@@ -594,12 +600,10 @@ module SHAInet
         ensure
           LibCUDNN.cudnnDestroyOpTensorDescriptor(op_desc)
         end
-      else
-        # cuDNN not available; allow GEAM only for FP64 precisions
-        unless result.precision.fp64? && a.precision.fp64? && b.precision.fp64?
-          raise "cuDNN OpTensor not available - non-FP64 precisions require cuDNN"
-        end
+      end
 
+      # If cuDNN was unavailable or failed, fall back to other implementations
+      if !cudnn_failed && result.precision.fp64? && a.precision.fp64? && b.precision.fp64? && CUDA.available?
         handle = CUDA.create_handle
         begin
           CUDA.geam(handle,
@@ -612,7 +616,23 @@ module SHAInet
         end
 
         result.mark_device_dirty!
+        return
       end
+
+      # Final CPU fallback
+      a.sync_from_device!("cudnn_element_add_fallback") if a.device_dirty?
+      b.sync_from_device!("cudnn_element_add_fallback") if b.device_dirty?
+
+      a.rows.times do |i|
+        a.cols.times do |j|
+          a_val = a.unsafe_get(i, j)
+          b_val = b.unsafe_get(i, j)
+          result.unsafe_set(i, j, alpha * a_val + beta * b_val)
+        end
+      end
+
+      result.sync_to_device!("cudnn_element_add_result") if CUDA.available?
+      result.mark_device_dirty!
     end
 
     # Optimized element-wise multiplication (fallback to custom kernel)
