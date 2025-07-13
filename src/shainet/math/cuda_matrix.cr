@@ -1059,6 +1059,12 @@ module SHAInet
 
       begin
         case @precision
+        when Precision::Fp64
+          CUDA.gelu_forward(
+            dptr.as(Pointer(Float64)),
+            dptr.as(Pointer(Float64)),
+            dptr.as(Pointer(Float64)),
+            size)
         when Precision::Fp32
           CUDA.gelu_forward_fp32(
             dptr.as(Pointer(Float32)),
@@ -1066,11 +1072,7 @@ module SHAInet
             dptr.as(Pointer(Float32)),
             size)
         else
-          CUDA.gelu_forward(
-            dptr.as(Pointer(Float64)),
-            dptr.as(Pointer(Float64)),
-            dptr.as(Pointer(Float64)),
-            size)
+          raise "no GELU kernel for #{@precision}" 
         end
       rescue e
         Log.error { "CUDA GELU failed: #{e}, falling back to CPU" }
