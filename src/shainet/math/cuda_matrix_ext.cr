@@ -99,6 +99,11 @@ module SHAInet
               rptr.as(Pointer(UInt16)),
               dptr.as(Pointer(UInt16)),
               @rows, @cols, prob, seed)
+          when Precision::Fp32
+            CUDA.dropout_fp32(
+              rptr.as(Pointer(Float32)),
+              dptr.as(Pointer(Float32)),
+              @rows, @cols, prob, seed)
           else
             CUDA.dropout(
               rptr.as(Pointer(Float64)),
