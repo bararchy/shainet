@@ -1374,37 +1374,38 @@ module SHAInet
           CUDNN.sigmoid_forward!(self, self)
           return self
         rescue e : Exception
-          Log.error { "cuDNN sigmoid failed: #{e}, falling back to CUDA kernel" }
+          Log.error { "cuDNN sigmoid failed: #{e}, falling back to CUDA/CPU" }
         end
       end
 
-      # Fallback to CUDA kernel
-      raise RuntimeError.new("GPU sigmoid requires valid device pointer") unless (dptr = self.device_ptr) && !dptr.null?
+      if CUDA.fully_available? && (dptr = self.device_ptr) && !dptr.null?
+        self.sync_to_device!("sigmoid_activation") unless device_dirty?
 
-      # Ensure self has up-to-date GPU data
-      self.sync_to_device!("sigmoid_activation") unless device_dirty?
+        size = @rows * @cols
 
-      # Apply sigmoid in-place - use same pointer for all three parameters
-      size = @rows * @cols
-
-      case @precision
-      when Precision::Fp32
-        CUDA.sigmoid_forward_fp32(
-          dptr.as(Pointer(Float32)),
-          dptr.as(Pointer(Float32)),
-          dptr.as(Pointer(Float32)),
-          size)
+        case @precision
+        when Precision::Fp32
+          CUDA.sigmoid_forward_fp32(
+            dptr.as(Pointer(Float32)),
+            dptr.as(Pointer(Float32)),
+            dptr.as(Pointer(Float32)),
+            size)
+          mark_device_dirty!
+          self
+        when Precision::Fp64
+          CUDA.sigmoid_forward(
+            dptr.as(Pointer(Float64)),
+            dptr.as(Pointer(Float64)),
+            dptr.as(Pointer(Float64)),
+            size)
+          mark_device_dirty!
+          self
+        else
+          sigmoid_cpu!
+        end
       else
-        CUDA.sigmoid_forward(
-          dptr.as(Pointer(Float64)),
-          dptr.as(Pointer(Float64)),
-          dptr.as(Pointer(Float64)),
-          size)
+        sigmoid_cpu!
       end
-
-      # Mark self as having newer GPU data
-      mark_device_dirty!
-      self
     end
 
     # High-performance in-place scalar multiplication using cuBLAS SCAL
@@ -1454,6 +1455,21 @@ module SHAInet
         end
       end
       self.sync_to_device!("scale_result") if CUDA.available?
+      mark_device_dirty!
+      self
+    end
+
+    private def sigmoid_cpu!
+      self.sync_from_device!("sigmoid_cpu") if device_dirty?
+
+      @rows.times do |i|
+        @cols.times do |j|
+          val = unsafe_get(i, j)
+          unsafe_set(i, j, 1.0 / (1.0 + Math.exp(-val)))
+        end
+      end
+
+      self.sync_to_device!("sigmoid_result") if CUDA.available?
       mark_device_dirty!
       self
     end
