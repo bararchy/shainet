@@ -85,7 +85,7 @@ module SHAInet
       @weight_decay = 0.0
       @accumulation_steps = 1
       @accumulation_counter = 0
-      @precision = Precision::Fp64
+      @precision = Precision::Fp32
       @decay_type = nil
       @decay_rate = 0.0
       @decay_step = 1

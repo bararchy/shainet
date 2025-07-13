@@ -35,14 +35,14 @@ describe SHAInet::CudaMatrix do
     matrix[1, 1].should eq(4.0 + 1.0)
   end
 
-  it "raises error for non-Fp64 precision when cuDNN is unavailable" do
+  it "raises error for non-Fp32 precision when cuDNN is unavailable" do
     pending! "CUDA not available" unless SHAInet::CUDA.available?
     pending! "cuDNN available" if SHAInet::CUDNN.available?
 
     matrix = SHAInet::CudaMatrix.new(2, 2, 0.0, SHAInet::Precision::Fp32)
     bias = SHAInet::CudaMatrix.new(1, 2, 0.0, SHAInet::Precision::Fp32)
 
-    expect_raises(Exception, /non-FP64 precisions require cuDNN/) do
+    expect_raises(Exception, /non-FP32 precisions require cuDNN/) do
       matrix.add_bias!(bias)
     end
   end

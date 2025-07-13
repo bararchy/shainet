@@ -76,9 +76,6 @@ module SHAInet
     end
 
     private def compute_in_f32?(other_precision : Precision? = nil)
-      p1 = @precision
-      p2 = other_precision || @precision
-      return false if p1 == Precision::Fp64 && p2 == Precision::Fp64
       true
     end
 
@@ -137,7 +134,7 @@ module SHAInet
     end
 
     def initialize(@rows : Int32, @cols : Int32, init : Float64 = 0.0,
-                   precision : Precision = Precision::Fp64, device_id : Int32? = nil)
+                   precision : Precision = Precision::Fp32, device_id : Int32? = nil)
       @precision = precision
       @device_id = device_id || (CUDA.current_device || 0)
       @data_f32_master = nil
@@ -162,7 +159,8 @@ module SHAInet
         @data_f64 = nil
         @data_i8 = nil
       else
-        @data_f64 = Array(Float64).new(@rows * @cols, init)
+        @data_f32_master = Array(Float32).new(@rows * @cols, init.to_f32)
+        @data_f64 = nil
         @data_i8 = nil
       end
       @device_ptr = Pointer(Void).null
@@ -277,7 +275,7 @@ module SHAInet
       end
     end
 
-    def self.from_a(array : Array(Array(GenNum)), precision : Precision = Precision::Fp64)
+    def self.from_a(array : Array(Array(GenNum)), precision : Precision = Precision::Fp32)
       m = new(array.size, array.first.size, 0.0, precision)
       array.each_with_index do |row, i|
         row.each_with_index do |val, j|
@@ -288,14 +286,14 @@ module SHAInet
       m
     end
 
-    def self.zeros(rows : Int32, cols : Int32, precision : Precision = Precision::Fp64)
+    def self.zeros(rows : Int32, cols : Int32, precision : Precision = Precision::Fp32)
       # Create new matrix directly - zeros are often used for weight matrices that persist
       m = new(rows, cols, 0.0, precision)
       m.zero! # Use optimized GPU zero kernel
       m
     end
 
-    def self.ones(rows : Int32, cols : Int32, precision : Precision = Precision::Fp64)
+    def self.ones(rows : Int32, cols : Int32, precision : Precision = Precision::Fp32)
       # Create new matrix directly - ones are often used for weight matrices that persist
       m = new(rows, cols, 1.0, precision)
       m.fill!(1.0)
@@ -347,8 +345,6 @@ module SHAInet
 
       # Use GPU kernel for transpose based on precision
       case @precision
-      when Precision::Fp64
-        CUDA.transpose(dst_ptr.as(Pointer(Float64)), src_ptr.as(Pointer(Float64)), @rows, @cols)
       when Precision::Fp32
         raise "FP32 transpose requires CUDA kernel support" unless CUDA.kernels_available?
         CUDA.transpose_fp32(dst_ptr.as(Pointer(Float32)), src_ptr.as(Pointer(Float32)), @rows, @cols)
@@ -378,8 +374,6 @@ module SHAInet
 
       # Perform transpose using CUDA kernel based on precision
       case @precision
-      when Precision::Fp64
-        CUDA.transpose(dst_ptr.as(Pointer(Float64)), src_ptr.as(Pointer(Float64)), @rows, @cols)
       when Precision::Fp32
         raise "FP32 transpose requires CUDA kernel support" unless CUDA.kernels_available?
         CUDA.transpose_fp32(dst_ptr.as(Pointer(Float32)), src_ptr.as(Pointer(Float32)), @rows, @cols)
@@ -605,7 +599,7 @@ module SHAInet
       result = CudaMatrix.new(
         @rows,
         other.cols,
-        precision: res_prec || Precision::Fp64,
+        precision: res_prec || Precision::Fp32,
         device_id: self.device_id
       )
       raise RuntimeError.new("Failed to allocate result matrix on GPU") unless result.device_ptr && !result.device_ptr.not_nil!.null?
@@ -730,7 +724,7 @@ module SHAInet
       result = CudaMatrix.new(
         @rows,
         @cols,
-        precision: res_prec || Precision::Fp64,
+        precision: res_prec || Precision::Fp32,
         device_id: self.device_id
       )
       raise RuntimeError.new("Failed to allocate result matrix on GPU") unless result.device_ptr && !result.device_ptr.not_nil!.null?
@@ -741,16 +735,10 @@ module SHAInet
           CUDNN.element_add!(result, self, other, 1.0, 1.0)
           return result
         rescue e : Exception
-          if self.precision.fp64? && other.precision.fp64? && result.precision.fp64?
-            Log.error { "cuDNN element_add failed: #{e}, falling back to cuBLAS" }
-          else
-            raise e
-          end
+          raise e
         end
       else
-        unless self.precision.fp64? && other.precision.fp64? && result.precision.fp64?
-          raise "cuDNN not available - non-FP64 precisions require cuDNN"
-        end
+        raise "cuDNN not available - non-FP32 precisions require cuDNN"
       end
 
       # Fallback to cuBLAS GEAM (only FP64)
@@ -780,7 +768,7 @@ module SHAInet
       result = CudaMatrix.new(
         @rows,
         @cols,
-        precision: res_prec || Precision::Fp64,
+        precision: res_prec || Precision::Fp32,
         device_id: self.device_id
       )
       raise RuntimeError.new("Failed to allocate result matrix on GPU") unless result.device_ptr && !result.device_ptr.not_nil!.null?
@@ -870,16 +858,10 @@ module SHAInet
           CUDNN.element_add!(self, self, other, 1.0, 1.0)
           return self
         rescue e : Exception
-          if self.precision.fp64? && other.precision.fp64?
-            Log.error { "cuDNN element_add failed: #{e}, falling back to cuBLAS" }
-          else
-            raise e
-          end
+          raise e
         end
       else
-        unless self.precision.fp64? && other.precision.fp64?
-          raise "cuDNN not available - non-FP64 precisions require cuDNN"
-        end
+        raise "cuDNN not available - non-FP32 precisions require cuDNN"
       end
 
       # Fallback to cuBLAS GEAM (only FP64)
@@ -918,23 +900,12 @@ module SHAInet
 
     # Fill matrix with a constant value in-place.
     def fill!(value : Float64)
-      if CUDA.fully_available? && (dptr = device_ptr) && !dptr.null? && @precision == Precision::Fp64
-        size = @rows * @cols
-        if value == 0.0
-          CUDA.zero_matrix(dptr.as(Pointer(Float64)), size)
-        else
-          CUDA.fill_matrix(dptr.as(Pointer(Float64)), value, size)
+      @rows.times do |i|
+        @cols.times do |j|
+          unsafe_set(i, j, value)
         end
-        mark_device_dirty!
-      else
-        # CPU fallback
-        @rows.times do |i|
-          @cols.times do |j|
-            unsafe_set(i, j, value)
-          end
-        end
-        mark_device_clean!
       end
+      mark_device_clean!
       self
     end
 
@@ -1003,24 +974,10 @@ module SHAInet
 
         mark_device_dirty!
         return self
-      elsif !(self.precision == Precision::Fp64 && bias.precision == Precision::Fp64)
-        raise "CUDA fallback for add_bias! only supports Precision::Fp64; non-FP64 precisions require cuDNN"
+      else
+        raise "CUDA fallback for add_bias! only supports Precision::Fp32; non-FP32 precisions require cuDNN"
       end
-
-      raise RuntimeError.new("GPU add_bias! requires valid device pointers") unless (dptr = self.device_ptr) && (bptr = bias.device_ptr) && !dptr.null? && !bptr.null?
-
-      # Ensure both matrices have up-to-date GPU data
-      self.sync_to_device!("bias_addition") unless device_dirty?
-      bias.sync_to_device!("bias_addition") unless bias.device_dirty?
-
-      CUDA.add_bias(
-        dptr.as(Pointer(Float64)),
-        bptr.as(Pointer(Float64)),
-        @rows, @cols)
-
-      # Mark self as having newer GPU data
-      mark_device_dirty!
-      self
+      # This path is unreachable for current precisions
     end
 
     # Element-wise ReLU activation in-place.
@@ -1040,27 +997,16 @@ module SHAInet
       # Ensure self has up-to-date GPU data
       self.sync_to_device!("relu_activation") unless device_dirty?
 
-      kernel_used = false
-
-      if @precision == Precision::Fp64
-        begin
-          CUDA.relu(dptr.as(Pointer(Float64)), (@rows * @cols))
-          kernel_used = true
-        rescue e
-          Log.error { "CUDA ReLU failed: #{e}, falling back to CPU" }
+      # CPU fallback only - GPU kernels removed
+      self.sync_from_device!("relu_fallback") if device_dirty?
+      @rows.times do |i|
+        @cols.times do |j|
+          val = unsafe_get(i, j)
+          unsafe_set(i, j, val > 0 ? val : 0.0)
         end
       end
+      self.sync_to_device!("relu_result")
 
-      unless kernel_used
-        self.sync_from_device!("relu_fallback") if device_dirty?
-        @rows.times do |i|
-          @cols.times do |j|
-            val = unsafe_get(i, j)
-            unsafe_set(i, j, val > 0 ? val : 0.0)
-          end
-        end
-        self.sync_to_device!("relu_result")
-      end
 
       mark_device_dirty!
       self
@@ -1075,12 +1021,6 @@ module SHAInet
 
       begin
         case @precision
-        when Precision::Fp64
-          CUDA.gelu_forward(
-            dptr.as(Pointer(Float64)),
-            dptr.as(Pointer(Float64)),
-            dptr.as(Pointer(Float64)),
-            size)
         when Precision::Fp32
           CUDA.gelu_forward_fp32(
             dptr.as(Pointer(Float32)),
@@ -1113,19 +1053,7 @@ module SHAInet
       raise RuntimeError.new("GPU mul_row_vector! requires valid device pointers") unless (dptr = self.device_ptr) && (vptr = vec.device_ptr) && !dptr.null? && !vptr.null?
 
       # Try precision-specific GPU implementations
-      if @precision == Precision::Fp64 && vec.precision == Precision::Fp64 && CUDA.kernels_available?
-        # Ensure both matrices have up-to-date GPU data
-        self.sync_to_device!("mul_row_vector") unless device_dirty?
-        vec.sync_to_device!("mul_row_vector") unless vec.device_dirty?
-
-        CUDA.mul_row_vector(
-          dptr.as(Pointer(Float64)),
-          vptr.as(Pointer(Float64)),
-          @rows, @cols)
-
-        mark_device_dirty!
-        return self
-      elsif @precision.in?({Precision::Fp16, Precision::Bf16, Precision::Fp32}) &&
+      if @precision.in?({Precision::Fp16, Precision::Bf16, Precision::Fp32}) &&
             vec.precision == @precision && CUDNN.available?
         {% if flag?(:enable_cuda) %}
           stat = LibCUDNN.cudnnCreateOpTensorDescriptor(out op_desc)
@@ -1270,7 +1198,7 @@ module SHAInet
     end
 
     # Return matrix data as `Array(Float64)` for compatibility.
-    # For non-`Fp64` precisions this allocates and converts values,
+    # For non-`Fp32` precisions this allocates and converts values,
     # so use `raw_data_buffer` when direct mutable access is needed.
     def raw_data
       case @precision
@@ -1327,8 +1255,6 @@ module SHAInet
       if CUDA.fully_available? && (dptr = device_ptr) && !dptr.null?
         size = @rows * @cols
         case @precision
-        when Precision::Fp64
-          CUDA.zero_matrix(dptr.as(Pointer(Float64)), size)
         when Precision::Fp32
           if CUDA.kernels_available?
             CUDA.zero_matrix_fp32(dptr.as(Pointer(Float32)), size)
@@ -1392,14 +1318,6 @@ module SHAInet
             size)
           mark_device_dirty!
           self
-        when Precision::Fp64
-          CUDA.sigmoid_forward(
-            dptr.as(Pointer(Float64)),
-            dptr.as(Pointer(Float64)),
-            dptr.as(Pointer(Float64)),
-            size)
-          mark_device_dirty!
-          self
         else
           sigmoid_cpu!
         end
@@ -1416,8 +1334,6 @@ module SHAInet
         handle = CUDA.create_handle
         begin
           case @precision
-          when Precision::Fp64
-            CUDA.scal(handle, dptr.as(Pointer(Float64)), (@rows*@cols), scalar)
           when Precision::Fp32
             CUDA.scal_s(handle, dptr.as(Pointer(Float32)), (@rows*@cols), scalar.to_f32)
           when Precision::Fp16
@@ -1483,7 +1399,7 @@ module SHAInet
       result = CudaMatrix.new(
         @rows,
         @cols,
-        precision: res_prec || Precision::Fp64,
+        precision: res_prec || Precision::Fp32,
         device_id: self.device_id
       )
 
@@ -1494,25 +1410,6 @@ module SHAInet
 
         size = @rows * @cols
         gpu_done = false
-        if self.precision == other.precision && result.precision == self.precision && CUDA.kernels_available?
-          case @precision
-          when Precision::Fp16
-            CUDA.element_div_fp16(dptr.as(Pointer(UInt16)), sptr.as(Pointer(UInt16)), optr.as(Pointer(UInt16)), size)
-            gpu_done = true
-          when Precision::Bf16
-            CUDA.element_div_bf16(dptr.as(Pointer(UInt16)), sptr.as(Pointer(UInt16)), optr.as(Pointer(UInt16)), size)
-            gpu_done = true
-          when Precision::Fp32
-            CUDA.element_div_fp32(dptr.as(Pointer(Float32)), sptr.as(Pointer(Float32)), optr.as(Pointer(Float32)), size)
-            gpu_done = true
-          when Precision::Fp64
-            CUDA.element_div(dptr.as(Pointer(Float64)), sptr.as(Pointer(Float64)), optr.as(Pointer(Float64)), size)
-            gpu_done = true
-          end
-        elsif @precision == Precision::Fp64 && other.precision == Precision::Fp64
-          CUDA.element_div(dptr.as(Pointer(Float64)), sptr.as(Pointer(Float64)), optr.as(Pointer(Float64)), size)
-          gpu_done = true
-        end
 
         if gpu_done
           result.mark_device_dirty!
@@ -1624,7 +1521,7 @@ module SHAInet
     # Get a matrix from the pool or create a new one
     def self.get_workspace(rows : Int32, cols : Int32,
                            source : String = "workspace",
-                           precision : Precision = Precision::Fp64) : CudaMatrix
+                           precision : Precision = Precision::Fp32) : CudaMatrix
       return new(rows, cols, precision: precision) unless @@pool_enabled
 
       key = "#{rows}x#{cols}_#{precision}"
@@ -1860,8 +1757,6 @@ module SHAInet
       begin
         handle = CUDA.create_handle
         case @precision
-        when Precision::Fp64
-          CUDA.axpy(handle, -learning_rate, grad_ptr.as(Pointer(Float64)), weight_ptr.as(Pointer(Float64)), total_elements)
         when Precision::Fp32
           CUDA.saxpy(handle, -learning_rate.to_f32, grad_ptr.as(Pointer(Float32)), weight_ptr.as(Pointer(Float32)), total_elements)
         when Precision::Fp16

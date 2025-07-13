@@ -783,7 +783,7 @@ module SHAInet
     # Pre-allocate or reuse workspace matrices based on input dimensions
     private def ensure_workspace_matrices(batch_size : Int32)
       if CUDA.fully_available?
-        precision = @w_q.is_a?(CudaMatrix) ? @w_q.as(CudaMatrix).precision : Precision::Fp64
+        precision = @w_q.is_a?(CudaMatrix) ? @w_q.as(CudaMatrix).precision : Precision::Fp32
         # Only reallocate if batch size changed
         if @last_batch_size != batch_size
           # Return previous workspaces to pool if they exist

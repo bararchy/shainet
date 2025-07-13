@@ -32,8 +32,6 @@ module SHAInet
 
     private def convert_num(v : GenNum)
       case @precision
-      when Precision::Fp64
-        v.to_f64
       when Precision::Fp32
         v.to_f32
       when Precision::Fp16

@@ -53,8 +53,8 @@ describe "CUDA.gemm_ex compute type" do
       1, 1, 1, 1, 1, 1, dtype, dtype, dtype, ctype)
     SHAInet::CUDA.recorded_types.last.should eq(ctype)
 
-    dtype = SHAInet::CUDA.data_type_for(SHAInet::Precision::Fp64)
-    ctype = SHAInet::CUDA.compute_type_for(SHAInet::Precision::Fp64)
+    dtype = SHAInet::CUDA.data_type_for(SHAInet::Precision::Fp32)
+    ctype = SHAInet::CUDA.compute_type_for(SHAInet::Precision::Fp32)
     SHAInet::CUDA.gemm_ex(handle, Pointer(Void).null, Pointer(Void).null, Pointer(Void).null,
       1, 1, 1, 1, 1, 1, dtype, dtype, dtype, ctype)
     SHAInet::CUDA.recorded_types.last.should eq(ctype)

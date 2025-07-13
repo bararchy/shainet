@@ -26,7 +26,7 @@ module SHAInet
     # precision is provided, the resulting GPU matrices will use that
     # precision. Existing cached matrices are reused when the size and
     # precision already match.
-    def preload_gpu!(precision : Precision = Precision::Fp64)
+    def preload_gpu!(precision : Precision = Precision::Fp32)
       return unless CUDA.fully_available?
       if @gpu_inputs.size == @normalized_inputs.size &&
          @gpu_outputs.size == @normalized_outputs.size &&
