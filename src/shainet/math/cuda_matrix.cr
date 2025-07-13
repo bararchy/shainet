@@ -1710,7 +1710,21 @@ module SHAInet
             alpha.to_f32, beta.to_f32)
           if status != 0
             Log.error { "sgemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}" }
-            raise RuntimeError.new("CUDA.sgemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}")
+            # CPU fallback mirroring the regular `*` implementation
+            self.sync_from_device!("gemm_fallback") if device_dirty?
+            a.sync_from_device!("gemm_fallback") if a.device_dirty?
+            b.sync_from_device!("gemm_fallback") if b.device_dirty?
+            @rows.times do |i|
+              @cols.times do |j|
+                sum = 0.0
+                a.cols.times do |k|
+                  sum += a.unsafe_get(i, k) * b.unsafe_get(k, j)
+                end
+                val = alpha * sum + beta * self.unsafe_get(i, j)
+                self.unsafe_set(i, j, val)
+              end
+            end
+            self.sync_to_device!("gemm_fallback_result")
           end
         elsif a.precision == Precision::Bf16
           # CPU fallback when no suitable cuBLAS routine is available
