@@ -1100,6 +1100,77 @@ void element_div_f32(float *out, const float *a, const float *b, int size) {
   }
 }
 
+template <typename T>
+__global__ void element_mul_kernel_t(T *out, const T *a, const T *b, float alpha,
+                                     float beta, int size) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= size)
+    return;
+
+  float av = Convert<T>::to_float(a[idx]);
+  float bv = Convert<T>::to_float(b[idx]);
+  float ov = Convert<T>::to_float(out[idx]);
+  out[idx] = Convert<T>::from_float(alpha * av * bv + beta * ov);
+}
+
+__global__ void element_mul_kernel(double *out, const double *a, const double *b,
+                                   double alpha, double beta, int size) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= size)
+    return;
+
+  out[idx] = alpha * a[idx] * b[idx] + beta * out[idx];
+}
+
+void element_mul(double *out, const double *a, const double *b, double alpha,
+                 double beta, int size) {
+  int threads_per_block = 256;
+  int blocks = (size + threads_per_block - 1) / threads_per_block;
+  element_mul_kernel<<<blocks, threads_per_block>>>(out, a, b, alpha, beta,
+                                                    size);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in element_mul: %s\n", cudaGetErrorString(err));
+  }
+}
+
+void element_mul_fp16(__half *out, const __half *a, const __half *b, double alpha,
+                      double beta, int size) {
+  int threads_per_block = 256;
+  int blocks = (size + threads_per_block - 1) / threads_per_block;
+  element_mul_kernel_t<<<blocks, threads_per_block>>>(
+      out, a, b, (float)alpha, (float)beta, size);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in element_mul_fp16: %s\n", cudaGetErrorString(err));
+  }
+}
+
+void element_mul_bf16(__nv_bfloat16 *out, const __nv_bfloat16 *a,
+                      const __nv_bfloat16 *b, double alpha, double beta,
+                      int size) {
+  int threads_per_block = 256;
+  int blocks = (size + threads_per_block - 1) / threads_per_block;
+  element_mul_kernel_t<<<blocks, threads_per_block>>>(
+      out, a, b, (float)alpha, (float)beta, size);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in element_mul_bf16: %s\n", cudaGetErrorString(err));
+  }
+}
+
+void element_mul_f32(float *out, const float *a, const float *b, double alpha,
+                      double beta, int size) {
+  int threads_per_block = 256;
+  int blocks = (size + threads_per_block - 1) / threads_per_block;
+  element_mul_kernel_t<<<blocks, threads_per_block>>>(
+      out, a, b, (float)alpha, (float)beta, size);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in element_mul_f32: %s\n", cudaGetErrorString(err));
+  }
+}
+
 __global__ void softmax_backward_kernel(double *output, const double *grad,
                                         const double *softmax_out, int rows,
                                         int cols) {
