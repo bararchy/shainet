@@ -738,7 +738,9 @@ __global__ void gelu_forward_kernel(double *activations, double *derivatives,
     return;
 
   double x = linear[idx];
-  double cdf = 0.5 * (1.0 + erfc(-x / sqrt(2.0)));
+  // GELU uses the standard normal CDF
+  // 0.5 * erfc(-x / sqrt(2)) is numerically stable and matches the CPU impl
+  double cdf = 0.5 * erfc(-x / sqrt(2.0));
   activations[idx] = x * cdf;
   derivatives[idx] = cdf + x * exp(-0.5 * x * x) / sqrt(2.0 * M_PI);
 }
@@ -778,7 +780,8 @@ __global__ void gelu_forward_kernel_f32(float *activations, float *derivatives,
     return;
 
   float x = linear[idx];
-  float cdf = 0.5f * (1.0f + erff(-x / sqrtf(2.0f)));
+  // Use erfcf for better parity with double precision and CPU implementation
+  float cdf = 0.5f * erfcf(-x / sqrtf(2.0f));
   activations[idx] = x * cdf;
   derivatives[idx] = cdf + x * expf(-0.5f * x * x) / sqrtf(2.0f * M_PI);
 }
