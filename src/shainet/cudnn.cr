@@ -764,26 +764,32 @@ module SHAInet
                                                      loss : Float64*, grad_output : CudaMatrix)
       raise "Predicted and target must have same dimensions" unless predicted.rows == target.rows && predicted.cols == target.cols
       raise "Gradient output must have same dimensions as predicted" unless grad_output.rows == predicted.rows && grad_output.cols == predicted.cols
-      unless predicted.precision.fp64? && target.precision.fp64? && grad_output.precision.fp64?
-        raise ArgumentError.new("softmax_cross_entropy_loss_and_gradient only supports Fp64 precision")
+
+      unless predicted.precision == target.precision && grad_output.precision == predicted.precision
+        raise ArgumentError.new("Precision mismatch between inputs and gradient")
       end
 
-      # Compute softmax of logits into grad_output
-      softmax_rows(predicted, grad_output)
+      if predicted.precision.fp64?
+        # Compute softmax of logits into grad_output
+        softmax_rows(predicted, grad_output)
 
-      # Now compute cross-entropy on the probabilities in grad_output
-      result = CUDA.cross_entropy_loss_gradient(
-        grad_output.device_ptr.not_nil!.as(Pointer(Float64)),
-        target.device_ptr.not_nil!.as(Pointer(Float64)),
-        grad_output.device_ptr.not_nil!.as(Pointer(Float64)),
-        loss,
-        predicted.rows,
-        predicted.cols
-      )
+        # Now compute cross-entropy on the probabilities in grad_output
+        result = CUDA.cross_entropy_loss_gradient(
+          grad_output.device_ptr.not_nil!.as(Pointer(Float64)),
+          target.device_ptr.not_nil!.as(Pointer(Float64)),
+          grad_output.device_ptr.not_nil!.as(Pointer(Float64)),
+          loss,
+          predicted.rows,
+          predicted.cols
+        )
 
-      raise "CUDA softmax cross-entropy failed" if result != 0
+        raise "CUDA softmax cross-entropy failed" if result != 0
 
-      grad_output.mark_device_dirty!
+        grad_output.mark_device_dirty!
+      else
+        # CPU fallback for lower precisions
+        loss.value = cpu_softmax_cross_entropy(predicted, target, grad_output)
+      end
     end
 
     # GPU-optimized softmax + cross-entropy using label indices.
@@ -835,6 +841,42 @@ module SHAInet
       raise "CUDA softmax cross-entropy label failed" if result != 0
 
       grad_output.mark_device_dirty!
+    end
+
+    private def self.cpu_softmax_cross_entropy(predicted : CudaMatrix, target : CudaMatrix, grad_output : CudaMatrix) : Float64
+      predicted.sync_from_device!("cpu_sm_xent_pred") if predicted.device_dirty?
+      target.sync_from_device!("cpu_sm_xent_target") if target.device_dirty?
+
+      rows = predicted.rows
+      cols = predicted.cols
+      loss_acc = 0.0
+
+      rows.times do |i|
+        max_val = -Float64::INFINITY
+        cols.times do |j|
+          v = predicted.unsafe_get(i, j).to_f64
+          max_val = Math.max(max_val, v)
+        end
+
+        cols.times do |j|
+          val = Math.exp(predicted.unsafe_get(i, j).to_f64 - max_val)
+          grad_output.unsafe_set(i, j, val)
+        end
+
+        sum = 0.0
+        cols.times { |j| sum += grad_output.unsafe_get(i, j).to_f64 }
+
+        cols.times do |j|
+          p = grad_output.unsafe_get(i, j).to_f64 / sum
+          t = target.unsafe_get(i, j).to_f64
+          grad_output.unsafe_set(i, j, p - t)
+          loss_acc += -t * Math.log(p.clamp(1e-15, 1.0))
+        end
+      end
+
+      grad_output.sync_to_device!("cpu_sm_xent_result") if CUDA.available?
+      grad_output.mark_device_dirty!
+      loss_acc
     end
 
     # Element-wise operations using cuDNN OpTensor
