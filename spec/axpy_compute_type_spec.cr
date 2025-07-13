@@ -2,19 +2,8 @@ require "./spec_helper"
 
 # Monkey patch CUDA.axpy_ex to record the compute type used
 module SHAInet::CUDA
-  enum DataType
-    CUDA_R_32F  =  0
-    CUDA_R_64F  =  1
-    CUDA_R_16F  =  2
-    CUDA_R_16BF = 14
-  end
-
-  enum ComputeType
-    CUBLAS_COMPUTE_16F  =  64
-    CUBLAS_COMPUTE_32F  =  68
-    CUBLAS_COMPUTE_64F  =  70
-    CUBLAS_COMPUTE_16BF = 119
-  end
+  alias DataType = LibCUBLAS::DataType
+  alias ComputeType = LibCUBLAS::ComputeType
 
   @@recorded_types = [] of ComputeType
 
@@ -36,28 +25,6 @@ module SHAInet::CUDA
 
   def self.axpy_ex_available?
     true
-  end
-
-  def self.data_type_for(p : Precision) : DataType
-    case p
-    when Precision::Fp16
-      DataType::CUDA_R_16F
-    when Precision::Bf16
-      DataType::CUDA_R_16BF
-    else
-      DataType::CUDA_R_32F
-    end
-  end
-
-  def self.compute_type_for(p : Precision) : ComputeType
-    case p
-    when Precision::Fp16
-      ComputeType::CUBLAS_COMPUTE_16F
-    when Precision::Bf16
-      ComputeType::CUBLAS_COMPUTE_16BF
-    else
-      ComputeType::CUBLAS_COMPUTE_32F
-    end
   end
 end
 
