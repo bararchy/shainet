@@ -166,8 +166,8 @@ module SHAInet
         buf.to_unsafe.as(Pointer(Int32))[0] = value.round.to_i32
         buf
       else
-        buf = Bytes.new(sizeof(Float64))
-        buf.to_unsafe.as(Pointer(Float64))[0] = value
+        buf = Bytes.new(sizeof(Float32))
+        buf.to_unsafe.as(Pointer(Float32))[0] = value.to_f32
         buf
       end
     end
