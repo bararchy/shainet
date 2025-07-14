@@ -23,7 +23,7 @@ SRC_DIR="src/shainet/native"
 OUTPUT_LIB="libshainet_cuda_kernels.so"
 
 # Compilation flags
-NVCC_FLAGS="-shared --compiler-options=-fPIC -O3 -arch=sm_60"
+NVCC_FLAGS="-shared --compiler-options=-fPIC -O3 -arch=sm_60 -std=c++14"
 INCLUDE_FLAGS="-I${CUDA_PATH}/include"
 LIBRARY_FLAGS="-L${CUDA_PATH}/lib64 -lcurand"
 

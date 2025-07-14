@@ -333,25 +333,9 @@ void relu_backward(double *output, const double *input, const double *grad,
   }
 }
 
-__global__ void dropout_kernel(double *out, const double *in, int rows,
-                               int cols, double drop_p,
-                               unsigned long long seed) {
-  int row = blockIdx.x;
-  if (row >= rows)
-    return;
-  curandState state;
-  curand_init(seed + row, 0, 0, &state);
-  const double *row_in = in + row * cols;
-  double *row_out = out + row * cols;
-  for (int j = 0; j < cols; ++j) {
-    double r = curand_uniform_double(&state);
-    row_out[j] = r < drop_p ? 0.0 : row_in[j];
-  }
-}
-
 void dropout(double *out, const double *in, int rows, int cols, double drop_p,
              unsigned long long seed) {
-  dropout_kernel<<<rows, 1>>>(out, in, rows, cols, drop_p, seed);
+  dropout_kernel_t<<<rows, 1>>>(out, in, rows, cols, (float)drop_p, seed);
   cudaError_t err = cudaDeviceSynchronize();
   if (err != cudaSuccess) {
     printf("CUDA Error in dropout: %s\n", cudaGetErrorString(err));
@@ -1246,37 +1230,39 @@ void scale_bf16(__nv_bfloat16 *data, float alpha, int size) {
   }
 }
 
-__global__ void cross_entropy_loss_gradient_kernel(const double *pred,
-                                                   const double *target,
-                                                   double *grad, double *loss,
-                                                   int total) {
+template <typename T>
+__global__ void cross_entropy_loss_gradient_kernel_t(const T *pred,
+                                                     const T *target,
+                                                     T *grad, double *loss,
+                                                     int total) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx >= total)
     return;
 
-  double p = pred[idx];
-  double t = target[idx];
+  T p = pred[idx];
+  T t = target[idx];
   grad[idx] = p - t;
 
-  double contrib = -t * log(max(p, 1e-15));
+  double contrib = -(double)t * log(max((double)p, 1e-15));
   atomicAdd(loss, contrib);
 }
 
-__global__ void softmax_cross_entropy_label_kernel(const double *pred,
-                                                   const int *labels,
-                                                   double *grad, double *loss,
-                                                   int rows, int cols) {
+template <typename T>
+__global__ void softmax_cross_entropy_label_kernel_t(const T *pred,
+                                                     const int *labels,
+                                                     T *grad, double *loss,
+                                                     int rows, int cols) {
   int row = blockIdx.x;
   if (row >= rows)
     return;
 
-  const double *row_pred = pred + row * cols;
-  double *row_grad = grad + row * cols;
+  const T *row_pred = pred + row * cols;
+  T *row_grad = grad + row * cols;
 
   // Find maximum value in the row for numerical stability
-  double max_val = row_pred[0];
+  double max_val = (double)row_pred[0];
   for (int j = 1; j < cols; ++j) {
-    double v = row_pred[j];
+    double v = (double)row_pred[j];
     if (v > max_val)
       max_val = v;
   }
@@ -1284,34 +1270,35 @@ __global__ void softmax_cross_entropy_label_kernel(const double *pred,
   // Compute exponentials and their sum
   double sum = 0.0;
   for (int j = 0; j < cols; ++j) {
-    double e = exp(row_pred[j] - max_val);
-    row_grad[j] = e;
+    double e = exp((double)row_pred[j] - max_val);
+    row_grad[j] = (T)e;
     sum += e;
   }
 
   // Normalize to obtain probabilities
   for (int j = 0; j < cols; ++j) {
-    row_grad[j] /= sum;
+    row_grad[j] = (T)((double)row_grad[j] / sum);
   }
 
   int label = labels[row];
   if (label >= 0 && label < cols) {
-    double p = row_grad[label];
-    row_grad[label] = p - 1.0;
+    double p = (double)row_grad[label];
+    row_grad[label] = (T)(p - 1.0);
     double contrib = -log(max(p, 1e-15));
     atomicAdd(loss, contrib);
   }
 }
 
-void cross_entropy_loss_gradient(double *pred, double *target, double *grad,
-                                 double *loss, int rows, int cols) {
+template <typename T>
+void cross_entropy_loss_gradient_t(const T *pred, const T *target, T *grad,
+                                   double *loss, int rows, int cols) {
   int total = rows * cols;
   cudaMemset(loss, 0, sizeof(double));
   int threads = 256;
   int blocks = (total + threads - 1) / threads;
 
-  cross_entropy_loss_gradient_kernel<<<blocks, threads>>>(pred, target, grad,
-                                                          loss, total);
+  cross_entropy_loss_gradient_kernel_t<<<blocks, threads>>>(pred, target, grad,
+                                                            loss, total);
   cudaError_t err = cudaDeviceSynchronize();
   if (err != cudaSuccess) {
     printf("CUDA Error in cross_entropy_loss_gradient: %s\n",
@@ -1319,11 +1306,12 @@ void cross_entropy_loss_gradient(double *pred, double *target, double *grad,
   }
 }
 
-void softmax_cross_entropy_label(double *pred, const int *labels, double *grad,
-                                 double *loss, int rows, int cols) {
+template <typename T>
+void softmax_cross_entropy_label_t(const T *pred, const int *labels, T *grad,
+                                   double *loss, int rows, int cols) {
   cudaMemset(loss, 0, sizeof(double));
-  softmax_cross_entropy_label_kernel<<<rows, 1>>>(pred, labels, grad, loss,
-                                                  rows, cols);
+  softmax_cross_entropy_label_kernel_t<<<rows, 1>>>(pred, labels, grad, loss,
+                                                    rows, cols);
   cudaError_t err = cudaDeviceSynchronize();
   if (err != cudaSuccess) {
     printf("CUDA Error in softmax_cross_entropy_label: %s\n",
@@ -1331,56 +1319,93 @@ void softmax_cross_entropy_label(double *pred, const int *labels, double *grad,
   }
 }
 
-__global__ void softmax_cross_entropy_label_matrix_kernel(const double *pred,
-                                                          const double *labels,
-                                                          double *grad,
-                                                          double *loss,
-                                                          int rows, int cols) {
+template <typename T>
+__global__ void softmax_cross_entropy_label_matrix_kernel_t(const T *pred,
+                                                            const T *labels,
+                                                            T *grad,
+                                                            double *loss,
+                                                            int rows, int cols) {
   int row = blockIdx.x;
   if (row >= rows)
     return;
 
-  const double *row_pred = pred + row * cols;
-  double *row_grad = grad + row * cols;
+  const T *row_pred = pred + row * cols;
+  T *row_grad = grad + row * cols;
 
-  double max_val = row_pred[0];
+  double max_val = (double)row_pred[0];
   for (int j = 1; j < cols; ++j) {
-    double v = row_pred[j];
+    double v = (double)row_pred[j];
     if (v > max_val)
       max_val = v;
   }
 
   double sum = 0.0;
   for (int j = 0; j < cols; ++j) {
-    double e = exp(row_pred[j] - max_val);
-    row_grad[j] = e;
+    double e = exp((double)row_pred[j] - max_val);
+    row_grad[j] = (T)e;
     sum += e;
   }
 
   for (int j = 0; j < cols; ++j) {
-    row_grad[j] /= sum;
+    row_grad[j] = (T)((double)row_grad[j] / sum);
   }
 
   int label = (int)labels[row];
   if (label >= 0 && label < cols) {
-    double p = row_grad[label];
-    row_grad[label] = p - 1.0;
+    double p = (double)row_grad[label];
+    row_grad[label] = (T)(p - 1.0);
     double contrib = -log(max(p, 1e-15));
     atomicAdd(loss, contrib);
   }
 }
 
-void softmax_cross_entropy_label_matrix(double *pred, const double *labels,
-                                        double *grad, double *loss, int rows,
-                                        int cols) {
+template <typename T>
+void softmax_cross_entropy_label_matrix_t(const T *pred, const T *labels,
+                                          T *grad, double *loss, int rows,
+                                          int cols) {
   cudaMemset(loss, 0, sizeof(double));
-  softmax_cross_entropy_label_matrix_kernel<<<rows, 1>>>(pred, labels, grad,
-                                                         loss, rows, cols);
+  softmax_cross_entropy_label_matrix_kernel_t<<<rows, 1>>>(pred, labels, grad,
+                                                           loss, rows, cols);
   cudaError_t err = cudaDeviceSynchronize();
   if (err != cudaSuccess) {
     printf("CUDA Error in softmax_cross_entropy_label_matrix: %s\n",
            cudaGetErrorString(err));
   }
+}
+
+// Public C API wrappers
+void cross_entropy_loss_gradient(double *pred, double *target, double *grad,
+                                 double *loss, int rows, int cols) {
+  cross_entropy_loss_gradient_t<double>(pred, target, grad, loss, rows, cols);
+}
+
+void cross_entropy_loss_gradient_f32(float *pred, float *target, float *grad,
+                                     double *loss, int rows, int cols) {
+  cross_entropy_loss_gradient_t<float>(pred, target, grad, loss, rows, cols);
+}
+
+void softmax_cross_entropy_label(double *pred, const int *labels, double *grad,
+                                 double *loss, int rows, int cols) {
+  softmax_cross_entropy_label_t<double>(pred, labels, grad, loss, rows, cols);
+}
+
+void softmax_cross_entropy_label_f32(float *pred, const int *labels, float *grad,
+                                     double *loss, int rows, int cols) {
+  softmax_cross_entropy_label_t<float>(pred, labels, grad, loss, rows, cols);
+}
+
+void softmax_cross_entropy_label_matrix(double *pred, const double *labels,
+                                        double *grad, double *loss, int rows,
+                                        int cols) {
+  softmax_cross_entropy_label_matrix_t<double>(pred, labels, grad, loss, rows,
+                                               cols);
+}
+
+void softmax_cross_entropy_label_matrix_f32(float *pred, const float *labels,
+                                            float *grad, double *loss, int rows,
+                                            int cols) {
+  softmax_cross_entropy_label_matrix_t<float>(pred, labels, grad, loss, rows,
+                                              cols);
 }
 
 void mse_loss_gradient(double *pred, double *target, double *grad, double *loss,
