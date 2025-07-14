@@ -7,7 +7,7 @@ module SHAInet
       mask = SimpleMatrix.zeros(size, size)
       size.times do |i|
         i.times do |j|
-          mask[i, j] = -1e9
+          mask[i, j] = -1e9_f32
         end
       end
       mask
@@ -23,7 +23,7 @@ module SHAInet
       batch.times do |i|
         len = lengths[i]
         len.upto(max_len - 1) do |j|
-          mask[i, j] = -1e9
+          mask[i, j] = -1e9_f32
         end
       end
       mask

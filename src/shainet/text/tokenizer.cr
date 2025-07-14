@@ -41,7 +41,7 @@ module SHAInet
     def encode_matrix(text : String)
       ids = encode(text)
       mat_klass = CUDA.fully_available? ? CudaMatrix : SimpleMatrix
-      mat_klass.from_a([ids.map(&.to_f64)])
+      mat_klass.from_a([ids.map(&.to_f32)])
     end
 
     # Convert an array of token IDs back to their corresponding words. Unknown
