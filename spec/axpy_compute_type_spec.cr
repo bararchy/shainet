@@ -44,7 +44,7 @@ describe "CUDA.axpy_ex compute type" do
 end
 
 describe "CUDA.gemm_ex compute type" do
-  it "passes compute_type_for value for fp16 and fp64" do
+  it "passes compute_type_for value for fp16 and fp32" do
     handle = Pointer(Void).null.as(SHAInet::CUDA::LibCUBLAS::Handle)
 
     dtype = SHAInet::CUDA.data_type_for(SHAInet::Precision::Fp16)
