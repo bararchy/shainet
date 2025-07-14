@@ -21,7 +21,7 @@ module SHAInet
       @embeddings = mat_klass.new(vocab_size, l_size)
       vocab_size.times do |r|
         l_size.times do |c|
-          @embeddings[r, c] = rand(-0.1..0.1)
+          @embeddings[r, c] = rand(-0.1..0.1).to_f32
         end
       end
       @gradients = mat_klass.zeros(vocab_size, l_size)

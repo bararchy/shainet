@@ -160,14 +160,14 @@ module SHAInet
   end
 
   def self._swiglu(value : GenNum) : Float64
-    v = value.to_f64
-    v * _sigmoid(v)
+    v = value.to_f32
+    v.to_f64 * _sigmoid(v)
   end
 
   def self._swiglu_prime(value : GenNum) : Float64
-    v = value.to_f64
+    v = value.to_f32
     s = _sigmoid(v)
-    s + v * s * (1.0 - s)
+    s + v.to_f64 * s * (1.0 - s)
   end
 
   ##################################################################
