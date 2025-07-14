@@ -357,6 +357,7 @@ module SHAInet
     private def run_int8(input : SimpleMatrix) : SimpleMatrix
       raise NeuralNetRunError.new("INT8 path not supported with transformers or embeddings") if @hidden_layers.any?(&.is_a?(TransformerLayer)) || @hidden_layers.any?(&.is_a?(EmbeddingLayer))
 
+      use_gpu = CUDA.fully_available?
       current = input
       layers = @hidden_layers + [@output_layers.last]
 
@@ -382,34 +383,66 @@ module SHAInet
           idx += 1
         end
 
-        prod = SimpleMatrix.gemm_int8(q_in, q_w)
         mult = in_scale * layer.q_w_scale.not_nil!
 
         bias_vals = layer.q_biases.not_nil!
         b_scale = layer.q_b_scale.not_nil!
         b_zp = layer.q_b_zero_point.not_nil!
 
-        prod.rows.times do |i|
-          prod.cols.times do |j|
-            val = prod[i, j] * mult
-            bias = Int8Value.new(bias_vals[j]).to_f32(b_scale, b_zp).to_f32
-            prod[i, j] = val + bias
-          end
-        end
+        if use_gpu
+          q_in_gpu = q_in.to_cuda
+          q_w_gpu = q_w.to_cuda
+          prod_gpu = CudaMatrix.gemm_int8(q_in_gpu, q_w_gpu)
+          prod_gpu.scale!(mult)
 
-        unless layer.activation_function == SHAInet.identity
-          prod.rows.times do |r|
-            prod.cols.times do |c|
-              act, _sig = layer.activation_function.call(prod[r, c])
-              prod[r, c] = act
+          bias_gpu = CudaMatrix.new(1, layer.weights.cols, precision: Precision::Fp32)
+          bias_vals.each_with_index do |v, j|
+            bias_gpu[0, j] = Int8Value.new(v).to_f32(b_scale, b_zp).to_f32
+          end
+          bias_gpu.sync_to_device!("run_int8_bias")
+          prod_gpu.add_bias!(bias_gpu)
+
+          unless layer.activation_function == SHAInet.identity
+            unless try_gpu_activation(prod_gpu, layer.activation_function)
+              prod_gpu.sync_from_device!("activation_fallback")
+              prod_gpu.rows.times do |i|
+                prod_gpu.cols.times do |j|
+                  val = prod_gpu.unsafe_get(i, j)
+                  act, _sig = layer.activation_function.call(val)
+                  prod_gpu.unsafe_set(i, j, act)
+                end
+              end
+              prod_gpu.sync_to_device!("activation_fallback")
             end
           end
-        end
 
-        current = prod
+          current = prod_gpu
+        else
+          prod = SimpleMatrix.gemm_int8(q_in, q_w)
+
+          prod.rows.times do |i|
+            prod.cols.times do |j|
+              val = prod[i, j] * mult
+              bias = Int8Value.new(bias_vals[j]).to_f32(b_scale, b_zp).to_f32
+              prod[i, j] = val + bias
+            end
+          end
+
+          unless layer.activation_function == SHAInet.identity
+            prod.rows.times do |r|
+              prod.cols.times do |c|
+                act, _sig = layer.activation_function.call(prod[r, c])
+                prod[r, c] = act
+              end
+            end
+          end
+
+          current = prod
+        end
       end
 
-      current
+      result = current.is_a?(CudaMatrix) ? current.as(CudaMatrix).to_simple : current.as(SimpleMatrix)
+      result
     end
 
     # Run a single token (or sequence of tokens) using cached KV states for all
