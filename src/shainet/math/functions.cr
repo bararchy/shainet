@@ -100,19 +100,19 @@ module SHAInet
 
   # The input array in this case has to be the output array of the softmax function
   def self.softmax_prime(array : Array(GenNum)) : Array(Float32)
-    out_array = Array(Float32).new(array.size) { 0.0 }
+    out_array = Array(Float32).new(array.size) { 0.0_f32 }
     array.each_with_index { |_, i| out_array[i] = array[i]*(1 - array[i]) }
     out_array
   end
 
   # Not working yet, do not use
   def self.log_softmax(array : Array(GenNum)) : Array(Float32)
-    out_array = Array(Float32).new(array.size) { 0.0 }
+    out_array = Array(Float32).new(array.size) { 0.0_f32 }
     m = array.max # Max exponent from input array
     exp_sum = Float32.new(0.0)
-    array.each { |value| exp_sum += Math::E**(value - m) }
+    array.each { |value| exp_sum += (Math::E**(value - m)).to_f32 }
 
-    array.size.times { |i| out_array[i] = (Math::E**(array[i] - m - Math.log(exp_sum, 10))) }
+    array.size.times { |i| out_array[i] = (Math::E**(array[i] - m - Math.log(exp_sum, 10))).to_f32 }
     out_array
   end
 
@@ -286,9 +286,9 @@ module SHAInet
   def self.softmax_rows(m : SimpleMatrix)
     result = SimpleMatrix.new(m.rows, m.cols)
     m.rows.times do |i|
-      sum = 0.0
-      m.cols.times { |j| sum += Math.exp(m[i, j]) }
-      m.cols.times { |j| result[i, j] = Math.exp(m[i, j]) / sum }
+      sum = 0.0_f32
+      m.cols.times { |j| sum += Math.exp(m[i, j]).to_f32 }
+      m.cols.times { |j| result[i, j] = Math.exp(m[i, j]).to_f32 / sum }
     end
     result
   end
@@ -310,7 +310,7 @@ module SHAInet
     result = SimpleMatrix.new(m.rows, m.cols)
     m.rows.times do |i|
       m.cols.times do |j|
-        result[i, j] = rand(0...100) < drop_percent ? 0.0 : m[i, j]
+        result[i, j] = rand(0...100) < drop_percent ? 0.0_f32 : m[i, j]
       end
     end
     result

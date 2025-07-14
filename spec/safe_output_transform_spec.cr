@@ -21,7 +21,7 @@ describe "safe_output_transform" do
     # Fill matrices with simple values
     2.times do |i|
       2.times do |j|
-        input[i, j] = (i * 2 + j + 1).to_f
+        input[i, j] = (i * 2 + j + 1).to_f32
       end
     end
     weights[0, 0] = 1.0_f32
