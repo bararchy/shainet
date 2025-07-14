@@ -65,6 +65,12 @@ module SHAInet
                       alpha : Pointer(Float32), a : Pointer(Float32), lda : Int32,
                       beta : Pointer(Float32), b : Pointer(Float32), ldb : Int32,
                       c : Pointer(Float32), ldc : Int32) : Int32
+      fun cublasSgeam(handle : Handle,
+                      transa : Int32, transb : Int32,
+                      m : Int32, n : Int32,
+                      alpha : Pointer(Float32), a : Pointer(Float32), lda : Int32,
+                      beta : Pointer(Float32), b : Pointer(Float32), ldb : Int32,
+                      c : Pointer(Float32), ldc : Int32) : Int32
       fun cublasDscal_v2(handle : Handle, n : Int32,
                          alpha : Pointer(Float32), x : Pointer(Float32), incx : Int32) : Int32
       fun cublasSscal_v2(handle : Handle, n : Int32,
@@ -75,7 +81,17 @@ module SHAInet
                         x : Pointer(Float32), incx : Int32,
                         y : Pointer(Float32), incy : Int32,
                         a : Pointer(Float32), lda : Int32) : Int32
+      fun cublasSger_v2(handle : Handle,
+                        m : Int32, n : Int32,
+                        alpha : Pointer(Float32),
+                        x : Pointer(Float32), incx : Int32,
+                        y : Pointer(Float32), incy : Int32,
+                        a : Pointer(Float32), lda : Int32) : Int32
       fun cublasDdot_v2(handle : Handle, n : Int32,
+                        x : Pointer(Float32), incx : Int32,
+                        y : Pointer(Float32), incy : Int32,
+                        result : Pointer(Float32)) : Int32
+      fun cublasSdot_v2(handle : Handle, n : Int32,
                         x : Pointer(Float32), incx : Int32,
                         y : Pointer(Float32), incy : Int32,
                         result : Pointer(Float32)) : Int32
@@ -459,7 +475,7 @@ module SHAInet
              m : Int32, n : Int32, k : Int32, lda : Int32, ldb : Int32, ldc : Int32)
       alpha = 1.0_f32
       beta = 0.0_f32
-      LibCUBLAS.cublasDgemm_v2(handle,
+      LibCUBLAS.cublasSgemm_v2(handle,
         Operation::N.value, Operation::N.value,
         m, n, k,
         pointerof(alpha), a, lda,
@@ -527,7 +543,7 @@ module SHAInet
 
     def gemm_accumulate(handle : LibCUBLAS::Handle, a : Pointer(Float32), b : Pointer(Float32), c : Pointer(Float32),
                         m : Int32, n : Int32, k : Int32, lda : Int32, ldb : Int32, ldc : Int32, alpha : Float32, beta : Float32)
-      LibCUBLAS.cublasDgemm_v2(handle,
+      LibCUBLAS.cublasSgemm_v2(handle,
         Operation::N.value, Operation::N.value,
         m, n, k,
         pointerof(alpha), a, lda,
@@ -600,7 +616,7 @@ module SHAInet
 
     def geam(handle : LibCUBLAS::Handle, a : Pointer(Float32), b : Pointer(Float32), c : Pointer(Float32),
              m : Int32, n : Int32, alpha : Float32, beta : Float32)
-      LibCUBLAS.cublasDgeam(handle,
+      LibCUBLAS.cublasSgeam(handle,
         Operation::N.value, Operation::N.value,
         m, n,
         pointerof(alpha), a, m,
@@ -609,7 +625,7 @@ module SHAInet
     end
 
     def scal(handle : LibCUBLAS::Handle, x : Pointer(Float32), n : Int32, alpha : Float32)
-      LibCUBLAS.cublasDscal_v2(handle, n, pointerof(alpha), x, 1)
+      LibCUBLAS.cublasSscal_v2(handle, n, pointerof(alpha), x, 1)
     end
 
     def scal_s(handle : LibCUBLAS::Handle, x : Pointer(Float32), n : Int32, alpha : Float32)
@@ -617,17 +633,17 @@ module SHAInet
     end
 
     def ger(handle : LibCUBLAS::Handle, x : Pointer(Float32), y : Pointer(Float32), a : Pointer(Float32), m : Int32, n : Int32, lda : Int32, alpha : Float32 = 1.0)
-      LibCUBLAS.cublasDger_v2(handle, m, n, pointerof(alpha), x, 1, y, 1, a, lda)
+      LibCUBLAS.cublasSger_v2(handle, m, n, pointerof(alpha), x, 1, y, 1, a, lda)
     end
 
     def dot(handle : LibCUBLAS::Handle, x : Pointer(Float32), y : Pointer(Float32), n : Int32)
       result = 0.0
-      LibCUBLAS.cublasDdot_v2(handle, n, x, 1, y, 1, pointerof(result))
+      LibCUBLAS.cublasSdot_v2(handle, n, x, 1, y, 1, pointerof(result))
       result
     end
 
     def axpy(handle : LibCUBLAS::Handle, alpha : Float32, x : Pointer(Float32), y : Pointer(Float32), n : Int32)
-      LibCUBLAS.cublasDaxpy_v2(handle, n, pointerof(alpha), x, 1, y, 1)
+      LibCUBLAS.cublasSaxpy_v2(handle, n, pointerof(alpha), x, 1, y, 1)
       # Optional kernels implemented in src/shainet/native/cuda_kernels.cu
       # These methods fall back to CPU when the native library is missing.
     end
@@ -652,7 +668,6 @@ module SHAInet
     @@softmax_rows_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Void)? = nil
     @@softmax_rows_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Void)? = nil
     @@softmax_rows_fp32_proc : Proc(Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
-    @@dropout_proc : Proc(Pointer(Float32), Pointer(Float32), Int32, Int32, Float32, UInt64, Void)? = nil
     @@dropout_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Float32, UInt64, Void)? = nil
     @@dropout_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Float32, UInt64, Void)? = nil
     @@dropout_fp32_proc : Proc(Pointer(Float32), Pointer(Float32), Int32, Int32, Float32, UInt64, Void)? = nil
@@ -718,7 +733,6 @@ module SHAInet
     @@softmax_cross_entropy_label_proc_f32 : Proc(Pointer(Float32), Pointer(Int32), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
     @@softmax_cross_entropy_label_matrix_proc : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
     @@softmax_cross_entropy_label_matrix_proc_f32 : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
-    @@mse_loss_grad_fp64_proc : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
     @@mse_loss_grad_fp32_proc : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
 
     def softmax_rows(dst : Pointer(Float32), src : Pointer(Float32), rows : Int32, cols : Int32)
@@ -802,20 +816,7 @@ module SHAInet
     end
 
     def dropout(dst : Pointer(Float32), src : Pointer(Float32), rows : Int32, cols : Int32, drop_p : Float32, seed : UInt64)
-      unless fn = @@dropout_proc
-        if @@kernels_handle.null?
-          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
-        end
-        unless @@kernels_handle.null?
-          sym = LibC.dlsym(@@kernels_handle, "dropout")
-          unless sym.null?
-            @@dropout_proc = Proc(Pointer(Float32), Pointer(Float32), Int32, Int32, Float32, UInt64, Void).new(sym, Pointer(Void).null)
-            fn = @@dropout_proc
-          end
-        end
-      end
-      raise "CUDA kernels not available" unless fn
-      fn.call(dst, src, rows, cols, drop_p, seed)
+      dropout_fp32(dst, src, rows, cols, drop_p, seed)
     end
 
     def dropout_fp16(dst : UInt16Ptr, src : UInt16Ptr, rows : Int32, cols : Int32, drop_p : Float32, seed : UInt64)
@@ -2093,15 +2094,15 @@ module SHAInet
       return 1 if data.null? || size <= 0
 
       begin
-        unless fn = @@dropout_proc
+        unless fn = @@dropout_fp32_proc
           if @@kernels_handle.null?
             @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
           end
           unless @@kernels_handle.null?
-            sym = LibC.dlsym(@@kernels_handle, "dropout")
+            sym = LibC.dlsym(@@kernels_handle, "dropout_f32")
             unless sym.null?
-              @@dropout_proc = Proc(Pointer(Float32), Pointer(Float32), Int32, Int32, Float32, UInt64, Void).new(sym, Pointer(Void).null)
-              fn = @@dropout_proc
+              @@dropout_fp32_proc = Proc(Pointer(Float32), Pointer(Float32), Int32, Int32, Float32, UInt64, Void).new(sym, Pointer(Void).null)
+              fn = @@dropout_fp32_proc
             end
           end
         end
@@ -2200,35 +2201,6 @@ module SHAInet
       rescue e
         Log.error { "CUDA Error in element_log: #{e}" }
         raise e
-      end
-    end
-
-    # GPU kernel for mean squared error cost and gradient computation
-    def mse_cost_gradient(actual_ptr : Pointer(Float32), expected_ptr : Pointer(Float32),
-                          grad_ptr : Pointer(Float32), loss_ptr : Pointer(Float32),
-                          rows : Int32, cols : Int32) : Int32
-      unless fn = @@mse_loss_grad_fp64_proc
-        if @@kernels_handle.null?
-          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
-        end
-        unless @@kernels_handle.null?
-          sym = LibC.dlsym(@@kernels_handle, "mse_loss_gradient")
-          unless sym.null?
-            @@mse_loss_grad_fp64_proc = Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Int32, Void).new(sym, Pointer(Void).null)
-            fn = @@mse_loss_grad_fp64_proc
-          end
-        end
-      end
-      raise "CUDA kernels not available" unless fn
-
-      begin
-        loss_dev = ensure_loss_buffer
-        fn.call(actual_ptr, expected_ptr, grad_ptr, loss_dev, rows, cols)
-        CUDA.memcpy(loss_ptr.as(Pointer(Void)), loss_dev.as(Pointer(Void)), 8_u64, MemcpyKind::DeviceToHost)
-        0
-      rescue e
-        Log.error { "CUDA Error in mse_cost_gradient: #{e}" }
-        1
       end
     end
 
