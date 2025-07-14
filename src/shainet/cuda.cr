@@ -729,11 +729,17 @@ module SHAInet
     @@element_log_proc : Proc(Pointer(Float32), Pointer(Float32), Int32, Void)? = nil
     @@cross_entropy_loss_grad_proc : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
     @@cross_entropy_loss_grad_proc_f32 : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
+    @@cross_entropy_loss_grad_fp16_proc : Proc(UInt16Ptr, UInt16Ptr, UInt16Ptr, Pointer(Float32), Int32, Int32, Void)? = nil
+    @@cross_entropy_loss_grad_bf16_proc : Proc(UInt16Ptr, UInt16Ptr, UInt16Ptr, Pointer(Float32), Int32, Int32, Void)? = nil
     @@softmax_cross_entropy_label_proc : Proc(Pointer(Float32), Pointer(Int32), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
     @@softmax_cross_entropy_label_proc_f32 : Proc(Pointer(Float32), Pointer(Int32), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
     @@softmax_cross_entropy_label_matrix_proc : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
     @@softmax_cross_entropy_label_matrix_proc_f32 : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
+    @@softmax_cross_entropy_label_matrix_fp16_proc : Proc(UInt16Ptr, UInt16Ptr, UInt16Ptr, Pointer(Float32), Int32, Int32, Void)? = nil
+    @@softmax_cross_entropy_label_matrix_bf16_proc : Proc(UInt16Ptr, UInt16Ptr, UInt16Ptr, Pointer(Float32), Int32, Int32, Void)? = nil
     @@mse_loss_grad_fp32_proc : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
+    @@mse_loss_grad_fp16_proc : Proc(UInt16Ptr, UInt16Ptr, UInt16Ptr, Pointer(Float32), Int32, Int32, Void)? = nil
+    @@mse_loss_grad_bf16_proc : Proc(UInt16Ptr, UInt16Ptr, UInt16Ptr, Pointer(Float32), Int32, Int32, Void)? = nil
 
     def softmax_rows(dst : Pointer(Float32), src : Pointer(Float32), rows : Int32, cols : Int32)
       # Validate inputs
@@ -1976,6 +1982,62 @@ module SHAInet
       end
     end
 
+    def cross_entropy_loss_gradient_fp16(predicted : UInt16Ptr, target : UInt16Ptr,
+                                         grad_output : UInt16Ptr, loss_output : Pointer(Float32),
+                                         rows : Int32, cols : Int32) : Int32
+      unless fn = @@cross_entropy_loss_grad_fp16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "cross_entropy_loss_gradient_fp16")
+          unless sym.null?
+            @@cross_entropy_loss_grad_fp16_proc = Proc(UInt16Ptr, UInt16Ptr, UInt16Ptr, Pointer(Float32), Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@cross_entropy_loss_grad_fp16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+
+      begin
+        loss_device = ensure_loss_buffer
+        fn.call(predicted, target, grad_output, loss_device, rows, cols)
+        CUDA.memcpy(loss_output.as(Pointer(Void)), loss_device.as(Pointer(Void)), 4_u64, MemcpyKind::DeviceToHost)
+        0
+      rescue e
+        Log.error { "CUDA Error in cross_entropy_loss_gradient_fp16: #{e}" }
+        1
+      end
+    end
+
+    def cross_entropy_loss_gradient_bf16(predicted : UInt16Ptr, target : UInt16Ptr,
+                                         grad_output : UInt16Ptr, loss_output : Pointer(Float32),
+                                         rows : Int32, cols : Int32) : Int32
+      unless fn = @@cross_entropy_loss_grad_bf16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "cross_entropy_loss_gradient_bf16")
+          unless sym.null?
+            @@cross_entropy_loss_grad_bf16_proc = Proc(UInt16Ptr, UInt16Ptr, UInt16Ptr, Pointer(Float32), Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@cross_entropy_loss_grad_bf16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+
+      begin
+        loss_device = ensure_loss_buffer
+        fn.call(predicted, target, grad_output, loss_device, rows, cols)
+        CUDA.memcpy(loss_output.as(Pointer(Void)), loss_device.as(Pointer(Void)), 4_u64, MemcpyKind::DeviceToHost)
+        0
+      rescue e
+        Log.error { "CUDA Error in cross_entropy_loss_gradient_bf16: #{e}" }
+        1
+      end
+    end
+
     def softmax_cross_entropy_label(predicted : Pointer(Float32), labels : Pointer(Int32),
                                     grad_out : Pointer(Float32), loss_out : Pointer(Float32),
                                     rows : Int32, cols : Int32) : Int32
@@ -2084,6 +2146,62 @@ module SHAInet
         0
       rescue e
         Log.error { "CUDA Error in softmax_cross_entropy_label_matrix_fp32: #{e}" }
+        1
+      end
+    end
+
+    def softmax_cross_entropy_label_matrix_fp16(predicted : UInt16Ptr, labels : UInt16Ptr,
+                                                grad_out : UInt16Ptr, loss_out : Pointer(Float32),
+                                                rows : Int32, cols : Int32) : Int32
+      unless fn = @@softmax_cross_entropy_label_matrix_fp16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "softmax_cross_entropy_label_matrix_fp16")
+          unless sym.null?
+            @@softmax_cross_entropy_label_matrix_fp16_proc = Proc(UInt16Ptr, UInt16Ptr, UInt16Ptr, Pointer(Float32), Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@softmax_cross_entropy_label_matrix_fp16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+
+      begin
+        loss_device = ensure_loss_buffer
+        fn.call(predicted, labels, grad_out, loss_device, rows, cols)
+        CUDA.memcpy(loss_out.as(Pointer(Void)), loss_device.as(Pointer(Void)), 4_u64, MemcpyKind::DeviceToHost)
+        0
+      rescue e
+        Log.error { "CUDA Error in softmax_cross_entropy_label_matrix_fp16: #{e}" }
+        1
+      end
+    end
+
+    def softmax_cross_entropy_label_matrix_bf16(predicted : UInt16Ptr, labels : UInt16Ptr,
+                                                grad_out : UInt16Ptr, loss_out : Pointer(Float32),
+                                                rows : Int32, cols : Int32) : Int32
+      unless fn = @@softmax_cross_entropy_label_matrix_bf16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "softmax_cross_entropy_label_matrix_bf16")
+          unless sym.null?
+            @@softmax_cross_entropy_label_matrix_bf16_proc = Proc(UInt16Ptr, UInt16Ptr, UInt16Ptr, Pointer(Float32), Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@softmax_cross_entropy_label_matrix_bf16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+
+      begin
+        loss_device = ensure_loss_buffer
+        fn.call(predicted, labels, grad_out, loss_device, rows, cols)
+        CUDA.memcpy(loss_out.as(Pointer(Void)), loss_device.as(Pointer(Void)), 4_u64, MemcpyKind::DeviceToHost)
+        0
+      rescue e
+        Log.error { "CUDA Error in softmax_cross_entropy_label_matrix_bf16: #{e}" }
         1
       end
     end
@@ -2228,6 +2346,62 @@ module SHAInet
         0
       rescue e
         Log.error { "CUDA Error in mse_cost_gradient_fp32: #{e}" }
+        1
+      end
+    end
+
+    def mse_cost_gradient_fp16(actual_ptr : UInt16Ptr, expected_ptr : UInt16Ptr,
+                               grad_ptr : UInt16Ptr, loss_ptr : Pointer(Float32),
+                               rows : Int32, cols : Int32) : Int32
+      unless fn = @@mse_loss_grad_fp16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "mse_loss_gradient_fp16")
+          unless sym.null?
+            @@mse_loss_grad_fp16_proc = Proc(UInt16Ptr, UInt16Ptr, UInt16Ptr, Pointer(Float32), Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@mse_loss_grad_fp16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+
+      begin
+        loss_dev = ensure_loss_buffer
+        fn.call(actual_ptr, expected_ptr, grad_ptr, loss_dev, rows, cols)
+        CUDA.memcpy(loss_ptr.as(Pointer(Void)), loss_dev.as(Pointer(Void)), 4_u64, MemcpyKind::DeviceToHost)
+        0
+      rescue e
+        Log.error { "CUDA Error in mse_cost_gradient_fp16: #{e}" }
+        1
+      end
+    end
+
+    def mse_cost_gradient_bf16(actual_ptr : UInt16Ptr, expected_ptr : UInt16Ptr,
+                               grad_ptr : UInt16Ptr, loss_ptr : Pointer(Float32),
+                               rows : Int32, cols : Int32) : Int32
+      unless fn = @@mse_loss_grad_bf16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "mse_loss_gradient_bf16")
+          unless sym.null?
+            @@mse_loss_grad_bf16_proc = Proc(UInt16Ptr, UInt16Ptr, UInt16Ptr, Pointer(Float32), Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@mse_loss_grad_bf16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+
+      begin
+        loss_dev = ensure_loss_buffer
+        fn.call(actual_ptr, expected_ptr, grad_ptr, loss_dev, rows, cols)
+        CUDA.memcpy(loss_ptr.as(Pointer(Void)), loss_dev.as(Pointer(Void)), 4_u64, MemcpyKind::DeviceToHost)
+        0
+      rescue e
+        Log.error { "CUDA Error in mse_cost_gradient_bf16: #{e}" }
         1
       end
     end
