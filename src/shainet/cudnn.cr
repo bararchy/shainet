@@ -701,6 +701,36 @@ module SHAInet
         raise "CUDA cross_entropy_loss_and_gradient failed" if result != 0
         grad_output.mark_device_dirty!
         return
+      elsif CUDA.available? && predicted.precision.fp16? && target.precision.fp16? && grad_output.precision.fp16?
+        predicted.sync_to_device! unless predicted.device_dirty?
+        target.sync_to_device! unless target.device_dirty?
+        grad_output.sync_to_device! unless grad_output.device_dirty?
+        result = CUDA.cross_entropy_loss_gradient_fp16(
+          predicted.device_ptr.not_nil!.as(UInt16Ptr),
+          target.device_ptr.not_nil!.as(UInt16Ptr),
+          grad_output.device_ptr.not_nil!.as(UInt16Ptr),
+          loss_output,
+          predicted.rows,
+          predicted.cols
+        )
+        raise "CUDA cross_entropy_loss_and_gradient failed" if result != 0
+        grad_output.mark_device_dirty!
+        return
+      elsif CUDA.available? && predicted.precision.bf16? && target.precision.bf16? && grad_output.precision.bf16?
+        predicted.sync_to_device! unless predicted.device_dirty?
+        target.sync_to_device! unless target.device_dirty?
+        grad_output.sync_to_device! unless grad_output.device_dirty?
+        result = CUDA.cross_entropy_loss_gradient_bf16(
+          predicted.device_ptr.not_nil!.as(UInt16Ptr),
+          target.device_ptr.not_nil!.as(UInt16Ptr),
+          grad_output.device_ptr.not_nil!.as(UInt16Ptr),
+          loss_output,
+          predicted.rows,
+          predicted.cols
+        )
+        raise "CUDA cross_entropy_loss_and_gradient failed" if result != 0
+        grad_output.mark_device_dirty!
+        return
       end
 
       predicted.sync_from_device!("cross_entropy_pred") if predicted.device_dirty?
@@ -739,6 +769,30 @@ module SHAInet
           predicted.rows,
           predicted.cols
         )
+      elsif predicted.precision.fp16? && target.precision.fp16? && grad_output.precision.fp16?
+        predicted.sync_to_device! unless predicted.device_dirty?
+        target.sync_to_device! unless target.device_dirty?
+        grad_output.sync_to_device! unless grad_output.device_dirty?
+        result = CUDA.mse_cost_gradient_fp16(
+          predicted.device_ptr.not_nil!.as(UInt16Ptr),
+          target.device_ptr.not_nil!.as(UInt16Ptr),
+          grad_output.device_ptr.not_nil!.as(UInt16Ptr),
+          loss_output,
+          predicted.rows,
+          predicted.cols
+        )
+      elsif predicted.precision.bf16? && target.precision.bf16? && grad_output.precision.bf16?
+        predicted.sync_to_device! unless predicted.device_dirty?
+        target.sync_to_device! unless target.device_dirty?
+        grad_output.sync_to_device! unless grad_output.device_dirty?
+        result = CUDA.mse_cost_gradient_bf16(
+          predicted.device_ptr.not_nil!.as(UInt16Ptr),
+          target.device_ptr.not_nil!.as(UInt16Ptr),
+          grad_output.device_ptr.not_nil!.as(UInt16Ptr),
+          loss_output,
+          predicted.rows,
+          predicted.cols
+        )
       else
         raise ArgumentError.new("mse_loss_and_gradient only supports Fp32 precision")
       end
@@ -766,6 +820,34 @@ module SHAInet
           predicted.device_ptr.not_nil!.as(Pointer(Float32)),
           target.device_ptr.not_nil!.as(Pointer(Float32)),
           grad_output.device_ptr.not_nil!.as(Pointer(Float32)),
+          loss,
+          predicted.rows,
+          predicted.cols
+        )
+        raise "CUDA softmax_cross_entropy_loss_and_gradient failed" if result != 0
+        grad_output.mark_device_dirty!
+      elsif CUDA.available? && predicted.precision.fp16? && target.precision.fp16? && grad_output.precision.fp16?
+        predicted.sync_to_device! unless predicted.device_dirty?
+        target.sync_to_device! unless target.device_dirty?
+        grad_output.sync_to_device! unless grad_output.device_dirty?
+        result = CUDA.softmax_cross_entropy_label_matrix_fp16(
+          predicted.device_ptr.not_nil!.as(UInt16Ptr),
+          target.device_ptr.not_nil!.as(UInt16Ptr),
+          grad_output.device_ptr.not_nil!.as(UInt16Ptr),
+          loss,
+          predicted.rows,
+          predicted.cols
+        )
+        raise "CUDA softmax_cross_entropy_loss_and_gradient failed" if result != 0
+        grad_output.mark_device_dirty!
+      elsif CUDA.available? && predicted.precision.bf16? && target.precision.bf16? && grad_output.precision.bf16?
+        predicted.sync_to_device! unless predicted.device_dirty?
+        target.sync_to_device! unless target.device_dirty?
+        grad_output.sync_to_device! unless grad_output.device_dirty?
+        result = CUDA.softmax_cross_entropy_label_matrix_bf16(
+          predicted.device_ptr.not_nil!.as(UInt16Ptr),
+          target.device_ptr.not_nil!.as(UInt16Ptr),
+          grad_output.device_ptr.not_nil!.as(UInt16Ptr),
           loss,
           predicted.rows,
           predicted.cols

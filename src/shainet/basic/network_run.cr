@@ -707,7 +707,7 @@ module SHAInet
           raise NeuralNetRunError.new("Label #{label} out of bounds for output size #{logits.cols}")
         end
 
-        target = CudaMatrix.zeros(1, logits.cols)
+        target = CudaMatrix.zeros(1, logits.cols, precision: @precision)
         target[0, label] = 1.0_f32
         target.sync_to_device!
 
@@ -776,7 +776,7 @@ module SHAInet
           raise NeuralNetRunError.new("Label #{label} out of bounds for output size #{logits.cols}")
         end
 
-        target = CudaMatrix.zeros(1, logits.cols)
+        target = CudaMatrix.zeros(1, logits.cols, precision: @precision)
         target[0, label] = 1.0_f32
         target.sync_to_device!
 

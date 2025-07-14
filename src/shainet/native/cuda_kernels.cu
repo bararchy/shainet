@@ -1254,6 +1254,18 @@ void cross_entropy_loss_gradient_f32(float *pred, float *target, float *grad,
   cross_entropy_loss_gradient_t<float>(pred, target, grad, loss, rows, cols);
 }
 
+void cross_entropy_loss_gradient_fp16(__half *pred, __half *target, __half *grad,
+                                      float *loss, int rows, int cols) {
+  cross_entropy_loss_gradient_t<__half>(pred, target, grad, loss, rows, cols);
+}
+
+void cross_entropy_loss_gradient_bf16(__nv_bfloat16 *pred, const __nv_bfloat16 *target,
+                                      __nv_bfloat16 *grad, float *loss, int rows,
+                                      int cols) {
+  cross_entropy_loss_gradient_t<__nv_bfloat16>(pred, target, grad, loss, rows,
+                                               cols);
+}
+
 void softmax_cross_entropy_label(float *pred, const int *labels, float *grad,
                                  float *loss, int rows, int cols) {
   softmax_cross_entropy_label_t<float>(pred, labels, grad, loss, rows, cols);
@@ -1279,6 +1291,21 @@ void softmax_cross_entropy_label_matrix_f32(float *pred, const float *labels,
                                               cols);
 }
 
+void softmax_cross_entropy_label_matrix_fp16(const __half *pred,
+                                             const __half *labels, __half *grad,
+                                             float *loss, int rows, int cols) {
+  softmax_cross_entropy_label_matrix_t<__half>(pred, labels, grad, loss, rows,
+                                               cols);
+}
+
+void softmax_cross_entropy_label_matrix_bf16(const __nv_bfloat16 *pred,
+                                             const __nv_bfloat16 *labels,
+                                             __nv_bfloat16 *grad, float *loss,
+                                             int rows, int cols) {
+  softmax_cross_entropy_label_matrix_t<__nv_bfloat16>(pred, labels, grad, loss,
+                                                      rows, cols);
+}
+
 void mse_loss_gradient(float *pred, float *target, float *grad, float *loss,
                        int rows, int cols) {
   mse_loss_gradient_t<float>(pred, target, grad, loss, rows, cols);
@@ -1287,6 +1314,17 @@ void mse_loss_gradient(float *pred, float *target, float *grad, float *loss,
 void mse_loss_gradient_f32(float *pred, float *target, float *grad,
                            float *loss, int rows, int cols) {
   mse_loss_gradient_t<float>(pred, target, grad, loss, rows, cols);
+}
+
+void mse_loss_gradient_fp16(const __half *pred, const __half *target,
+                            __half *grad, float *loss, int rows, int cols) {
+  mse_loss_gradient_t<__half>(pred, target, grad, loss, rows, cols);
+}
+
+void mse_loss_gradient_bf16(const __nv_bfloat16 *pred, const __nv_bfloat16 *target,
+                            __nv_bfloat16 *grad, float *loss, int rows,
+                            int cols) {
+  mse_loss_gradient_t<__nv_bfloat16>(pred, target, grad, loss, rows, cols);
 }
 
 } // extern "C"
