@@ -88,7 +88,7 @@ end
 
 ### Raw data access
 
-`CudaMatrix#raw_data` provides the matrix values as an `Array(Float64)` for
+`CudaMatrix#raw_data` provides the matrix values as an `Array(Float32)` for
 convenience.  When the matrix uses half precision or INT8 storage this method
 allocates and converts the data.  Use `CudaMatrix#raw_data_buffer` to obtain a
 writable slice of the underlying CPU buffer without conversion.  Functions such

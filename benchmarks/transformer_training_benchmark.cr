@@ -16,10 +16,10 @@ ids = tokenizer.encode(text)
 token_count = tokenizer.vocab.size
 
 def build_training(ids, token_count)
-  training = [] of Array(Array(Array(Int32)) | Array(Float64))
+  training = [] of Array(Array(Array(Int32)) | Array(Float32))
   (0...ids.size - 1).each do |i|
     seq = [[ids[i]]]
-    target = Array(Float64).new(token_count, 0.0)
+    target = Array(Float32).new(token_count, 0.0_f32)
     target[ids[i + 1]] = 1.0
     training << [seq, target]
   end
