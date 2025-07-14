@@ -190,7 +190,7 @@ describe "Network with TransformerLayer" do
     net.add_layer(:output, 2, SHAInet.none)
     net.fully_connect
     training = [[[[1.0, 0.0]], [1.0, 1.0]]]
-    net.learning_rate = 0.005
+    net.learning_rate = 0.005_f32
 
     # Reduced epochs to avoid memory issues and hanging
     net.train(data: training, training_type: :sgdm,

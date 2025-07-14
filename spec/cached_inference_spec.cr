@@ -18,7 +18,7 @@ describe "Transformer cached inference" do
     seq = [1, 2, 3]
 
     tl = net.hidden_layers.find(&.is_a?(SHAInet::TransformerLayer)).as(SHAInet::TransformerLayer)
-    outputs_full = [] of Array(Float64)
+    outputs_full = [] of Array(Float32)
     seq.each_index do |i|
       prefix = seq[0..i]
       tl.mask = SHAInet::TransformerMaskUtils.causal_mask(prefix.size)
@@ -33,7 +33,7 @@ describe "Transformer cached inference" do
       end
     end
 
-    cached = [] of Array(Float64)
+    cached = [] of Array(Float32)
     first_key_id = nil
     seq.each_with_index do |t, idx|
       out = net.run_cached(t, reset_cache: idx.zero?)

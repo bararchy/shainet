@@ -13,7 +13,7 @@ describe "Gradient accumulation" do
       net.add_layer(:input, 1, SHAInet.sigmoid)
       net.add_layer(:output, 1, SHAInet.sigmoid)
       net.fully_connect
-      net.learning_rate = 0.1
+      net.learning_rate = 0.1_f32
       net
     }
 

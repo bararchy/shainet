@@ -79,15 +79,15 @@ describe "Transformer Integration" do
       net.transformer_layers.first.positional_encoding = pos_enc
 
       # Create training data with proper sequence format
-      training_data = [] of Array(Array(Float64) | Array(Array(Float64)))
+      training_data = [] of Array(Array(Float32) | Array(Array(Float32)))
       (0...(ids.size - seq_len)).each do |i|
-        seq = ids[i, seq_len].map { |id| [id.to_f64] }
-        target = [ids[i + seq_len].to_f64]
+        seq = ids[i, seq_len].map { |id| [id.to_f32] }
+        target = [ids[i + seq_len].to_f32]
         training_data << [seq, target]
       end
 
       # Training should not crash - but limit to one epoch and small batch for test
-      net.learning_rate = 0.1
+      net.learning_rate = 0.1_f32
       # We're now able to handle training without errors, so this shouldn't raise an exception
       net.train(
         data: training_data,
@@ -131,9 +131,9 @@ describe "Transformer Integration" do
 
       # Output may be a vector for the last token or a matrix with one row per
       # token. Verify we received some scores with the vocabulary dimension.
-      if output.is_a?(Array(Array(Float64)))
+      if output.is_a?(Array(Array(Float32)))
         output.first.size.should eq(token_count)
-      elsif output.is_a?(Array(Float64))
+      elsif output.is_a?(Array(Float32))
         output.size.should eq(token_count)
       end
     end
@@ -206,12 +206,12 @@ describe "Transformer Integration" do
       first_input = batch[0][0]
       first_output = batch[0][1]
 
-      first_input.should be_a(Array(Array(Float64)))
-      first_input.as(Array(Array(Float64))).size.should eq(3)    # Sequence length
-      first_input.as(Array(Array(Float64)))[0].size.should eq(1) # Each token is wrapped in array
+      first_input.should be_a(Array(Array(Float32)))
+      first_input.as(Array(Array(Float32))).size.should eq(3)    # Sequence length
+      first_input.as(Array(Array(Float32)))[0].size.should eq(1) # Each token is wrapped in array
 
-      first_output.should be_a(Array(Float64))
-      first_output.as(Array(Float64)).size.should eq(1)
+      first_output.should be_a(Array(Float32))
+      first_output.as(Array(Float32)).size.should eq(1)
 
       # Clean up
       File.delete(temp_file)

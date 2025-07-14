@@ -48,7 +48,7 @@ end
 # Convert tuples to arrays for training
 train_data = training.map { |seq, target| [seq, target] }
 
-net.learning_rate = 0.001
+net.learning_rate = 0.001_f32
 net.train(data: train_data,
   training_type: :adamw,
   cost_function: :c_ent,
