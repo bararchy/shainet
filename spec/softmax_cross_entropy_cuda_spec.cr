@@ -58,7 +58,8 @@ describe "CUDA softmax cross entropy" do
     target = SHAInet::SimpleMatrix.from_a([[0.0, 1.0]], SHAInet::Precision::Fp16)
     g_pred = SHAInet::GPUMemory.to_gpu(logits).as(SHAInet::CudaMatrix)
     g_target = SHAInet::GPUMemory.to_gpu(target).as(SHAInet::CudaMatrix)
-    grad = SHAInet::CudaMatrix.new(logits.rows, logits.cols) # fp64 by default
+    # workspace uses Fp32 precision
+    grad = SHAInet::CudaMatrix.new(logits.rows, logits.cols, precision: SHAInet::Precision::Fp32)
     loss_val = 0.0
     expect_raises(Exception) do
       SHAInet::CUDNN.softmax_cross_entropy_loss_and_gradient(g_pred, g_target, pointerof(loss_val), grad)
