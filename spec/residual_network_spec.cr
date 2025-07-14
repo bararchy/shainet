@@ -10,10 +10,10 @@ describe "Residual connections" do
     net.add_residual(0, 1)
 
     training_data = [
-      [[0.0, 0.0], [0.0]],
-      [[0.0, 1.0], [1.0]],
-      [[1.0, 0.0], [1.0]],
-      [[1.0, 1.0], [0.0]],
+      [[0.0_f32, 0.0_f32], [0.0_f32]],
+      [[0.0_f32, 1.0_f32], [1.0_f32]],
+      [[1.0_f32, 0.0_f32], [1.0_f32]],
+      [[1.0_f32, 1.0_f32], [0.0_f32]],
     ]
 
     net.train(
@@ -26,7 +26,7 @@ describe "Residual connections" do
       show_slice: true
     )
 
-    result = net.run([0.0, 1.0])
+    result = net.run([0.0_f32, 1.0_f32])
     result.size.should eq(1)
   end
 end

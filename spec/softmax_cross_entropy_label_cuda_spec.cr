@@ -5,18 +5,18 @@ private def cpu_softmax_cross_entropy_label(logits : SHAInet::SimpleMatrix, labe
   rows = logits.rows
   cols = logits.cols
   grad = SHAInet::SimpleMatrix.zeros(rows, cols)
-  loss = 0.0
+  loss = 0.0_f32
   logits_rows = logits.to_a
   rows.times do |i|
     probs = SHAInet.softmax(logits_rows[i])
     label = labels[i]
-    row_loss = -Math.log(probs[label].clamp(1e-15, 1.0))
+    row_loss = -Math.log(probs[label].clamp(1e-15_f32, 1.0_f32))
     puts "[CPU] Row \\#{i}: logits=\\#{logits_rows[i].inspect}, probs=\\#{probs.inspect}, label=\\#{label}, row_loss=\\#{row_loss}"
     loss += row_loss
     cols.times do |j|
       grad[i, j] = probs[j]
     end
-    grad[i, label] -= 1.0
+    grad[i, label] -= 1.0_f32
   end
   puts "[CPU] Total loss: \\#{loss}"
   {loss: loss, grad: grad}
@@ -25,7 +25,7 @@ end
 describe "CUDA softmax cross entropy with labels" do
   it "matches CPU implementation" do
     pending! "CUDA kernels not available" unless SHAInet::CUDA.fully_available?
-    logits = SHAInet::SimpleMatrix.from_a([[1.0, 2.0, 0.5], [0.1, -1.0, 0.3]])
+    logits = SHAInet::SimpleMatrix.from_a([[1.0_f32, 2.0_f32, 0.5_f32], [0.1_f32, -1.0_f32, 0.3_f32]])
     labels = [1, 0]
     ref = cpu_softmax_cross_entropy_label(logits, labels)
 
@@ -41,7 +41,7 @@ describe "CUDA softmax cross entropy with labels" do
     SHAInet::CUDA.memcpy(labels_dev.as(Pointer(Void)), label_ids.to_unsafe.as(Pointer(Void)), bytes, SHAInet::CUDA::MemcpyKind::HostToDevice)
 
     grad = SHAInet::CudaMatrix.new(logits.rows, logits.cols)
-    loss_val = 0.0
+    loss_val = 0.0_f32
     {% if flag?(:enable_cuda) %}
       # Call the CUDA kernel directly, not via CUDNN wrapper
       SHAInet::CUDA.softmax_cross_entropy_label(
@@ -65,10 +65,10 @@ describe "CUDA softmax cross entropy with labels" do
     grad_arr.each_with_index do |row, i|
       puts "[CUDA] Row \\#{i}: grad=\\#{row.inspect}"
     end
-    loss_val.should be_close(ref[:loss], 1e-6)
+    loss_val.should be_close(ref[:loss], 1e-6_f32)
     grad.rows.times do |i|
       grad.cols.times do |j|
-        grad[i, j].should be_close(ref[:grad][i, j], 1e-6)
+        grad[i, j].should be_close(ref[:grad][i, j], 1e-6_f32)
       end
     end
   end

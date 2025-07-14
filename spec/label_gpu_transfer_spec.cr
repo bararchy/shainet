@@ -7,8 +7,8 @@ describe "softmax_cross_entropy_label_loss_and_gradient" do
     cols = 3
     pred = SHAInet::CudaMatrix.new(rows, cols).random_fill!
     labels = SHAInet::CudaMatrix.new(rows, 1)
-    labels[0, 0] = 1.0
-    labels[1, 0] = 0.0
+    labels[0, 0] = 1.0_f32
+    labels[1, 0] = 0.0_f32
     labels.sync_to_device!
     pred.sync_to_device!
     grad = SHAInet::CudaMatrix.new(rows, cols)
@@ -17,7 +17,7 @@ describe "softmax_cross_entropy_label_loss_and_gradient" do
     labels.mark_device_dirty!
     grad.mark_device_dirty!
     SHAInet::CudaMatrix.reset_sync_stats
-    loss = 0.0
+    loss = 0.0_f32
     SHAInet::CUDNN.softmax_cross_entropy_label_loss_and_gradient(pred, labels, pointerof(loss), grad)
     stats = SHAInet::CudaMatrix.sync_stats
     stats[:sync_from_device_count].should eq(0_u64)

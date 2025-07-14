@@ -19,7 +19,7 @@ describe SHAInet::Tokenizer do
     else
       matrix.should be_a(SHAInet::SimpleMatrix)
     end
-    matrix[0, 0].should eq(0.0)
-    matrix[0, 1].should eq(1.0)
+    matrix[0, 0].should eq(0.0_f32)
+    matrix[0, 1].should eq(1.0_f32)
   end
 end

@@ -10,8 +10,8 @@ describe SHAInet::Network do
     net.fully_connect
 
     data = [
-      [[0.0, 0.0], [0.0]],
-      [[1.0, 0.0], [1.0]],
+      [[0.0_f32, 0.0_f32], [0.0_f32]],
+      [[1.0_f32, 0.0_f32], [1.0_f32]],
     ]
 
     dir = "/tmp/auto_save_test"

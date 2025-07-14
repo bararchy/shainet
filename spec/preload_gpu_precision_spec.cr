@@ -5,16 +5,16 @@ describe "TrainingData GPU preload precision" do
     pending! "CUDA not available" unless SHAInet::CUDA.available?
 
     inputs = [
-      [0.0, 0.0],
-      [0.0, 1.0],
-      [1.0, 0.0],
-      [1.0, 1.0],
+      [0.0_f32, 0.0_f32],
+      [0.0_f32, 1.0_f32],
+      [1.0_f32, 0.0_f32],
+      [1.0_f32, 1.0_f32],
     ]
     outputs = [
-      [0.0],
-      [1.0],
-      [1.0],
-      [0.0],
+      [0.0_f32],
+      [1.0_f32],
+      [1.0_f32],
+      [0.0_f32],
     ]
 
     data = SHAInet::TrainingData.new(inputs, outputs, preload_gpu: true)

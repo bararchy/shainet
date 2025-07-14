@@ -4,8 +4,8 @@ describe "Gradient accumulation" do
   it "matches larger batch training" do
     Random::DEFAULT.new_seed(42_u64)
     data = [
-      [[0.0], [0.0]],
-      [[1.0], [1.0]],
+      [[0.0_f32], [0.0_f32]],
+      [[1.0_f32], [1.0_f32]],
     ]
 
     build_net = -> {
@@ -46,7 +46,7 @@ describe "Gradient accumulation" do
     w_batch = net_batch.output_layers.last.weights[0, 0]
     b_batch = net_batch.output_layers.last.biases[0, 0]
 
-    w_acc.should be_close(w_batch, 1e-6)
-    b_acc.should be_close(b_batch, 1e-6)
+    w_acc.should be_close(w_batch, 1e-6_f32)
+    b_acc.should be_close(b_batch, 1e-6_f32)
   end
 end

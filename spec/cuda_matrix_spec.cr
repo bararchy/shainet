@@ -7,14 +7,14 @@ describe SHAInet::CudaMatrix do
     b = SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[1, 0], [0, 1]]))
 
     sum = a.as(SHAInet::CudaMatrix) + b.as(SHAInet::CudaMatrix)
-    sum[1, 1].should eq(5.0)
+    sum[1, 1].should eq(5.0_f32)
 
     prod = a.as(SHAInet::CudaMatrix) * b.as(SHAInet::CudaMatrix)
-    prod[0, 0].should eq(1.0)
-    prod[1, 1].should eq(4.0)
+    prod[0, 0].should eq(1.0_f32)
+    prod[1, 1].should eq(4.0_f32)
 
     t = a.transpose
-    t[0, 1].should eq(3.0)
+    t[0, 1].should eq(3.0_f32)
   end
 
   it "performs relu and add_bias on GPU when available" do
@@ -29,18 +29,18 @@ describe SHAInet::CudaMatrix do
       matrix.as(SHAInet::CudaMatrix).device_ptr.should_not be_nil
     end
 
-    matrix[0, 0].should eq(0.0 + 1.0)
-    matrix[0, 1].should eq(2.0 + 1.0)
-    matrix[1, 0].should eq(0.0 + 1.0)
-    matrix[1, 1].should eq(4.0 + 1.0)
+    matrix[0, 0].should eq(0.0_f32 + 1.0_f32)
+    matrix[0, 1].should eq(2.0_f32 + 1.0_f32)
+    matrix[1, 0].should eq(0.0_f32 + 1.0_f32)
+    matrix[1, 1].should eq(4.0_f32 + 1.0_f32)
   end
 
   it "raises error for non-Fp32 precision when cuDNN is unavailable" do
     pending! "CUDA not available" unless SHAInet::CUDA.available?
     pending! "cuDNN available" if SHAInet::CUDNN.available?
 
-    matrix = SHAInet::CudaMatrix.new(2, 2, 0.0, SHAInet::Precision::Fp32)
-    bias = SHAInet::CudaMatrix.new(1, 2, 0.0, SHAInet::Precision::Fp32)
+    matrix = SHAInet::CudaMatrix.new(2, 2, 0.0_f32, SHAInet::Precision::Fp32)
+    bias = SHAInet::CudaMatrix.new(1, 2, 0.0_f32, SHAInet::Precision::Fp32)
 
     expect_raises(Exception, /non-FP32 precisions require cuDNN/) do
       matrix.add_bias!(bias)
@@ -49,7 +49,7 @@ describe SHAInet::CudaMatrix do
 
   it "checks precision support for transpose" do
     pending! "CUDA not available" unless SHAInet::CUDA.available?
-    matrix = SHAInet::CudaMatrix.new(2, 2, 0.0, SHAInet::Precision::Fp16)
+    matrix = SHAInet::CudaMatrix.new(2, 2, 0.0_f32, SHAInet::Precision::Fp16)
 
     if SHAInet::CUDA.kernels_available?
       matrix.transpose.should be_a(SHAInet::CudaMatrix)

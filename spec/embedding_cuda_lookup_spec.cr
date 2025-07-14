@@ -7,7 +7,7 @@ describe "Embedding GPU lookup" do
     # Create a simple embedding layer with fixed values
     layer = SHAInet::EmbeddingLayer.new(5, 4)
     if layer.embeddings.is_a?(SHAInet::CudaMatrix)
-      fp16 = SHAInet::CudaMatrix.new(5, 4, 0.0, SHAInet::Precision::Fp16)
+      fp16 = SHAInet::CudaMatrix.new(5, 4, 0.0_f32, SHAInet::Precision::Fp16)
       5.times do |r|
         4.times do |c|
           fp16[r, c] = layer.embeddings[r, c]
@@ -19,7 +19,7 @@ describe "Embedding GPU lookup" do
 
     # Set the embedding values
     token_id = 1
-    expected_values = [0.1, 0.2, 0.3, 0.4]
+    expected_values = [0.1_f32, 0.2_f32, 0.3_f32, 0.4_f32]
 
     # Set the values directly in the embeddings matrix
     expected_values.each_with_index do |val, idx|
@@ -37,7 +37,7 @@ describe "Embedding GPU lookup" do
     # Compare results
     result.size.should eq(expected_values.size)
     result.each_with_index do |val, idx|
-      val.should be_close(expected_values[idx], 1e-6)
+      val.should be_close(expected_values[idx], 1e-6_f32)
     end
   end
 end

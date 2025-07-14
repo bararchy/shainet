@@ -14,7 +14,7 @@ describe SHAInet::Data do
   it "can be split into a test set and a training set according to a given fraction" do
     puts "\n"
     data = SHAInet::Data.new_with_csv_input_target(iris, 0..3, 4)
-    training_set, test_set = data.split(0.67)
+    training_set, test_set = data.split(0.67_f32)
     training_set.should be_a(SHAInet::TrainingData)
     test_set.should be_a(SHAInet::TestData)
     training_set.data.size.should eq(100)
@@ -32,73 +32,73 @@ describe SHAInet::Data do
   it "should normalize inputs" do
     puts "\n"
     inputs = [
-      [1.0], [2.0], [3.0],
+      [1.0_f32], [2.0_f32], [3.0_f32],
     ]
     outputs = [
-      [1.0], [2.0], [3.0],
+      [1.0_f32], [2.0_f32], [3.0_f32],
     ]
 
     data = SHAInet::Data.new(inputs, outputs)
     data.normalize_min_max
-    data.normalize_inputs([1]).should eq([0.0])
-    data.normalize_inputs([2]).should eq([0.5])
-    data.normalize_inputs([3]).should eq([1.0])
+    data.normalize_inputs([1]).should eq([0.0_f32])
+    data.normalize_inputs([2]).should eq([0.5_f32])
+    data.normalize_inputs([3]).should eq([1.0_f32])
   end
 
   puts "############################################################"
   it "should normalize outputs" do
     puts "\n"
     inputs = [
-      [1.0], [2.0], [3.0],
+      [1.0_f32], [2.0_f32], [3.0_f32],
     ]
     outputs = [
-      [1.0], [2.0], [3.0],
+      [1.0_f32], [2.0_f32], [3.0_f32],
     ]
 
     data = SHAInet::Data.new(inputs, outputs)
     data.normalize_min_max
-    data.normalize_outputs([1]).should eq([0.0])
-    data.normalize_outputs([2]).should eq([0.5])
-    data.normalize_outputs([3]).should eq([1.0])
+    data.normalize_outputs([1]).should eq([0.0_f32])
+    data.normalize_outputs([2]).should eq([0.5_f32])
+    data.normalize_outputs([3]).should eq([1.0_f32])
   end
 
   puts "############################################################"
   it "should denormalize outputs" do
     puts "\n"
     inputs = [
-      [1.0], [2.0], [3.0],
+      [1.0_f32], [2.0_f32], [3.0_f32],
     ]
     outputs = [
-      [1.0], [2.0], [3.0],
+      [1.0_f32], [2.0_f32], [3.0_f32],
     ]
 
     data = SHAInet::Data.new(inputs, outputs)
     data.normalize_min_max
-    data.denormalize_outputs([0.0]).should eq([1.0])
-    data.denormalize_outputs([0.5]).should eq([2.0])
-    data.denormalize_outputs([1.0]).should eq([3.0])
+    data.denormalize_outputs([0.0_f32]).should eq([1.0_f32])
+    data.denormalize_outputs([0.5_f32]).should eq([2.0_f32])
+    data.denormalize_outputs([1.0_f32]).should eq([3.0_f32])
   end
 
   puts "############################################################"
   it "should handle constant input columns" do
     puts "\n"
     inputs = [
-      [1.0, 5.0],
-      [2.0, 5.0],
-      [3.0, 5.0],
+      [1.0_f32, 5.0_f32],
+      [2.0_f32, 5.0_f32],
+      [3.0_f32, 5.0_f32],
     ]
     outputs = [
-      [1.0],
-      [2.0],
-      [3.0],
+      [1.0_f32],
+      [2.0_f32],
+      [3.0_f32],
     ]
 
     data = SHAInet::Data.new(inputs, outputs)
     data.normalize_min_max
     data.normalized_inputs.should eq([
-      [0.0, 1.0],
-      [0.5, 1.0],
-      [1.0, 1.0],
+      [0.0_f32, 1.0_f32],
+      [0.5_f32, 1.0_f32],
+      [1.0_f32, 1.0_f32],
     ])
   end
 end

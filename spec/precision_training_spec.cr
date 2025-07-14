@@ -11,10 +11,10 @@ describe "Network precision training" do
     net.fully_connect
 
     data = [
-      [[0.0, 0.0], [0.0]],
-      [[0.0, 1.0], [1.0]],
-      [[1.0, 0.0], [1.0]],
-      [[1.0, 1.0], [0.0]],
+      [[0.0_f32, 0.0_f32], [0.0_f32]],
+      [[0.0_f32, 1.0_f32], [1.0_f32]],
+      [[1.0_f32, 0.0_f32], [1.0_f32]],
+      [[1.0_f32, 1.0_f32], [0.0_f32]],
     ]
 
     net.train(
@@ -31,7 +31,7 @@ describe "Network precision training" do
     layer.weights.precision.should eq(SHAInet::Precision::Fp16)
     layer.biases.precision.should eq(SHAInet::Precision::Fp16)
 
-    out = net.run([0.0, 1.0])
+    out = net.run([0.0_f32, 1.0_f32])
     out.size.should eq(1)
   end
 
@@ -45,10 +45,10 @@ describe "Network precision training" do
     net.fully_connect
 
     data = [
-      [[0.0, 0.0], [0.0]],
-      [[0.0, 1.0], [1.0]],
-      [[1.0, 0.0], [1.0]],
-      [[1.0, 1.0], [0.0]],
+      [[0.0_f32, 0.0_f32], [0.0_f32]],
+      [[0.0_f32, 1.0_f32], [1.0_f32]],
+      [[1.0_f32, 0.0_f32], [1.0_f32]],
+      [[1.0_f32, 1.0_f32], [0.0_f32]],
     ]
 
     net.train(
@@ -65,7 +65,7 @@ describe "Network precision training" do
     layer.weights.precision.should eq(SHAInet::Precision::Bf16)
     layer.biases.precision.should eq(SHAInet::Precision::Bf16)
 
-    out = net.run([0.0, 1.0])
+    out = net.run([0.0_f32, 1.0_f32])
     out.size.should eq(1)
   end
 end

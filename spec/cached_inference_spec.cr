@@ -46,7 +46,7 @@ describe "Transformer cached inference" do
 
     outputs_full.each_with_index do |o, i|
       o.each_with_index do |val, j|
-        val.should be_close(cached[i][j], 1e-2)
+        val.should be_close(cached[i][j], 1e-2_f32)
       end
     end
 

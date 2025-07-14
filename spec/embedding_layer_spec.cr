@@ -15,8 +15,8 @@ describe SHAInet::EmbeddingLayer do
     layer = SHAInet::EmbeddingLayer.new(3, 2)
 
     # Set some specific values for testing
-    layer.embeddings[1, 0] = 0.5
-    layer.embeddings[1, 1] = 0.5
+    layer.embeddings[1, 0] = 0.5_f32
+    layer.embeddings[1, 1] = 0.5_f32
 
     before = layer.lookup(1)
     puts "Before: #{before.inspect}, embeddings at 1: #{layer.embeddings[1, 0]}, #{layer.embeddings[1, 1]}"
@@ -25,11 +25,11 @@ describe SHAInet::EmbeddingLayer do
     layer.embed(1)
 
     # Set gradients directly
-    layer.gradients[1, 0] = 0.1
-    layer.gradients[1, 1] = 0.1
+    layer.gradients[1, 0] = 0.1_f32
+    layer.gradients[1, 1] = 0.1_f32
 
     # Apply gradients with a learning rate
-    layer.apply_gradients(0.1, 0.0)
+    layer.apply_gradients(0.1_f32, 0.0_f32)
 
     after = layer.lookup(1)
     puts "After: #{after.inspect}, embeddings at 1: #{layer.embeddings[1, 0]}, #{layer.embeddings[1, 1]}"

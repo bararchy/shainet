@@ -9,7 +9,7 @@ describe "PositionWiseFF SwiGLU" do
     ff.w2 = SHAInet::SimpleMatrix.ones(3, 2)
     ff.b2 = SHAInet::SimpleMatrix.zeros(1, 2)
 
-    x = SHAInet::SimpleMatrix.from_a([[1.0, 2.0]])
+    x = SHAInet::SimpleMatrix.from_a([[1.0_f32, 2.0_f32]])
     out = ff.forward(x)
 
     pre = x * ff.w1.as(SHAInet::SimpleMatrix)
@@ -20,8 +20,8 @@ describe "PositionWiseFF SwiGLU" do
       hidden[0, j] = pre[0, j] * SHAInet._sigmoid(pre[0, j + half])
     end
     expected = hidden * ff.w2.as(SHAInet::SimpleMatrix)
-    out[0, 0].should be_close(expected[0, 0], 1e-6)
-    out[0, 1].should be_close(expected[0, 1], 1e-6)
+    out[0, 0].should be_close(expected[0, 0], 1e-6_f32)
+    out[0, 1].should be_close(expected[0, 1], 1e-6_f32)
 
     dout = SHAInet::SimpleMatrix.ones(1, 2)
     d_in = ff.backward(dout)

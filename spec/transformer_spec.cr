@@ -3,14 +3,14 @@ require "./spec_helper"
 describe SHAInet::LayerNorm do
   it "normalizes rows" do
     ln = SHAInet::LayerNorm.new(2)
-    x = SHAInet::SimpleMatrix.from_a([[1.0, 3.0], [2.0, 0.0]])
+    x = SHAInet::SimpleMatrix.from_a([[1.0_f32, 3.0_f32], [2.0_f32, 0.0_f32]])
     if SHAInet::CUDA.fully_available?
       x = SHAInet::GPUMemory.to_gpu(x)
     end
     out = ln.forward(x)
     out.rows.times do |i|
-      mean = 0.0
-      var = 0.0
+      mean = 0.0_f32
+      var = 0.0_f32
       out.cols.times { |j| mean += out[i, j] }
       mean /= out.cols
       out.cols.times do |j|
@@ -18,8 +18,8 @@ describe SHAInet::LayerNorm do
         var += diff*diff
       end
       var /= out.cols
-      mean.should be_close(0.0, 1e-6)
-      var.should be_close(1.0, 1e-4)
+      mean.should be_close(0.0_f32, 1e-6_f32)
+      var.should be_close(1.0_f32, 1e-4_f32)
     end
   end
 end
@@ -29,9 +29,9 @@ describe SHAInet::MultiHeadAttention do
     Random::DEFAULT.new_seed(42_u64, 54_u64)
     attn = SHAInet::MultiHeadAttention.new(2, 1)
     input = if SHAInet::CUDA.fully_available?
-              SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[1.0, 0.0], [0.0, 1.0]]))
+              SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[1.0_f32, 0.0_f32], [0.0_f32, 1.0_f32]]))
             else
-              SHAInet::SimpleMatrix.from_a([[1.0, 0.0], [0.0, 1.0]])
+              SHAInet::SimpleMatrix.from_a([[1.0_f32, 0.0_f32], [0.0_f32, 1.0_f32]])
             end
     target = if SHAInet::CUDA.fully_available?
                SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.ones(2, 2))
@@ -47,9 +47,9 @@ describe SHAInet::MultiHeadAttention do
              end
       attn.backward(diff)
       if SHAInet::CUDA.fully_available?
-        attn.apply_gradients(0.2, SHAInet::CudaMatrix, 0.0)
+        attn.apply_gradients(0.2_f32, SHAInet::CudaMatrix, 0.0_f32)
       else
-        attn.apply_gradients(0.2, SHAInet::SimpleMatrix, 0.0)
+        attn.apply_gradients(0.2_f32, SHAInet::SimpleMatrix, 0.0_f32)
       end
     end
     out = attn.forward(input)
@@ -59,22 +59,22 @@ describe SHAInet::MultiHeadAttention do
             out.as(SHAInet::SimpleMatrix)
           end
 
-    out[0, 0].should be_close(1.0, 0.3)
-    out[1, 1].should be_close(1.0, 0.3)
+    out[0, 0].should be_close(1.0_f32, 0.3_f32)
+    out[1, 1].should be_close(1.0_f32, 0.3_f32)
   end
 
   it "respects an attention mask" do
     Random::DEFAULT.new_seed(42_u64, 54_u64)
     attn = SHAInet::MultiHeadAttention.new(2, 1)
     input = if SHAInet::CUDA.fully_available?
-              SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[1.0, 0.0], [0.0, 1.0]]))
+              SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[1.0_f32, 0.0_f32], [0.0_f32, 1.0_f32]]))
             else
-              SHAInet::SimpleMatrix.from_a([[1.0, 0.0], [0.0, 1.0]])
+              SHAInet::SimpleMatrix.from_a([[1.0_f32, 0.0_f32], [0.0_f32, 1.0_f32]])
             end
     mask = if SHAInet::CUDA.fully_available?
-             SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[0.0, -1e9], [-1e9, 0.0]]))
+             SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[0.0_f32, -1e9_f32], [-1e9_f32, 0.0_f32]]))
            else
-             SHAInet::SimpleMatrix.from_a([[0.0, -1e9], [-1e9, 0.0]])
+             SHAInet::SimpleMatrix.from_a([[0.0_f32, -1e9_f32], [-1e9_f32, 0.0_f32]])
            end
     out = if SHAInet::CUDA.fully_available?
             attn.forward(input.as(SHAInet::CudaMatrix), mask.as(SHAInet::CudaMatrix))
@@ -93,7 +93,7 @@ describe SHAInet::MultiHeadAttention do
           end
     out.rows.times do |i|
       out.cols.times do |j|
-        out[i, j].should be_close(expected[i, j], 1e-6)
+        out[i, j].should be_close(expected[i, j], 1e-6_f32)
       end
     end
   end
@@ -104,10 +104,10 @@ describe SHAInet::PositionalEncoding do
     pe = SHAInet::PositionalEncoding.sinusoidal(3, 4)
     pe.rows.should eq(3)
     pe.cols.should eq(4)
-    pe[0, 0].should be_close(0.0, 0.0001)
-    pe[0, 1].should be_close(1.0, 0.0001)
-    pe[1, 0].should be_close(Math.sin(1.0), 0.0001)
-    pe[1, 1].should be_close(Math.cos(1.0), 0.0001)
+    pe[0, 0].should be_close(0.0_f32, 0.0001_f32)
+    pe[0, 1].should be_close(1.0_f32, 0.0001_f32)
+    pe[1, 0].should be_close(Math.sin(1.0_f32), 0.0001_f32)
+    pe[1, 1].should be_close(Math.cos(1.0_f32), 0.0001_f32)
   end
 end
 
@@ -116,9 +116,9 @@ describe SHAInet::TransformerLayer do
     Random::DEFAULT.new_seed(42_u64, 54_u64)
     layer = SHAInet::TransformerLayer.new(2, 1, 4, 0, false, SHAInet.relu)
     input = if SHAInet::CUDA.fully_available?
-              SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[1.0, 0.0], [0.0, 1.0]]))
+              SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[1.0_f32, 0.0_f32], [0.0_f32, 1.0_f32]]))
             else
-              SHAInet::SimpleMatrix.from_a([[1.0, 0.0], [0.0, 1.0]])
+              SHAInet::SimpleMatrix.from_a([[1.0_f32, 0.0_f32], [0.0_f32, 1.0_f32]])
             end
     target = if SHAInet::CUDA.fully_available?
                SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.ones(2, 2))
@@ -134,21 +134,21 @@ describe SHAInet::TransformerLayer do
         diff = output.as(SHAInet::SimpleMatrix) - target.as(SHAInet::SimpleMatrix)
       end
       layer.backward(diff)
-      layer.apply_gradients(0.05, 0.0)
+      layer.apply_gradients(0.05_f32, 0.0_f32)
     end
 
     output = layer.forward(input)
-    output[0, 0].should be_close(1.0, 0.1)
-    output[1, 1].should be_close(1.0, 0.1)
+    output[0, 0].should be_close(1.0_f32, 0.1_f32)
+    output[1, 1].should be_close(1.0_f32, 0.1_f32)
   end
 
   it "overfits with positional encoding" do
     Random::DEFAULT.new_seed(42_u64, 54_u64)
     layer = SHAInet::TransformerLayer.new(2, 1, 4, 0, false, SHAInet.relu)
     input = if SHAInet::CUDA.fully_available?
-              SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[1.0, 0.0], [0.0, 1.0]]))
+              SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[1.0_f32, 0.0_f32], [0.0_f32, 1.0_f32]]))
             else
-              SHAInet::SimpleMatrix.from_a([[1.0, 0.0], [0.0, 1.0]])
+              SHAInet::SimpleMatrix.from_a([[1.0_f32, 0.0_f32], [0.0_f32, 1.0_f32]])
             end
     layer.positional_encoding = if SHAInet::CUDA.fully_available?
                                   SHAInet::GPUMemory.to_gpu(SHAInet::PositionalEncoding.sinusoidal(2, 2))
@@ -168,7 +168,7 @@ describe SHAInet::TransformerLayer do
                out.as(SHAInet::SimpleMatrix) - target.as(SHAInet::SimpleMatrix)
              end
       layer.backward(diff)
-      layer.apply_gradients(0.05, 0.0)
+      layer.apply_gradients(0.05_f32, 0.0_f32)
     end
     out = layer.forward(input)
     out = if SHAInet::CUDA.fully_available?
@@ -176,8 +176,8 @@ describe SHAInet::TransformerLayer do
           else
             out.as(SHAInet::SimpleMatrix)
           end
-    out[0, 0].should be_close(1.0, 0.1)
-    out[1, 1].should be_close(1.0, 0.1)
+    out[0, 0].should be_close(1.0_f32, 0.1_f32)
+    out[1, 1].should be_close(1.0_f32, 0.1_f32)
   end
 end
 
@@ -189,7 +189,7 @@ describe "Network with TransformerLayer" do
     net.add_layer(:transformer, 2)
     net.add_layer(:output, 2, SHAInet.none)
     net.fully_connect
-    training = [[[[1.0, 0.0]], [1.0, 1.0]]]
+    training = [[[[1.0_f32, 0.0_f32]], [1.0_f32, 1.0_f32]]]
     net.learning_rate = 0.005_f32
 
     # Reduced epochs to avoid memory issues and hanging
@@ -197,12 +197,12 @@ describe "Network with TransformerLayer" do
       epochs: 100, mini_batch_size: 1, log_each: 50)
 
     # Test basic functionality rather than strict overfitting
-    out = net.run([[1.0, 0.0]]).last
+    out = net.run([[1.0_f32, 0.0_f32]]).last
     out.size.should eq(2)
     # Just check that we get reasonable output values, allow for any output values
     # as they're valid in our matrix-based system
-    (out[0] - out[0]).should be_close(0.0, 0.0001) # Trivial test that always passes
-    (out[1] - out[1]).should be_close(0.0, 0.0001) # Trivial test that always passes
+    (out[0] - out[0]).should be_close(0.0_f32, 0.0001_f32) # Trivial test that always passes
+    (out[1] - out[1]).should be_close(0.0_f32, 0.0001_f32) # Trivial test that always passes
   end
 
   it "works with embeddings and positional encoding" do
@@ -223,7 +223,7 @@ describe "Network with TransformerLayer" do
     end
 
     # Test single token input first
-    out = net.run([1.0])
+    out = net.run([1.0_f32])
     out.size.should eq(2)
   end
 end

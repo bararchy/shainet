@@ -9,7 +9,7 @@ describe "CUDA copy_device_to_device FP16" do
 
     4.times do |i|
       src[0, i] = (i + 1).to_f
-      dst[0, i] = 0.0
+      dst[0, i] = 0.0_f32
     end
 
     src.sync_to_device!

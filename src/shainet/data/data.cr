@@ -119,7 +119,7 @@ module SHAInet
       adj_x = x.to_f32 - (xmin.to_f32 + @ymin)
       norm = (@yrange / range)
       value = adj_x * norm
-      return 0.0 if value.nan?
+      return 0.0_f32 if value.nan?
       value
     end
 
@@ -137,7 +137,7 @@ module SHAInet
       denorm = x.to_f32 * (range / @yrange)
       adj_x = @ymin + xmin.to_f32
       value = denorm + adj_x
-      return 0.0 if value.nan?
+      return 0.0_f32 if value.nan?
       value
     end
 
@@ -192,8 +192,8 @@ module SHAInet
     def to_onehot(data : Array(Array(Float32)), vector_size : Int32)
       data.each_with_index do |point, i|
         lbl = point.first.clone.to_i
-        one_hot = Array(Float32).new(vector_size) { 0.0 }
-        one_hot[lbl] = 1.0
+        one_hot = Array(Float32).new(vector_size) { 0.0_f32 }
+        one_hot[lbl] = 1.0_f32
         data[i] = one_hot
       end
 

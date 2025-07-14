@@ -13,10 +13,10 @@ describe "Simple Matrix Training Test" do
 
     # Tiny training data: XOR-like problem
     training_data = [
-      [[0.0, 0.0], [0.0]],
-      [[0.0, 1.0], [1.0]],
-      [[1.0, 0.0], [1.0]],
-      [[1.0, 1.0], [0.0]],
+      [[0.0_f32, 0.0_f32], [0.0_f32]],
+      [[0.0_f32, 1.0_f32], [1.0_f32]],
+      [[1.0_f32, 0.0_f32], [1.0_f32]],
+      [[1.0_f32, 1.0_f32], [0.0_f32]],
     ]
 
     puts "Network created, starting training..."
@@ -28,7 +28,7 @@ describe "Simple Matrix Training Test" do
       training_type: :adam,
       cost_function: :mse,
       epochs: 10, # Very small number
-      error_threshold: 0.1,
+      error_threshold: 0.1_f32,
       mini_batch_size: 2,
       log_each: 2,
       show_slice: true
@@ -39,10 +39,10 @@ describe "Simple Matrix Training Test" do
     puts "Training completed in #{duration.total_seconds} seconds"
 
     # Should complete in under 10 seconds for this tiny problem
-    duration.total_seconds.should be < 10.0
+    duration.total_seconds.should be < 10.0_f32
 
     # Test a simple forward pass
-    result = net.run([0.5, 0.5])
+    result = net.run([0.5_f32, 0.5_f32])
     puts "Forward pass result: #{result}"
     result.size.should eq(1)
   end
