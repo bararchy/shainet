@@ -201,10 +201,10 @@ module SHAInet
           g_dev = Pointer(Float32).null
           CUDA.malloc(pointerof(g_dev).as(Pointer(Pointer(Void))), bytes)
           CUDA.memcpy(g_dev.as(Pointer(Void)), host_vec.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
-          one_val = 1.0
+          one_val = 1.0_f32
           one_dev = Pointer(Float32).null
-          CUDA.malloc(pointerof(one_dev).as(Pointer(Pointer(Void))), 8_u64)
-          CUDA.memcpy(one_dev.as(Pointer(Void)), pointerof(one_val).as(Pointer(Void)), 8_u64, CUDA::MemcpyKind::HostToDevice)
+          CUDA.malloc(pointerof(one_dev).as(Pointer(Pointer(Void))), 4_u64)
+          CUDA.memcpy(one_dev.as(Pointer(Void)), pointerof(one_val).as(Pointer(Void)), 4_u64, CUDA::MemcpyKind::HostToDevice)
           handle = CUDA.create_handle
           CUDA.ger(handle, one_dev, g_dev, dptr + id*@l_size, @l_size, 1, @l_size)
           CUDA.destroy_handle(handle)
