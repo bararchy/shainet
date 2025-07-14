@@ -1754,28 +1754,28 @@ module SHAInet
         when Precision::Fp32
           CUDA.saxpy(handle, -learning_rate.to_f32, grad_ptr.as(Pointer(Float32)), weight_ptr.as(Pointer(Float32)), total_elements)
         when Precision::Fp16
-          if CUDA.kernels_available?
-            CUDA.weight_update_fp16(weight_ptr.as(Pointer(UInt16)), grad_ptr.as(Pointer(UInt16)), -learning_rate.to_f32, total_elements)
-          elsif CUDA.axpy_ex_available?
+          if CUDA.axpy_ex_available?
             dtype = CUDA.data_type_for(Precision::Fp16)
             dtype_lib = dtype.is_a?(CUDA::LibCUBLAS::DataType) ? dtype : CUDA::LibCUBLAS::DataType.new(dtype.value)
             ctype = CUDA.compute_type_for(Precision::Fp16)
             ctype_lib = ctype.is_a?(CUDA::LibCUBLAS::ComputeType) ? ctype : CUDA::LibCUBLAS::ComputeType.new(ctype.value)
             scalar = CUDA.scalar_for_compute_type(-learning_rate, ctype_lib)
             CUDA.axpy_ex(handle, scalar.to_unsafe.as(Void*), grad_ptr.as(Void*), dtype_lib, weight_ptr.as(Void*), dtype_lib, total_elements, ctype_lib)
+          elsif CUDA.kernels_available?
+            CUDA.weight_update_fp16(weight_ptr.as(Pointer(UInt16)), grad_ptr.as(Pointer(UInt16)), -learning_rate.to_f32, total_elements)
           else
             raise "axpyEx unavailable"
           end
         when Precision::Bf16
-          if CUDA.kernels_available?
-            CUDA.weight_update_bf16(weight_ptr.as(Pointer(UInt16)), grad_ptr.as(Pointer(UInt16)), -learning_rate.to_f32, total_elements)
-          elsif CUDA.axpy_ex_available?
+          if CUDA.axpy_ex_available?
             dtype = CUDA.data_type_for(Precision::Bf16)
             dtype_lib = dtype.is_a?(CUDA::LibCUBLAS::DataType) ? dtype : CUDA::LibCUBLAS::DataType.new(dtype.value)
             ctype = CUDA.compute_type_for(Precision::Bf16)
             ctype_lib = ctype.is_a?(CUDA::LibCUBLAS::ComputeType) ? ctype : CUDA::LibCUBLAS::ComputeType.new(ctype.value)
             scalar = CUDA.scalar_for_compute_type(-learning_rate, ctype_lib)
             CUDA.axpy_ex(handle, scalar.to_unsafe.as(Void*), grad_ptr.as(Void*), dtype_lib, weight_ptr.as(Void*), dtype_lib, total_elements, ctype_lib)
+          elsif CUDA.kernels_available?
+            CUDA.weight_update_bf16(weight_ptr.as(Pointer(UInt16)), grad_ptr.as(Pointer(UInt16)), -learning_rate.to_f32, total_elements)
           else
             raise "axpyEx unavailable"
           end
