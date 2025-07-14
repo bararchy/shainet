@@ -724,8 +724,11 @@ module SHAInet
     @@softmax_backward_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
     @@element_log_proc : Proc(Pointer(Float64), Pointer(Float64), Int32, Void)? = nil
     @@cross_entropy_loss_grad_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
+    @@cross_entropy_loss_grad_proc_f32 : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float64), Int32, Int32, Void)? = nil
     @@softmax_cross_entropy_label_proc : Proc(Pointer(Float64), Pointer(Int32), Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
+    @@softmax_cross_entropy_label_proc_f32 : Proc(Pointer(Float32), Pointer(Int32), Pointer(Float32), Pointer(Float64), Int32, Int32, Void)? = nil
     @@softmax_cross_entropy_label_matrix_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
+    @@softmax_cross_entropy_label_matrix_proc_f32 : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float64), Int32, Int32, Void)? = nil
     @@mse_loss_grad_fp64_proc : Proc(Pointer(Float64), Pointer(Float64), Pointer(Float64), Pointer(Float64), Int32, Int32, Void)? = nil
     @@mse_loss_grad_fp32_proc : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float64), Int32, Int32, Void)? = nil
 
@@ -1958,15 +1961,15 @@ module SHAInet
     def cross_entropy_loss_gradient_fp32(predicted : Pointer(Float32), target : Pointer(Float32),
                                          grad_output : Pointer(Float32), loss_output : Pointer(Float64),
                                          rows : Int32, cols : Int32) : Int32
-      unless fn = @@cross_entropy_loss_grad_f32_proc
+      unless fn = @@cross_entropy_loss_grad_proc_f32
         if @@kernels_handle.null?
           @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
         end
         unless @@kernels_handle.null?
           sym = LibC.dlsym(@@kernels_handle, "cross_entropy_loss_gradient_f32")
           unless sym.null?
-            @@cross_entropy_loss_grad_f32_proc = Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float64), Int32, Int32, Void).new(sym, Pointer(Void).null)
-            fn = @@cross_entropy_loss_grad_f32_proc
+            @@cross_entropy_loss_grad_proc_f32 = Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float64), Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@cross_entropy_loss_grad_proc_f32
           end
         end
       end
@@ -2014,15 +2017,15 @@ module SHAInet
     def softmax_cross_entropy_label_fp32(predicted : Pointer(Float32), labels : Pointer(Int32),
                                          grad_out : Pointer(Float32), loss_out : Pointer(Float64),
                                          rows : Int32, cols : Int32) : Int32
-      unless fn = @@softmax_cross_entropy_label_f32_proc
+      unless fn = @@softmax_cross_entropy_label_proc_f32
         if @@kernels_handle.null?
           @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
         end
         unless @@kernels_handle.null?
           sym = LibC.dlsym(@@kernels_handle, "softmax_cross_entropy_label_f32")
           unless sym.null?
-            @@softmax_cross_entropy_label_f32_proc = Proc(Pointer(Float32), Pointer(Int32), Pointer(Float32), Pointer(Float64), Int32, Int32, Void).new(sym, Pointer(Void).null)
-            fn = @@softmax_cross_entropy_label_f32_proc
+            @@softmax_cross_entropy_label_proc_f32 = Proc(Pointer(Float32), Pointer(Int32), Pointer(Float32), Pointer(Float64), Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@softmax_cross_entropy_label_proc_f32
           end
         end
       end
@@ -2070,15 +2073,15 @@ module SHAInet
     def softmax_cross_entropy_label_matrix_fp32(predicted : Pointer(Float32), labels : Pointer(Float32),
                                                 grad_out : Pointer(Float32), loss_out : Pointer(Float64),
                                                 rows : Int32, cols : Int32) : Int32
-      unless fn = @@softmax_cross_entropy_label_matrix_f32_proc
+      unless fn = @@softmax_cross_entropy_label_matrix_proc_f32
         if @@kernels_handle.null?
           @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
         end
         unless @@kernels_handle.null?
           sym = LibC.dlsym(@@kernels_handle, "softmax_cross_entropy_label_matrix_f32")
           unless sym.null?
-            @@softmax_cross_entropy_label_matrix_f32_proc = Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float64), Int32, Int32, Void).new(sym, Pointer(Void).null)
-            fn = @@softmax_cross_entropy_label_matrix_f32_proc
+            @@softmax_cross_entropy_label_matrix_proc_f32 = Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float64), Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@softmax_cross_entropy_label_matrix_proc_f32
           end
         end
       end

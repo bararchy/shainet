@@ -641,9 +641,27 @@ module SHAInet
       result.sync_to_device!("cudnn_element_mul_result")
     end
 
-    # Cross-entropy loss and gradient computation on CPU.
+    # Cross-entropy loss and gradient computation.
+    # Uses CUDA kernels for FP32 matrices when available, otherwise falls back to CPU.
     def self.cross_entropy_loss_gradient(predicted : CudaMatrix, target : CudaMatrix, loss_output : Float64*, grad_output : CudaMatrix)
       raise "Matrices must have same dimensions" unless predicted.rows == target.rows && predicted.cols == target.cols
+
+      if CUDA.available? && predicted.precision.fp32? && target.precision.fp32? && grad_output.precision.fp32?
+        predicted.sync_to_device! unless predicted.device_dirty?
+        target.sync_to_device! unless target.device_dirty?
+        grad_output.sync_to_device! unless grad_output.device_dirty?
+        result = CUDA.cross_entropy_loss_gradient_fp32(
+          predicted.device_ptr.not_nil!.as(Pointer(Float32)),
+          target.device_ptr.not_nil!.as(Pointer(Float32)),
+          grad_output.device_ptr.not_nil!.as(Pointer(Float32)),
+          loss_output,
+          predicted.rows,
+          predicted.cols
+        )
+        raise "CUDA cross_entropy_loss_gradient failed" if result != 0
+        grad_output.mark_device_dirty!
+        return
+      end
 
       predicted.sync_from_device!("xent_pred") if predicted.device_dirty?
       target.sync_from_device!("xent_target") if target.device_dirty?
@@ -663,10 +681,27 @@ module SHAInet
       loss_output.value = loss
     end
 
-    # CPU-based cross-entropy loss and gradient computation.
+    # CPU-based cross-entropy loss and gradient computation with optional CUDA acceleration for FP32.
     def self.cross_entropy_loss_and_gradient(predicted : CudaMatrix, target : CudaMatrix,
                                              loss_output : Float64*, grad_output : CudaMatrix)
       raise "Matrices must have same dimensions" unless predicted.rows == target.rows && predicted.cols == target.cols
+
+      if CUDA.available? && predicted.precision.fp32? && target.precision.fp32? && grad_output.precision.fp32?
+        predicted.sync_to_device! unless predicted.device_dirty?
+        target.sync_to_device! unless target.device_dirty?
+        grad_output.sync_to_device! unless grad_output.device_dirty?
+        result = CUDA.cross_entropy_loss_gradient_fp32(
+          predicted.device_ptr.not_nil!.as(Pointer(Float32)),
+          target.device_ptr.not_nil!.as(Pointer(Float32)),
+          grad_output.device_ptr.not_nil!.as(Pointer(Float32)),
+          loss_output,
+          predicted.rows,
+          predicted.cols
+        )
+        raise "CUDA cross_entropy_loss_and_gradient failed" if result != 0
+        grad_output.mark_device_dirty!
+        return
+      end
 
       predicted.sync_from_device!("cross_entropy_pred") if predicted.device_dirty?
       target.sync_from_device!("cross_entropy_target") if target.device_dirty?
@@ -723,7 +758,23 @@ module SHAInet
         raise ArgumentError.new("Precision mismatch between inputs and gradient")
       end
 
-      loss.value = cpu_softmax_cross_entropy(predicted, target, grad_output)
+      if CUDA.available? && predicted.precision.fp32? && target.precision.fp32? && grad_output.precision.fp32?
+        predicted.sync_to_device! unless predicted.device_dirty?
+        target.sync_to_device! unless target.device_dirty?
+        grad_output.sync_to_device! unless grad_output.device_dirty?
+        result = CUDA.softmax_cross_entropy_label_matrix_fp32(
+          predicted.device_ptr.not_nil!.as(Pointer(Float32)),
+          target.device_ptr.not_nil!.as(Pointer(Float32)),
+          grad_output.device_ptr.not_nil!.as(Pointer(Float32)),
+          loss,
+          predicted.rows,
+          predicted.cols
+        )
+        raise "CUDA softmax_cross_entropy_loss_and_gradient failed" if result != 0
+        grad_output.mark_device_dirty!
+      else
+        loss.value = cpu_softmax_cross_entropy(predicted, target, grad_output)
+      end
     end
 
     # GPU-optimized softmax + cross-entropy using label indices.
