@@ -69,6 +69,14 @@ To build kernels manually:
 ./build_cuda_kernels.sh
 ```
 
+You can control how many GPU buffers are cached by setting the
+`SHAINET_GPU_POOL_LIMIT` environment variable before running your program.
+The default limit is 16 cached buffers.
+
+```bash
+SHAINET_GPU_POOL_LIMIT=32 crystal run my_train.cr
+```
+
 ### Device management
 
 Layers such as `LayerNorm` allocate workspace matrices on the first forward pass

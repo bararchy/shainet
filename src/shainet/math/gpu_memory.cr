@@ -11,7 +11,8 @@ module SHAInet
 
     # -- Simple GPU allocator -------------------------------------------------
     @@pool = Hash(Int32, Array(Pointer(Float32))).new { |h, k| h[k] = [] of Pointer(Float32) }
-    @@pool_limit : Int32 = 2 # Very small pool to reduce memory pressure
+    @@pool_limit : Int32 = (ENV["SHAINET_GPU_POOL_LIMIT"]? || "16").to_i
+    # Default number of cached buffers (can be overridden via SHAINET_GPU_POOL_LIMIT)
 
     # Debug counter to track active GPU allocations
     @@active_allocations = 0
