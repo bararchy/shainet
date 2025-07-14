@@ -364,7 +364,7 @@ module SHAInet
         raise NeuralNetRunError.new("Layer not quantized") unless layer.q_weights && layer.q_biases
 
         q_in_buf, in_scale, _in_zp = Quantization.quantize_tensor(current)
-        q_in = SimpleMatrix.new(current.rows, current.cols, 0.0, Precision::Int8)
+        q_in = SimpleMatrix.new(current.rows, current.cols, 0.0_f32, Precision::Int8)
         idx = 0
         current.rows.times do |r|
           current.cols.times do |c|
@@ -373,7 +373,7 @@ module SHAInet
           end
         end
 
-        q_w = SimpleMatrix.new(layer.weights.rows, layer.weights.cols, 0.0, Precision::Int8)
+        q_w = SimpleMatrix.new(layer.weights.rows, layer.weights.cols, 0.0_f32, Precision::Int8)
         idx = 0
         layer.q_weights.not_nil!.each do |v|
           row = (idx / layer.weights.cols).to_i
@@ -534,7 +534,7 @@ module SHAInet
 
       # Test for NaNs & exploading gradients
       validate_values(@error_signal, "error_signal")
-      @total_error = @error_signal.reduce(0.0) { |acc, i| acc + i }
+      @total_error = @error_signal.reduce(0.0_f32) { |acc, i| acc + i }
 
       if @hidden_layers.any? &.is_a?(TransformerLayer)
         # Create matrices efficiently using GPU when available
@@ -595,7 +595,7 @@ module SHAInet
       output_layer = @output_layers.last
       grad = GPUMemory.like(actual_matrix, actual_matrix.rows, actual_matrix.cols)
 
-      loss_value = 0.0
+      loss_value = 0.0_f32
 
       if actual_matrix.is_a?(CudaMatrix) && expected_output.is_a?(CudaMatrix) && CUDNN.available?
         begin
@@ -665,7 +665,7 @@ module SHAInet
 
       # Test for NaNs & exploading gradients
       validate_values(@error_signal, "error_signal")
-      @total_error = @error_signal.reduce(0.0) { |acc, i| acc + i }
+      @total_error = @error_signal.reduce(0.0_f32) { |acc, i| acc + i }
 
       if @hidden_layers.any? &.is_a?(TransformerLayer)
         exp_row_sm = SimpleMatrix.from_a([expected_output.map(&.to_f32)], @precision)
@@ -708,23 +708,23 @@ module SHAInet
         end
 
         target = CudaMatrix.zeros(1, logits.cols)
-        target[0, label] = 1.0
+        target[0, label] = 1.0_f32
         target.sync_to_device!
 
         grad = CudaMatrix.new(1, logits.cols, precision: @precision)
-        loss_val = 0.0
+        loss_val = 0.0_f32
 
         if CUDNN.available?
           CUDNN.softmax_cross_entropy_loss_and_gradient(logits.as(CudaMatrix), target, pointerof(loss_val), grad)
         else
           logits.as(CudaMatrix).softmax_rows!
           grad.copy_from!(logits.as(CudaMatrix))
-          grad[0, label] = grad[0, label] - 1.0
+          grad[0, label] = grad[0, label] - 1.0_f32
           logits.as(CudaMatrix).sync_from_device!("eval_label")
-          loss_val = -Math.log(logits.as(CudaMatrix).unsafe_get(0, label).clamp(1e-9, 1.0))
+          loss_val = -Math.log(logits.as(CudaMatrix).unsafe_get(0, label).clamp(1e-9_f32, 1.0_f32))
         end
 
-        @error_signal = Array(Float32).new(logits.cols, 0.0)
+        @error_signal = Array(Float32).new(logits.cols, 0.0_f32)
         @error_signal[label] = loss_val
         @total_error = loss_val
 
@@ -745,11 +745,11 @@ module SHAInet
 
         @error_signal = [] of Float32
         probs.size.times do |i|
-          @error_signal << (i == label ? -Math.log(probs[i].clamp(1e-9, 1.0)) : 0.0)
+          @error_signal << (i == label ? -Math.log(probs[i].clamp(1e-9_f32, 1.0_f32)) : 0.0_f32)
         end
 
         validate_values(@error_signal, "error_signal")
-        @total_error = -Math.log(probs[label].clamp(1e-9, 1.0))
+        @total_error = -Math.log(probs[label].clamp(1e-9_f32, 1.0_f32))
       end
     end
 
@@ -777,23 +777,23 @@ module SHAInet
         end
 
         target = CudaMatrix.zeros(1, logits.cols)
-        target[0, label] = 1.0
+        target[0, label] = 1.0_f32
         target.sync_to_device!
 
         grad = CudaMatrix.new(1, logits.cols, precision: @precision)
-        loss_val = 0.0
+        loss_val = 0.0_f32
 
         if CUDNN.available?
           CUDNN.softmax_cross_entropy_loss_and_gradient(logits.as(CudaMatrix), target, pointerof(loss_val), grad)
         else
           logits.as(CudaMatrix).softmax_rows!
           grad.copy_from!(logits.as(CudaMatrix))
-          grad[0, label] = grad[0, label] - 1.0
+          grad[0, label] = grad[0, label] - 1.0_f32
           logits.as(CudaMatrix).sync_from_device!("eval_seq_label")
-          loss_val = -Math.log(logits.as(CudaMatrix).unsafe_get(0, label).clamp(1e-9, 1.0))
+          loss_val = -Math.log(logits.as(CudaMatrix).unsafe_get(0, label).clamp(1e-9_f32, 1.0_f32))
         end
 
-        @error_signal = Array(Float32).new(logits.cols, 0.0)
+        @error_signal = Array(Float32).new(logits.cols, 0.0_f32)
         @error_signal[label] = loss_val
         @total_error = loss_val
 
@@ -820,11 +820,11 @@ module SHAInet
         end
 
         @error_signal = [] of Float32
-        @total_error = -Math.log(probs[label].clamp(1e-9, 1.0))
+        @total_error = -Math.log(probs[label].clamp(1e-9_f32, 1.0_f32))
 
         if @hidden_layers.any? &.is_a?(TransformerLayer)
           exp_row = SimpleMatrix.zeros(1, probs.size, @precision)
-          exp_row[0, label] = 1.0
+          exp_row[0, label] = 1.0_f32
           act_row = SimpleMatrix.from_a([probs], @precision)
           diff = act_row - exp_row
           out_w = @output_layers.last.weights
@@ -863,7 +863,7 @@ module SHAInet
               training_type : Symbol | String = :sgdm,
               cost_function : Symbol | String | CostFunction = :mse,
               epochs : Int32 = 1,
-              error_threshold : Float32 = 0.00000001,
+              error_threshold : Float32 = 0.00000001_f32,
               mini_batch_size : Int32 = 1,
               log_each : Int32 = 1,
               show_slice : Bool = false,
@@ -1153,7 +1153,7 @@ module SHAInet
         actual_matrix = run(input_matrix, stealth: true)
 
         # Optimize: Use GPU-accelerated cost and gradient computation when possible
-        sample_error = 0.0
+        sample_error = 0.0_f32
         output_layer = @output_layers.last
 
         if output_layer.is_a?(MatrixLayer)
@@ -1189,7 +1189,7 @@ module SHAInet
           else
             existing_grad.rows.times do |i|
               existing_grad.cols.times do |j|
-                existing_grad[i, j] = 0.0
+                existing_grad[i, j] = 0.0_f32
               end
             end
           end
@@ -1224,7 +1224,7 @@ module SHAInet
                 one_hot = SimpleMatrix.zeros(expected_matrix.rows, actual_matrix.cols)
                 expected_matrix.rows.times do |i|
                   label = expected_matrix.as(CudaMatrix).unsafe_get(i, 0).to_i
-                  one_hot[i, label] = 1.0 if label >= 0 && label < actual_matrix.cols
+                  one_hot[i, label] = 1.0_f32 if label >= 0 && label < actual_matrix.cols
                 end
                 sample_error = compute_cost_and_gradient(actual_matrix, one_hot, grad_matrix, cost_proc)
               else
@@ -1237,7 +1237,7 @@ module SHAInet
               one_hot = SimpleMatrix.zeros(expected_matrix.rows, actual_matrix.cols)
               expected_matrix.rows.times do |i|
                 label = expected_matrix.as(CudaMatrix).unsafe_get(i, 0).to_i
-                one_hot[i, label] = 1.0 if label >= 0 && label < actual_matrix.cols
+                one_hot[i, label] = 1.0_f32 if label >= 0 && label < actual_matrix.cols
               end
               sample_error = compute_cost_and_gradient(actual_matrix, one_hot, grad_matrix, cost_proc)
             else
@@ -1418,7 +1418,7 @@ module SHAInet
         mat = if arr.size > 0 && arr[0].is_a?(Array)
                 rows = arr.size
                 cols = arr[0].as(Array).size
-                SimpleMatrix.new(rows, cols, 0.0, @precision).tap do |m|
+                SimpleMatrix.new(rows, cols, 0.0_f32, @precision).tap do |m|
                   rows.times do |i|
                     cols.times do |j|
                       m[i, j] = arr[i].as(Array)[j].as(GenNum).to_f32
@@ -1426,7 +1426,7 @@ module SHAInet
                   end
                 end
               else
-                SimpleMatrix.new(1, arr.size, 0.0, @precision).tap do |m|
+                SimpleMatrix.new(1, arr.size, 0.0_f32, @precision).tap do |m|
                   arr.size.times do |i|
                     m[0, i] = arr[i].as(GenNum).to_f32
                   end
@@ -1607,7 +1607,7 @@ module SHAInet
         # For transformer architectures, use only the last token's representation
         if @hidden_layers.any? &.is_a?(TransformerLayer)
           # Extract last token (row) from transformer output for language modeling
-          last_token = SimpleMatrix.new(1, matrix.cols, 0.0, @precision)
+          last_token = SimpleMatrix.new(1, matrix.cols, 0.0_f32, @precision)
           matrix.cols.times do |j|
             last_token[0, j] = matrix[matrix.rows - 1, j]
           end
@@ -1632,7 +1632,7 @@ module SHAInet
           # Try reshaping for a single token/sequence case
           if matrix.rows == 1 && matrix.cols > 0 && weights.rows > 0 && weights.cols > 0
             Log.info { "Reshaping matrix for single-token transformer operation" }
-            reshaped = SimpleMatrix.new(1, weights.cols, 0.0, @precision)
+            reshaped = SimpleMatrix.new(1, weights.cols, 0.0_f32, @precision)
             weights.cols.times do |j|
               sum = 0.0_f32
               matrix.cols.times do |k|
@@ -1755,7 +1755,7 @@ module SHAInet
 
     # CPU fallback for cost and gradient computation when GPU acceleration fails
     private def compute_cost_and_gradient_cpu(actual_matrix, expected_output, grad_matrix, cost_proc)
-      sample_error = 0.0
+      sample_error = 0.0_f32
 
       if actual_matrix.is_a?(CudaMatrix)
         actual_matrix.as(CudaMatrix).sync_from_device!("cost_grad_cpu")

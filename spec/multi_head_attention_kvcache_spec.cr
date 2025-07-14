@@ -5,9 +5,9 @@ describe "MultiHeadAttention KV cache" do
     Random::DEFAULT.new_seed(123_u64, 456_u64)
     attn_full = SHAInet::MultiHeadAttention.new(2, 1)
     full_input = if SHAInet::CUDA.fully_available?
-                   SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[1.0, 0.0], [0.0, 1.0]])).as(SHAInet::CudaMatrix)
+                   SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[1.0_f32, 0.0_f32], [0.0_f32, 1.0_f32]])).as(SHAInet::CudaMatrix)
                  else
-                   SHAInet::SimpleMatrix.from_a([[1.0, 0.0], [0.0, 1.0]])
+                   SHAInet::SimpleMatrix.from_a([[1.0_f32, 0.0_f32], [0.0_f32, 1.0_f32]])
                  end
     full_out = attn_full.forward(full_input)
 
@@ -16,15 +16,15 @@ describe "MultiHeadAttention KV cache" do
     cache = SHAInet::KVCache.new(1, attn_cached.num_heads)
 
     temp1 = if SHAInet::CUDA.fully_available?
-              SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[1.0, 0.0]])).as(SHAInet::CudaMatrix)
+              SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[1.0_f32, 0.0_f32]])).as(SHAInet::CudaMatrix)
             else
-              SHAInet::SimpleMatrix.from_a([[1.0, 0.0]])
+              SHAInet::SimpleMatrix.from_a([[1.0_f32, 0.0_f32]])
             end
 
     temp2 = if SHAInet::CUDA.fully_available?
-              SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[0.0, 1.0]])).as(SHAInet::CudaMatrix)
+              SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[0.0_f32, 1.0_f32]])).as(SHAInet::CudaMatrix)
             else
-              SHAInet::SimpleMatrix.from_a([[0.0, 1.0]])
+              SHAInet::SimpleMatrix.from_a([[0.0_f32, 1.0_f32]])
             end
 
     step1, cache = attn_cached.forward(temp1, nil, cache, 0)
@@ -41,7 +41,7 @@ describe "MultiHeadAttention KV cache" do
 
     expected.rows.times do |i|
       expected.cols.times do |j|
-        out2[i, j].should be_close(expected[i, j], 1e-6)
+        out2[i, j].should be_close(expected[i, j], 1e-6_f32)
       end
     end
 

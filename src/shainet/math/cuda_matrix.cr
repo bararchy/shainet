@@ -1415,7 +1415,7 @@ module SHAInet
             @cols.times do |j|
               self_val = self.unsafe_get(i, j)
               other_val = other.unsafe_get(i, j)
-              result.unsafe_set(i, j, other_val == 0.0 ? 0.0 : self_val / other_val)
+              result.unsafe_set(i, j, other_val == 0.0_f32 ? 0.0_f32 : self_val / other_val)
             end
           end
           result.sync_to_device!("element_division_result") if CUDA.available?
@@ -1429,7 +1429,7 @@ module SHAInet
           @cols.times do |j|
             self_val = self.unsafe_get(i, j)
             other_val = other.unsafe_get(i, j)
-            result.unsafe_set(i, j, other_val == 0.0 ? 0.0 : self_val / other_val)
+            result.unsafe_set(i, j, other_val == 0.0_f32 ? 0.0_f32 : self_val / other_val)
           end
         end
 

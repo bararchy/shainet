@@ -4,8 +4,8 @@ describe "GPU precision training" do
   it "trains a tiny fp16 network" do
     pending! "CUDA not available" unless SHAInet::CUDA.available?
 
-    inputs = [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]]
-    outputs = [[0.0], [1.0], [1.0], [0.0]]
+    inputs = [[0.0_f32, 0.0_f32], [0.0_f32, 1.0_f32], [1.0_f32, 0.0_f32], [1.0_f32, 1.0_f32]]
+    outputs = [[0.0_f32], [1.0_f32], [1.0_f32], [0.0_f32]]
 
     data = SHAInet::TrainingData.new(inputs, outputs, preload_gpu: true)
     data.normalize_min_max
@@ -35,7 +35,7 @@ describe "GPU precision training" do
     output.precision.should eq(net.precision)
 
     after_w = net.output_layers.last.weights[0, 0]
-    (after_w - before_w).abs.should be > 0.0
+    (after_w - before_w).abs.should be > 0.0_f32
 
     result = net.run(input)
     result.should be_a(SHAInet::CudaMatrix)
@@ -45,8 +45,8 @@ describe "GPU precision training" do
   it "trains a tiny fp32 network" do
     pending! "CUDA not available" unless SHAInet::CUDA.available?
 
-    inputs = [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]]
-    outputs = [[0.0], [1.0], [1.0], [0.0]]
+    inputs = [[0.0_f32, 0.0_f32], [0.0_f32, 1.0_f32], [1.0_f32, 0.0_f32], [1.0_f32, 1.0_f32]]
+    outputs = [[0.0_f32], [1.0_f32], [1.0_f32], [0.0_f32]]
 
     data = SHAInet::TrainingData.new(inputs, outputs, preload_gpu: true)
     data.normalize_min_max
@@ -76,7 +76,7 @@ describe "GPU precision training" do
     output.precision.should eq(net.precision)
 
     after_w = net.output_layers.last.weights[0, 0]
-    (after_w - before_w).abs.should be > 0.0
+    (after_w - before_w).abs.should be > 0.0_f32
 
     result = net.run(input)
     result.should be_a(SHAInet::CudaMatrix)

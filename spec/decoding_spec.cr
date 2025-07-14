@@ -13,6 +13,6 @@ describe SHAInet do
     rng = Random::DEFAULT
     rng.new_seed(1_u64, 1_u64)
     logits = [0.5_f32, 0.3_f32, 0.1_f32, 0.1_f32]
-    SHAInet.top_p_sample(logits, 0.6, rng: rng).should eq(0)
+    SHAInet.top_p_sample(logits, 0.6_f32, rng: rng).should eq(0)
   end
 end

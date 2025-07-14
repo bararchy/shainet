@@ -15,10 +15,10 @@ describe SHAInet::Network do
     net.precision = SHAInet::Precision::Fp32
     net.warmup_steps = 5
     net.decay_type = :step
-    net.decay_rate = 0.5
+    net.decay_rate = 0.5_f32
     net.decay_step = 2
 
-    input = [0.2, -0.1]
+    input = [0.2_f32, -0.1_f32]
     out1 = net.run(input)
 
     path = "/tmp/test_net.json"
@@ -29,7 +29,7 @@ describe SHAInet::Network do
     out2 = net2.run(input)
 
     out2.size.should eq(out1.size)
-    out2.first.should be_close(out1.first, 1e-6)
+    out2.first.should be_close(out1.first, 1e-6_f32)
     net2.learning_rate.should eq(net.learning_rate)
     net2.momentum.should eq(net.momentum)
     net2.precision.should eq(net.precision)

@@ -11,7 +11,7 @@ describe SHAInet::Network do
     data = SHAInet::Data.new_with_csv_input_target(__DIR__ + "/test_data/iris.csv", 0..3, 4)
 
     # Split the data in a training set and a test set
-    training_set, test_set = data.split(0.67)
+    training_set, test_set = data.split(0.67_f32)
 
     # Initiate a new network
     iris = SHAInet::Network.new
@@ -28,7 +28,7 @@ describe SHAInet::Network do
       training_type: :adam,
       cost_function: :mse,
       epochs: 100,
-      error_threshold: 1e-9,
+      error_threshold: 1e-9_f32,
       mini_batch_size: 4,
       log_each: 20,
       show_slice: false)
@@ -39,7 +39,7 @@ describe SHAInet::Network do
 
     # With only 100 epochs, we just want to see that some learning happened
     # and that training is fast (not hours like before)
-    accuracy.should be > 0.2 # Very basic expectation - just that it's better than random
+    accuracy.should be > 0.2_f32 # Very basic expectation - just that it's better than random
 
     puts "✓ Training completed quickly and MSE decreased successfully"
   end

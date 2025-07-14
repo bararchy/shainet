@@ -11,16 +11,16 @@ describe "INT8 quantization" do
     net.fully_connect
 
     layer = net.output_layers.last
-    layer.weights[0, 0] = -0.05
-    layer.weights[1, 0] = 0.05
-    layer.biases[0, 0] = 0.0
+    layer.weights[0, 0] = -0.05_f32
+    layer.weights[1, 0] = 0.05_f32
+    layer.biases[0, 0] = 0.0_f32
 
-    out_fp = net.run([0.5, -0.5])
+    out_fp = net.run([0.5_f32, -0.5_f32])
 
     net.quantize_int8!
     net.precision = SHAInet::Precision::Int8
-    out_int8 = net.run([0.5, -0.5])
+    out_int8 = net.run([0.5_f32, -0.5_f32])
 
-    out_int8.first.should be_close(out_fp.first, 2e-2)
+    out_int8.first.should be_close(out_fp.first, 2e-2_f32)
   end
 end

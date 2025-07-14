@@ -75,7 +75,7 @@ describe "BPE Tokenizer Detailed Tests" do
       # Note: BPE might create slightly more tokens than requested due to individual characters
       # This is expected behavior - vocab_size is more of a target than a hard limit
       tokenizer.vocab.size.should be > 0
-      tokenizer.vocab.size.should be < (vocab_size * 1.5) # Allow some flexibility
+      tokenizer.vocab.size.should be < (vocab_size * 1.5_f32) # Allow some flexibility
     end
 
     it "should create consistent encodings" do

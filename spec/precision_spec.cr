@@ -34,7 +34,7 @@ describe "Precision enum" do
 
   it "converts Float16 correctly" do
     h = SHAInet::Float16.new(1.5_f32)
-    (h.to_f32 - 1.5_f32).abs.should be < 0.01
+    (h.to_f32 - 1.5_f32).abs.should be < 0.01_f32
   end
 
   it "quantizes and dequantizes int8 values" do
@@ -50,7 +50,7 @@ describe "Precision enum" do
     m[0, 2] = 1.0_f32
     buf, scale, zp = SHAInet::Quantization.quantize_tensor(m)
     buf.size.should eq(3)
-    SHAInet::Int8Value.new(buf[2]).to_f32(scale, zp).should be_close(1.0, scale)
+    SHAInet::Int8Value.new(buf[2]).to_f32(scale, zp).should be_close(1.0_f32, scale)
 
     net = SHAInet::Network.new
     net.add_layer(:input, 1, SHAInet.none)
@@ -64,20 +64,20 @@ describe "Precision enum" do
   it "roundtrips Float32 values" do
     v = 3.1415_f32
     h = SHAInet::Float16.new(v)
-    (h.to_f32 - v).abs.should be < 0.01
+    (h.to_f32 - v).abs.should be < 0.01_f32
   end
 
   it "roundtrips Float32 precision values" do
     v = 3.1415927_f32
     h = SHAInet::Float16.new(v)
-    (h.to_f32 - v).abs.should be < 0.01
+    (h.to_f32 - v).abs.should be < 0.01_f32
   end
 
   it "uses Float32 to_f16 helpers" do
     h1 = 1.25_f32.to_f16
-    (h1.to_f32 - 1.25_f32).abs.should be < 0.01
+    (h1.to_f32 - 1.25_f32).abs.should be < 0.01_f32
 
     h2 = 1.25_f32.to_f16
-    (h2.to_f32 - 1.25_f32).abs.should be < 0.01
+    (h2.to_f32 - 1.25_f32).abs.should be < 0.01_f32
   end
 end
