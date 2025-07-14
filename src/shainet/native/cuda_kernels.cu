@@ -36,9 +36,7 @@ __global__ void scale_kernel_t(T *data, float alpha, int size) {
 }
 
 template <typename T>
-__global__ void cross_entropy_loss_gradient_kernel_t(const T *pred,
-                                                     const T *target, T *grad,
-                                                     double *loss, int total) {
+__global__ void cross_entropy_loss_gradient_kernel_t(const T *pred, const T *target, T *grad, float *loss, int total) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx >= total)
     return;
@@ -47,15 +45,17 @@ __global__ void cross_entropy_loss_gradient_kernel_t(const T *pred,
   T t = target[idx];
   grad[idx] = p - t;
 
-  double contrib = -(double)t * log(max((double)p, 1e-15));
+  float tp = Convert<T>::to_float(t);
+  float pp = Convert<T>::to_float(p);
+  float contrib = -tp * logf(fmaxf(pp, 1e-15f));
   atomicAdd(loss, contrib);
 }
 
 template <typename T>
 void cross_entropy_loss_gradient_t(const T *pred, const T *target, T *grad,
-                                   double *loss, int rows, int cols) {
+                                   float *loss, int rows, int cols) {
   int total = rows * cols;
-  cudaMemset(loss, 0, sizeof(double));
+  cudaMemset(loss, 0, sizeof(float));
   int threads = 256;
   int blocks = (total + threads - 1) / threads;
 
@@ -316,24 +316,6 @@ softmax_cross_entropy_label_kernel_t(const T *pred, const int *labels, T *grad,
 }
 
 template <typename T>
-void cross_entropy_loss_gradient_t(const T *pred, const T *target, T *grad,
-                                   float *loss, int rows, int cols) {
-  int total = rows * cols;
-  cudaMemset(loss, 0, sizeof(float));
-  int threads = 256;
-  int blocks = (total + threads - 1) / threads;
-
-  cross_entropy_loss_gradient_kernel_t<<<blocks, threads>>>(pred, target, grad,
-                                                            loss, total);
-  cudaError_t err = cudaDeviceSynchronize();
-  if (err != cudaSuccess) {
-    printf("CUDA Error in cross_entropy_loss_gradient: %s\n",
-           cudaGetErrorString(err));
-  }
-}
-
-
-template <typename T>
 void softmax_cross_entropy_label_t(const T *pred, const int *labels, T *grad,
                                    float *loss, int rows, int cols) {
   cudaMemset(loss, 0, sizeof(float));
@@ -396,24 +378,6 @@ void softmax_cross_entropy_label_matrix_t(const T *pred, const T *labels,
     printf("CUDA Error in softmax_cross_entropy_label_matrix: %s\n",
            cudaGetErrorString(err));
   }
-}
-
-template <typename T>
-__global__ void cross_entropy_loss_gradient_kernel_t(const T *pred,
-                                                     const T *target, T *grad,
-                                                     float *loss, int total) {
-  int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  if (idx >= total)
-    return;
-
-  T p = pred[idx];
-  T t = target[idx];
-  grad[idx] = p - t;
-
-  float tp = Convert<T>::to_float(t);
-  float pp = Convert<T>::to_float(p);
-  float contrib = -tp * logf(fmaxf(pp, 1e-15f));
-  atomicAdd(loss, contrib);
 }
 
 template <typename T>
