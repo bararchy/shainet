@@ -25,6 +25,11 @@ template <> struct Convert<float> {
   __device__ static float from_float(float v) { return v; }
 };
 
+template <> struct Convert<double> {
+  __device__ static float to_float(double v) { return (float)v; }
+  __device__ static double from_float(float v) { return (double)v; }
+};
+
 template <typename T>
 __global__ void scale_kernel_t(T *data, float alpha, int size) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -44,40 +49,6 @@ __global__ void add_bias_kernel_t(T *mat, const T *bias, int rows, int cols) {
                                     Convert<T>::to_float(bias[col]));
 }
 
-// Device kernels
-// Simple row-wise softmax kernel. This version runs one thread per row and
-// performs the computation sequentially. It uses the row maximum for numerical
-// stability.
-__global__ void softmax_rows_kernel(double *out, const double *in, int rows,
-                                    int cols) {
-  int row = blockIdx.x;
-  if (row >= rows)
-    return;
-
-  const double *row_in = in + row * cols;
-  double *row_out = out + row * cols;
-
-  // Find the maximum value for numerical stability
-  double max_val = row_in[0];
-  for (int j = 1; j < cols; ++j) {
-    double v = row_in[j];
-    if (v > max_val)
-      max_val = v;
-  }
-
-  // Compute exponentials and their sum
-  double sum = 0.0;
-  for (int j = 0; j < cols; ++j) {
-    double e = exp(row_in[j] - max_val);
-    row_out[j] = e;
-    sum += e;
-  }
-
-  // Normalize
-  for (int j = 0; j < cols; ++j) {
-    row_out[j] /= sum;
-  }
-}
 
 template <typename T>
 __global__ void mse_loss_grad_kernel(const T *pred, const T *target, T *grad,
@@ -137,13 +108,16 @@ __global__ void softmax_rows_kernel_t(T *out, const T *in, int rows, int cols) {
   }
 }
 
-__global__ void relu_backward_kernel(double *output, const double *input,
-                                     const double *grad, int size) {
+
+template <typename T>
+__global__ void relu_backward_kernel_t(T *output, const T *input, const T *grad,
+                                       int size) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx >= size)
     return;
 
-  output[idx] = input[idx] > 0.0 ? grad[idx] : 0.0;
+  float in_val = Convert<T>::to_float(input[idx]);
+  output[idx] = in_val > 0.0f ? grad[idx] : Convert<T>::from_float(0.0f);
 }
 
 template <typename T>
@@ -288,7 +262,7 @@ __global__ void row_sum_kernel_t(T *dst, const T *src, int rows, int cols) {
 // Host wrapper functions
 extern "C" {
 void softmax_rows(double *out, const double *in, int rows, int cols) {
-  softmax_rows_kernel<<<rows, 1>>>(out, in, rows, cols);
+  softmax_rows_kernel_t<double><<<rows, 1>>>(out, in, rows, cols);
   cudaError_t err = cudaDeviceSynchronize();
   if (err != cudaSuccess) {
     printf("CUDA Error in softmax_rows: %s\n", cudaGetErrorString(err));
@@ -325,8 +299,8 @@ void relu_backward(double *output, const double *input, const double *grad,
   int threads_per_block = 256;
   int blocks = (size + threads_per_block - 1) / threads_per_block;
 
-  relu_backward_kernel<<<blocks, threads_per_block>>>(output, input, grad,
-                                                      size);
+  relu_backward_kernel_t<double><<<blocks, threads_per_block>>>(output, input,
+                                                                grad, size);
   cudaError_t err = cudaDeviceSynchronize();
   if (err != cudaSuccess) {
     printf("CUDA Error in relu_backward: %s\n", cudaGetErrorString(err));
