@@ -41,8 +41,10 @@ transformer_layers = 4
 # epochs: Number of training epochs.
 # Larger epochs will take longer but may improve performance.
 epochs = 100
-# batch: Batch size for training. Larger sizes can improve GPU utilization.
-batch = 4000
+# batch: Batch size for training.
+# For transformer models the mask is shared across the batch, so
+# using batches > 1 will trigger a mask size mismatch.
+batch = 1
 # Learning rate for the AdamW optimizer.
 # A smaller learning rate can help with stability, especially for larger models.
 learning_rate = 0.0005_f32
