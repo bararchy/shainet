@@ -24,7 +24,7 @@ net.add_layer(:transformer, 8)
 net.add_layer(:output, token_count, SHAInet.sigmoid)
 net.fully_connect
 net.warmup_steps = 10
-net.weight_decay = 0.01
+net.weight_decay = 0.01_f32
 # Accumulate gradients over 2 batches before updating weights
 net.accumulation_steps = 2
 # Use reduced precision for faster training

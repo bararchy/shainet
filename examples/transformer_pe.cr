@@ -6,7 +6,7 @@ require "../src/shainet"
 layer = SHAInet::TransformerLayer.new(2, 1, 4, 0, false, SHAInet.relu)
 
 # Two-step input sequence (2 x 2 matrix)
-input = SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[1.0, 0.0], [0.0, 1.0]]))
+input = SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.from_a([[1.0_f32, 0.0_f32], [0.0_f32, 1.0_f32]]))
 
 # Generate positional encodings matching the input size
 pos_enc = SHAInet::PositionalEncoding.sinusoidal(input.rows, input.cols)
@@ -29,7 +29,7 @@ target = SHAInet::GPUMemory.to_gpu(SHAInet::SimpleMatrix.ones(2, 2))
            out.as(SHAInet::SimpleMatrix) - target.as(SHAInet::SimpleMatrix)
          end
   layer.backward(diff)
-  layer.apply_gradients(0.05, 0.0)
+  layer.apply_gradients(0.05_f32, 0.0_f32)
 end
 
 puts "Output after training:"
