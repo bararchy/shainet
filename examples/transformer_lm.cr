@@ -32,15 +32,15 @@ net.precision = SHAInet::Precision::Fp16 # or SHAInet::Precision::Bf16
 
 # Helper to create one-hot vectors
 one_hot = ->(id : Int32, size : Int32) do
-  arr = Array(Float64).new(size, 0.0)
-  arr[id] = 1.0
+  arr = Array(Float32).new(size, 0.0_f32)
+  arr[id] = 1.0_f32
   arr
 end
 
 # Each token predicts the next token
-training = [] of Tuple(Array(Array(Float64)), Array(Float64))
+training = [] of Tuple(Array(Array(Float32)), Array(Float32))
 (0...ids.size - 1).each do |i|
-  input = [[ids[i].to_f64]]
+  input = [[ids[i].to_f32]]
   expected = one_hot.call(ids[i + 1], token_count)
   training << {input, expected}
 end

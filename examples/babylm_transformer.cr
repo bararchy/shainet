@@ -219,8 +219,8 @@ while (val_batch = val_data.next_batch(val_batch_size)).size > 0
     seq = input_ids.map { |id| [id] }
 
     # Convert target_id to one-hot vector for loss calculation
-    target = Array(Float64).new(token_count, 0.0)
-    target[target_id] = 1.0
+    target = Array(Float32).new(token_count, 0.0_f32)
+    target[target_id] = 1.0_f32
 
     output_vec = net.run(seq, return_matrix: true).as(SHAInet::CudaMatrix).to_a.last
 
