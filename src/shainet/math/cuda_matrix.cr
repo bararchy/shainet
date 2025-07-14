@@ -1881,7 +1881,7 @@ module SHAInet
               dptr.as(Pointer(Float32)),
               @rows, @cols, prob, seed)
           else
-            CUDA.dropout(
+            CUDA.dropout_fp32(
               dptr.as(Pointer(Float32)),
               dptr.as(Pointer(Float32)),
               @rows, @cols, prob, seed)

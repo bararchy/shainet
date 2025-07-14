@@ -458,10 +458,6 @@ module SHAInet
       raise "CUDA kernels not available"
     end
 
-    def mse_cost_gradient(*args)
-      raise "CUDA kernels not available"
-    end
-
     def mse_cost_gradient_fp32(*args)
       raise "CUDA kernels not available"
     end
