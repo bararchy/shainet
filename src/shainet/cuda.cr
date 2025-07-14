@@ -29,7 +29,6 @@ module SHAInet
       # Additional datatypes for half precision routines
       enum DataType
         CUDA_R_32F  =  0
-        CUDA_R_64F  =  1
         CUDA_R_16F  =  2
         CUDA_R_16BF = 14
         CUDA_R_8I   =  3
@@ -39,7 +38,6 @@ module SHAInet
       enum ComputeType
         CUBLAS_COMPUTE_16F  =  64
         CUBLAS_COMPUTE_32F  =  68
-        CUBLAS_COMPUTE_64F  =  70
         CUBLAS_COMPUTE_16BF = 119
         CUBLAS_COMPUTE_32I  =  82
       end
@@ -143,15 +141,11 @@ module SHAInet
 
     # Return a small typed buffer containing `value` for the given compute type.
     # The returned slice must be kept alive while passed to cuBLAS.
-    def scalar_for_compute_type(value : Float64, compute_type : LibCUBLAS::ComputeType) : Bytes
+    def scalar_for_compute_type(value : Float32, compute_type : LibCUBLAS::ComputeType) : Bytes
       case compute_type
-      when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_64F
-        buf = Bytes.new(sizeof(Float64))
-        buf.to_unsafe.as(Pointer(Float64))[0] = value
-        buf
       when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F
         buf = Bytes.new(sizeof(Float32))
-        buf.to_unsafe.as(Pointer(Float32))[0] = value.to_f32
+        buf.to_unsafe.as(Pointer(Float32))[0] = value
         buf
       when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_16F
         buf = Bytes.new(sizeof(Float16))
@@ -159,7 +153,7 @@ module SHAInet
         buf
       when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_16BF
         buf = Bytes.new(sizeof(BFloat16))
-        buf.to_unsafe.as(Pointer(BFloat16))[0] = BFloat16.new(value.to_f32)
+        buf.to_unsafe.as(Pointer(BFloat16))[0] = BFloat16.new(value)
         buf
       when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32I
         buf = Bytes.new(sizeof(Int32))
@@ -167,7 +161,7 @@ module SHAInet
         buf
       else
         buf = Bytes.new(sizeof(Float32))
-        buf.to_unsafe.as(Pointer(Float32))[0] = value.to_f32
+        buf.to_unsafe.as(Pointer(Float32))[0] = value
         buf
       end
     end
@@ -490,11 +484,6 @@ module SHAInet
       when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_16BF
         alpha = SHAInet::BFloat16.new(1.0_f32)
         beta = SHAInet::BFloat16.new(0.0_f32)
-        alpha_ptr = pointerof(alpha).as(Void*)
-        beta_ptr = pointerof(beta).as(Void*)
-      when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_64F
-        alpha = 1.0_f64
-        beta = 0.0_f64
         alpha_ptr = pointerof(alpha).as(Void*)
         beta_ptr = pointerof(beta).as(Void*)
       when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32I

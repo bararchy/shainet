@@ -58,7 +58,6 @@ module SHAInet
 
       enum DataType
         CUDA_R_32F  =  0
-        CUDA_R_64F  =  1
         CUDA_R_16F  =  2
         CUDA_R_16BF = 14
         CUDA_R_8I   =  3
@@ -68,7 +67,6 @@ module SHAInet
       enum ComputeType
         CUBLAS_COMPUTE_16F  =  64
         CUBLAS_COMPUTE_32F  =  68
-        CUBLAS_COMPUTE_64F  =  70
         CUBLAS_COMPUTE_16BF = 119
         CUBLAS_COMPUTE_32I  =  82
       end
@@ -124,15 +122,11 @@ module SHAInet
 
     # Provide a typed scalar buffer matching the given compute type so
     # routines relying on cuBLAS APIs can compile when CUDA is disabled.
-    def scalar_for_compute_type(value : Float64, compute_type : LibCUBLAS::ComputeType) : Bytes
+    def scalar_for_compute_type(value : Float32, compute_type : LibCUBLAS::ComputeType) : Bytes
       case compute_type
-      when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_64F
-        buf = Bytes.new(sizeof(Float64))
-        buf.to_unsafe.as(Pointer(Float64))[0] = value
-        buf
       when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F
         buf = Bytes.new(sizeof(Float32))
-        buf.to_unsafe.as(Pointer(Float32))[0] = value.to_f32
+        buf.to_unsafe.as(Pointer(Float32))[0] = value
         buf
       when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_16F
         buf = Bytes.new(sizeof(Float16))
@@ -140,15 +134,15 @@ module SHAInet
         buf
       when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_16BF
         buf = Bytes.new(sizeof(BFloat16))
-        buf.to_unsafe.as(Pointer(BFloat16))[0] = BFloat16.new(value.to_f32)
+        buf.to_unsafe.as(Pointer(BFloat16))[0] = BFloat16.new(value)
         buf
       when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32I
         buf = Bytes.new(sizeof(Int32))
         buf.to_unsafe.as(Pointer(Int32))[0] = value.round.to_i32
         buf
       else
-        buf = Bytes.new(sizeof(Float64))
-        buf.to_unsafe.as(Pointer(Float64))[0] = value
+        buf = Bytes.new(sizeof(Float32))
+        buf.to_unsafe.as(Pointer(Float32))[0] = value
         buf
       end
     end
@@ -552,11 +546,11 @@ module SHAInet
       Pointer(Void).null
     end
 
-    def typed_scalar(value : Float64, precision : Precision) : Bytes
+    def typed_scalar(value : Float32, precision : Precision) : Bytes
       case precision
       when Precision::Fp32
         buf = Bytes.new(sizeof(Float32))
-        buf.to_unsafe.as(Pointer(Float32))[0] = value.to_f32
+        buf.to_unsafe.as(Pointer(Float32))[0] = value
         buf
       when Precision::Fp16
         buf = Bytes.new(sizeof(Float16))
@@ -564,15 +558,15 @@ module SHAInet
         buf
       when Precision::Bf16
         buf = Bytes.new(sizeof(BFloat16))
-        buf.to_unsafe.as(Pointer(BFloat16))[0] = BFloat16.new(value.to_f32)
+        buf.to_unsafe.as(Pointer(BFloat16))[0] = BFloat16.new(value)
         buf
       when Precision::Int8
         buf = Bytes.new(sizeof(Int8))
         buf.to_unsafe.as(Pointer(Int8))[0] = value.round.to_i8
         buf
       else
-        buf = Bytes.new(sizeof(Float64))
-        buf.to_unsafe.as(Pointer(Float64))[0] = value
+        buf = Bytes.new(sizeof(Float32))
+        buf.to_unsafe.as(Pointer(Float32))[0] = value
         buf
       end
     end

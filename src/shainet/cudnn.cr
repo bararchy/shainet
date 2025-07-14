@@ -260,11 +260,11 @@ module SHAInet
 
     # Return a small typed buffer containing `value` for the given precision.
     # The returned slice must be kept alive while passed to cuDNN.
-    def self.typed_scalar(value : Float64, precision : Precision) : Bytes
+    def self.typed_scalar(value : Float32, precision : Precision) : Bytes
       case precision
       when Precision::Fp32
         buf = Bytes.new(sizeof(Float32))
-        buf.to_unsafe.as(Pointer(Float32))[0] = value.to_f32
+        buf.to_unsafe.as(Pointer(Float32))[0] = value
         buf
       when Precision::Fp16
         buf = Bytes.new(sizeof(Float16))
@@ -272,7 +272,7 @@ module SHAInet
         buf
       when Precision::Bf16
         buf = Bytes.new(sizeof(BFloat16))
-        buf.to_unsafe.as(Pointer(BFloat16))[0] = BFloat16.new(value.to_f32)
+        buf.to_unsafe.as(Pointer(BFloat16))[0] = BFloat16.new(value)
         buf
       when Precision::Int8
         buf = Bytes.new(sizeof(Int8))
@@ -280,7 +280,7 @@ module SHAInet
         buf
       else
         buf = Bytes.new(sizeof(Float32))
-        buf.to_unsafe.as(Pointer(Float32))[0] = value.to_f32
+        buf.to_unsafe.as(Pointer(Float32))[0] = value
         buf
       end
     end
@@ -336,8 +336,8 @@ module SHAInet
         0.0 # coef
       ))
 
-      alpha_buf = typed_scalar(1.0, input.precision)
-      beta_buf = typed_scalar(0.0, input.precision)
+      alpha_buf = typed_scalar(1.0_f32, input.precision)
+      beta_buf = typed_scalar(0.0_f32, input.precision)
 
       input.sync_to_device!("cudnn_relu_input") unless input.device_dirty?
 
@@ -395,8 +395,8 @@ module SHAInet
         0.0 # coef
       ))
 
-      alpha_buf = typed_scalar(1.0, input.precision)
-      beta_buf = typed_scalar(0.0, input.precision)
+      alpha_buf = typed_scalar(1.0_f32, input.precision)
+      beta_buf = typed_scalar(0.0_f32, input.precision)
 
       input.sync_to_device!("cudnn_relu_backward_input") unless input.device_dirty?
       grad_output.sync_to_device!("cudnn_relu_backward_grad") unless grad_output.device_dirty?
@@ -461,8 +461,8 @@ module SHAInet
         bias_desc, dtype, 4,
         bias_dims.to_unsafe, bias_strides.to_unsafe))
 
-      alpha_buf = typed_scalar(1.0, matrix.precision)
-      beta_buf = typed_scalar(1.0, matrix.precision) # Add to existing values
+      alpha_buf = typed_scalar(1.0_f32, matrix.precision)
+      beta_buf = typed_scalar(1.0_f32, matrix.precision) # Add to existing values
 
       matrix.sync_to_device!("cudnn_bias_matrix") unless matrix.device_dirty?
       bias.sync_to_device!("cudnn_bias_vector") unless bias.device_dirty?
@@ -512,8 +512,8 @@ module SHAInet
           output_desc, dtype, 4,
           dims.to_unsafe, strides.to_unsafe))
 
-        alpha_buf = typed_scalar(1.0, input.precision)
-        beta_buf = typed_scalar(0.0, input.precision)
+        alpha_buf = typed_scalar(1.0_f32, input.precision)
+        beta_buf = typed_scalar(0.0_f32, input.precision)
 
         input.sync_to_device!("cudnn_softmax_input") unless input.device_dirty?
 
@@ -571,8 +571,8 @@ module SHAInet
           c_desc = create_tensor_descriptor_2d(result.rows, result.cols, result.precision)
 
           begin
-            alpha_buf = typed_scalar(alpha, result.precision)
-            beta_buf = typed_scalar(beta, result.precision)
+            alpha_buf = typed_scalar(alpha.to_f32, result.precision)
+            beta_buf = typed_scalar(beta.to_f32, result.precision)
             check_status(LibCUDNN.cudnnOpTensor(
               handle,
               op_desc,
@@ -886,8 +886,8 @@ module SHAInet
           b.sync_to_device!("cudnn_element_mul") unless b.device_dirty?
           output.sync_to_device!("cudnn_element_mul") unless output.device_dirty?
 
-          alpha_buf = typed_scalar(alpha, output.precision)
-          beta_buf = typed_scalar(beta, output.precision)
+          alpha_buf = typed_scalar(alpha.to_f32, output.precision)
+          beta_buf = typed_scalar(beta.to_f32, output.precision)
 
           CUDNN.check_status(LibCUDNN.cudnnOpTensor(
             CUDNN.handle,
@@ -978,8 +978,8 @@ module SHAInet
           b.sync_to_device!("cudnn_element_add") unless b.device_dirty?
           output.sync_to_device!("cudnn_element_add") unless output.device_dirty?
 
-          alpha_buf = typed_scalar(alpha, output.precision)
-          beta_buf = typed_scalar(beta, output.precision)
+          alpha_buf = typed_scalar(alpha.to_f32, output.precision)
+          beta_buf = typed_scalar(beta.to_f32, output.precision)
 
           CUDNN.check_status(LibCUDNN.cudnnOpTensor(
             CUDNN.handle,
@@ -1042,8 +1042,8 @@ module SHAInet
           input.sync_to_device!("cudnn_activation") unless input.device_dirty?
           output.sync_to_device!("cudnn_activation") unless output.device_dirty?
 
-          alpha_buf = typed_scalar(1.0, input.precision)
-          beta_buf = typed_scalar(0.0, input.precision) # Get device pointers and ensure they're valid
+          alpha_buf = typed_scalar(1.0_f32, input.precision)
+          beta_buf = typed_scalar(0.0_f32, input.precision) # Get device pointers and ensure they're valid
           input_ptr = input.device_ptr
           output_ptr = output.device_ptr
           raise "Invalid device pointers" unless input_ptr && output_ptr && !input_ptr.null? && !output_ptr.null?
