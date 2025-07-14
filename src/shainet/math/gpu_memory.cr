@@ -73,6 +73,18 @@ module SHAInet
     def to_gpu!(src : SimpleMatrix, dest : CudaMatrix)
       raise ArgumentError.new("size mismatch") unless src.rows == dest.rows && src.cols == dest.cols
 
+      return dest unless CUDA.fully_available?
+
+      buf = src.raw_data_buffer
+      bytes = buf.size.to_u64
+      if (dptr = dest.device_ptr) && !dptr.null?
+        res = CUDA.memcpy(dptr.as(Pointer(Void)), buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
+        if res == 0
+          dest.mark_device_dirty!
+          return dest
+        end
+      end
+
       src.rows.times do |i|
         src.cols.times do |j|
           dest[i, j] = src[i, j]
@@ -89,6 +101,16 @@ module SHAInet
     def to_gpu!(matrix : SimpleMatrix, dest : CudaMatrix)
       return dest unless CUDA.fully_available?
       raise ArgumentError.new("size mismatch") unless matrix.rows == dest.rows && matrix.cols == dest.cols
+
+      buf = matrix.raw_data_buffer
+      bytes = buf.size.to_u64
+      if (dptr = dest.device_ptr) && !dptr.null?
+        res = CUDA.memcpy(dptr.as(Pointer(Void)), buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
+        if res == 0
+          dest.mark_device_dirty!
+          return dest
+        end
+      end
 
       matrix.rows.times do |i|
         matrix.cols.times do |j|
