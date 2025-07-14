@@ -313,6 +313,18 @@ module SHAInet
       raise NeuralNetRunError.new("Error running on layers: #{e} #{e.inspect_with_backtrace}")
     end
 
+    # Run a full mini batch represented by a single matrix. The rows of
+    # `input` correspond to all samples in the batch (batch × seq_len for
+    # transformer based models).
+    def run_batch(input : CudaMatrix, stealth : Bool = false) : CudaMatrix
+      run(input, stealth: stealth)
+    end
+
+    # CPU variant of `run_batch` for environments without CUDA.
+    def run_batch(input : SimpleMatrix, stealth : Bool = false) : SimpleMatrix
+      run(input, stealth: stealth)
+    end
+
     # Run a batch of sequences by calling `run` for each sequence
     # This is a convenience wrapper that can be consolidated with more direct matrix operations
     def run(input : Array(Array(Array(GenNum))), stealth : Bool = false) : Array(Array(Array(Float32)))
@@ -1042,25 +1054,16 @@ module SHAInet
     private def process_batch(batch, cost_proc, training_type)
       batch_error = 0.0_f32
 
-      # Zero gradients only at the start of an accumulation cycle
       if @accumulation_counter == 0
-        @hidden_layers.each do |layer|
-          layer.zero_gradients if layer.is_a?(MatrixLayer)
-        end
-        @output_layers.each do |layer|
-          layer.zero_gradients if layer.is_a?(MatrixLayer)
-        end
+        @hidden_layers.each { |layer| layer.zero_gradients if layer.is_a?(MatrixLayer) }
+        @output_layers.each { |layer| layer.zero_gradients if layer.is_a?(MatrixLayer) }
       end
 
-      # Determine matrix dimensions from first sample for workspace allocation
       first_input = batch.first[0]
       first_output = batch.first[1]
-      # If the first output is a single label, expand to one-hot only when GPU
-      # optimized label cross-entropy is unavailable.
       if first_output.is_a?(Array) && first_output.as(Array).size == 1 &&
          !first_output.as(Array)[0].is_a?(Array) && @output_layers.last.is_a?(MatrixLayer)
-        if !(CUDA.fully_available? && CUDNN.available? &&
-           @output_layers.last.as(MatrixLayer).size > 1)
+        if !(CUDA.fully_available? && CUDNN.available? && @output_layers.last.as(MatrixLayer).size > 1)
           label = first_output.as(Array).first.as(GenNum).to_f32.to_i
           oh = Array(Float32).new(@output_layers.last.as(MatrixLayer).size, 0.0_f32)
           oh[label] = 1.0_f32 if label >= 0 && label < oh.size
@@ -1086,39 +1089,34 @@ module SHAInet
 
       in_rows, in_cols = get_dims.call(first_input)
       out_rows, out_cols = get_dims.call(first_output)
+      batch_size = batch.size
+      total_in_rows = batch_size * in_rows
+      total_out_rows = batch_size * out_rows
 
-      input_workspace : CudaMatrix | Nil = nil
-      expected_workspace : CudaMatrix | Nil = nil
-      output_grad : SimpleMatrix | CudaMatrix | Nil = nil
+      input_matrix : SimpleMatrix | CudaMatrix
+      expected_matrix : SimpleMatrix | CudaMatrix
+      grad_matrix : SimpleMatrix | CudaMatrix
 
       if CUDA.fully_available?
-        if !first_input.is_a?(CudaMatrix)
-          if @batch_in_ws.nil? || @batch_in_ws.not_nil!.rows != in_rows || @batch_in_ws.not_nil!.cols != in_cols
-            @batch_in_ws = CudaMatrix.new(in_rows, in_cols, precision: @precision)
-          end
-          input_workspace = @batch_in_ws
+        input_matrix = CudaMatrix.new(total_in_rows, in_cols, precision: @precision)
+        expected_matrix = CudaMatrix.new(total_out_rows, out_cols, precision: @precision)
+        if @batch_grad_ws.nil? || @batch_grad_ws.not_nil!.rows != total_out_rows || @batch_grad_ws.not_nil!.cols != out_cols
+          @batch_grad_ws = CudaMatrix.new(total_out_rows, out_cols, precision: @precision)
         end
-        if !first_output.is_a?(CudaMatrix)
-          if @batch_out_ws.nil? || @batch_out_ws.not_nil!.rows != out_rows || @batch_out_ws.not_nil!.cols != out_cols
-            @batch_out_ws = CudaMatrix.new(out_rows, out_cols, precision: @precision)
-          end
-          expected_workspace = @batch_out_ws
-        end
-        if @batch_grad_ws.nil? || @batch_grad_ws.not_nil!.rows != out_rows || @batch_grad_ws.not_nil!.cols != out_cols
-          @batch_grad_ws = CudaMatrix.new(out_rows, out_cols, precision: @precision)
-        end
-        output_grad = @batch_grad_ws
+        grad_matrix = @batch_grad_ws.not_nil!
+      else
+        input_matrix = SimpleMatrix.new(total_in_rows, in_cols, 0.0_f32, @precision)
+        expected_matrix = SimpleMatrix.new(total_out_rows, out_cols, 0.0_f32, @precision)
+        grad_matrix = SimpleMatrix.new(total_out_rows, out_cols, 0.0_f32, @precision)
       end
 
-      batch.each do |sample|
+      batch.each_with_index do |sample, idx|
         input_data = sample[0]
         expected_output = sample[1]
-        # If expected output is a single label, expand to one-hot only when GPU
-        # accelerated label cross-entropy cannot be used.
+
         if expected_output.is_a?(Array) && expected_output.as(Array).size == 1 &&
            !expected_output.as(Array)[0].is_a?(Array) && @output_layers.last.is_a?(MatrixLayer)
-          if !(CUDA.fully_available? && CUDNN.available? &&
-             @output_layers.last.as(MatrixLayer).size > 1)
+          if !(CUDA.fully_available? && CUDNN.available? && @output_layers.last.as(MatrixLayer).size > 1)
             label = expected_output.as(Array).first.as(GenNum).to_f32.to_i
             oh = Array(Float32).new(@output_layers.last.as(MatrixLayer).size, 0.0_f32)
             oh[label] = 1.0_f32 if label >= 0 && label < oh.size
@@ -1126,265 +1124,161 @@ module SHAInet
           end
         end
 
-        # Prepare expected output matrix using workspace when on GPU
-        expected_matrix = case expected_output
-                          when SimpleMatrix
-                            if expected_workspace
-                              GPUMemory.to_gpu!(expected_output, expected_workspace)
-                            else
-                              expected_output
-                            end
-                          when CudaMatrix
-                            expected_output
-                          else
-                            arr = expected_output.as(Array)
-                            if expected_workspace
-                              case arr
-                              when Array(Array(GenNum)), Array(Array(Float32))
-                                # 2D: arr is Array(Array(GenNum)) or Array(Array(Float32))
-                                GPUMemory.to_gpu!(arr.map { |row| row.map(&.to_f32) }, expected_workspace)
-                              when Array(Float32)
-                                # 1D: arr is Array(Float32)
-                                GPUMemory.to_gpu!([arr], expected_workspace)
-                              when Array(GenNum)
-                                # 1D: arr is Array(GenNum)
-                                GPUMemory.to_gpu!([arr.map(&.to_f32)], expected_workspace)
-                              else
-                                # Scalar fallback (should not happen, but for safety)
-                                GPUMemory.to_gpu!([[arr.to_f32]], expected_workspace)
-                              end
-                              expected_workspace
-                            else
-                              to_matrix(expected_output)
-                            end
-                          end
+        src_in = case input_data
+                 when SimpleMatrix, CudaMatrix
+                   input_data
+                 else
+                   to_matrix(input_data)
+                 end
 
-        # Prepare input matrix using preallocated workspace when on GPU
-        input_matrix = case input_data
-                       when SimpleMatrix
-                         if input_workspace
-                           GPUMemory.to_gpu!(input_data, input_workspace)
-                         else
-                           input_data
-                         end
-                       when CudaMatrix
-                         input_data
-                       else
-                         arr = input_data.as(Array)
-                         if input_workspace
-                           if arr.size > 0 && arr[0].is_a?(Array)
-                             GPUMemory.to_gpu!(arr.as(Array(Array(Float32))), input_workspace)
-                           else
-                             GPUMemory.to_gpu!(arr.as(Array(Float32)), input_workspace)
-                           end
-                           input_workspace
-                         else
-                           to_matrix(input_data)
-                         end
-                       end
+        src_out = case expected_output
+                  when SimpleMatrix, CudaMatrix
+                    expected_output
+                  else
+                    to_matrix(expected_output)
+                  end
 
-        actual_matrix = run(input_matrix, stealth: true)
+        offset_in = idx * in_rows
+        offset_out = idx * out_rows
 
-        # Optimize: Use GPU-accelerated cost and gradient computation when possible
-        sample_error = 0.0_f32
-        output_layer = @output_layers.last
-
-        if output_layer.is_a?(MatrixLayer)
-          # Determine dimensions for output_grad matrix
-          use_label_gpu = actual_matrix.is_a?(CudaMatrix) && expected_matrix.is_a?(CudaMatrix) &&
-                          CUDNN.available? && expected_matrix.as(CudaMatrix).cols == 1 &&
-                          actual_matrix.as(CudaMatrix).cols > 1
-
-          grad_rows, grad_cols = if use_label_gpu
-                                   {actual_matrix.as(CudaMatrix).rows, actual_matrix.as(CudaMatrix).cols}
-                                 elsif expected_output.is_a?(SimpleMatrix)
-                                   exp_mat = expected_output.as(SimpleMatrix)
-                                   {exp_mat.rows, exp_mat.cols}
-                                 elsif expected_output.is_a?(CudaMatrix)
-                                   exp_mat = expected_output.as(CudaMatrix)
-                                   {exp_mat.rows, exp_mat.cols}
-                                 elsif expected_output.is_a?(Array) && expected_output.as(Array).size > 0 && expected_output.as(Array)[0].is_a?(Array)
-                                   {expected_output.as(Array).size, expected_output.as(Array)[0].as(Array).size}
-                                 else
-                                   arr = expected_output.as(Array)
-                                   {1, arr.size}
-                                 end
-
-          # Reuse preallocated output_grad matrix when available
-          if output_grad.nil? || output_grad.not_nil!.rows != grad_rows || output_grad.not_nil!.cols != grad_cols
-            output_grad = GPUMemory.like(actual_matrix, grad_rows, grad_cols)
-            @batch_grad_ws = output_grad if CUDA.fully_available? && output_grad.is_a?(CudaMatrix)
+        if input_matrix.is_a?(CudaMatrix)
+          src_gpu = src_in.is_a?(CudaMatrix) ? src_in.as(CudaMatrix) : GPUMemory.to_gpu(src_in.as(SimpleMatrix)).as(CudaMatrix)
+          in_rows.times { |r| input_matrix.as(CudaMatrix).set_row!(offset_in + r, src_gpu, r) }
+        else
+          src_cpu = src_in.is_a?(SimpleMatrix) ? src_in.as(SimpleMatrix) : src_in.as(CudaMatrix).to_simple
+          in_rows.times do |r|
+            src_cpu.cols.times { |c| input_matrix[offset_in + r, c] = src_cpu[r, c] }
           end
+        end
 
-          existing_grad = output_grad.not_nil!
-          if existing_grad.is_a?(CudaMatrix)
-            existing_grad.zero!
-          else
-            existing_grad.rows.times do |i|
-              existing_grad.cols.times do |j|
-                existing_grad[i, j] = 0.0_f32
-              end
+        if expected_matrix.is_a?(CudaMatrix)
+          src_gpu = src_out.is_a?(CudaMatrix) ? src_out.as(CudaMatrix) : GPUMemory.to_gpu(src_out.as(SimpleMatrix)).as(CudaMatrix)
+          out_rows.times { |r| expected_matrix.as(CudaMatrix).set_row!(offset_out + r, src_gpu, r) }
+        else
+          src_cpu = src_out.is_a?(SimpleMatrix) ? src_out.as(SimpleMatrix) : src_out.as(CudaMatrix).to_simple
+          out_rows.times do |r|
+            src_cpu.cols.times { |c| expected_matrix[offset_out + r, c] = src_cpu[r, c] }
+          end
+        end
+      end
+
+      actual_matrix = run_batch(input_matrix, stealth: true)
+
+      output_layer = @output_layers.last
+      if output_layer.is_a?(MatrixLayer)
+        use_label_gpu = actual_matrix.is_a?(CudaMatrix) && expected_matrix.is_a?(CudaMatrix) &&
+                        CUDNN.available? && expected_matrix.as(CudaMatrix).cols == 1 &&
+                        actual_matrix.as(CudaMatrix).cols > 1
+
+        if grad_matrix.is_a?(CudaMatrix)
+          grad_matrix.as(CudaMatrix).zero!
+        else
+          grad_matrix.as(SimpleMatrix).rows.times do |r|
+            grad_matrix.as(SimpleMatrix).cols.times do |c|
+              grad_matrix.as(SimpleMatrix)[r, c] = 0.0_f32
             end
           end
+        end
 
-          grad_matrix = output_grad.not_nil!
-
-          # Try GPU-accelerated cross-entropy when possible
-          if actual_matrix.is_a?(CudaMatrix) && expected_matrix.is_a?(CudaMatrix) && CUDNN.available?
-            begin
-              loss_value = 0.0_f32
-              if use_label_gpu
-                CUDNN.softmax_cross_entropy_label_loss_and_gradient(
-                  actual_matrix.as(CudaMatrix),
-                  expected_matrix.as(CudaMatrix),
-                  pointerof(loss_value),
-                  grad_matrix.as(CudaMatrix)
-                )
-              else
-                CUDNN.softmax_cross_entropy_loss_and_gradient(
-                  actual_matrix.as(CudaMatrix),
-                  expected_matrix.as(CudaMatrix),
-                  pointerof(loss_value),
-                  grad_matrix.as(CudaMatrix)
-                )
-              end
-              sample_error = loss_value
-            rescue e : Exception
-              Log.debug { "GPU cross-entropy failed: #{e}, falling back to CPU computation" } unless use_label_gpu
-              # Fall back to CPU computation below
-              if use_label_gpu
-                # Convert label indices to one-hot for CPU fallback
-                one_hot = SimpleMatrix.zeros(expected_matrix.rows, actual_matrix.cols)
-                expected_matrix.rows.times do |i|
-                  label = expected_matrix.as(CudaMatrix).unsafe_get(i, 0).to_i
-                  one_hot[i, label] = 1.0_f32 if label >= 0 && label < actual_matrix.cols
-                end
-                sample_error = compute_cost_and_gradient(actual_matrix, one_hot, grad_matrix, cost_proc)
-              else
-                sample_error = compute_cost_and_gradient(actual_matrix, expected_matrix, grad_matrix, cost_proc)
-              end
+        if actual_matrix.is_a?(CudaMatrix) && expected_matrix.is_a?(CudaMatrix) && CUDNN.available?
+          begin
+            loss_value = 0.0_f32
+            if use_label_gpu
+              CUDNN.softmax_cross_entropy_label_loss_and_gradient(
+                actual_matrix.as(CudaMatrix),
+                expected_matrix.as(CudaMatrix),
+                pointerof(loss_value),
+                grad_matrix.as(CudaMatrix)
+              )
+            else
+              CUDNN.softmax_cross_entropy_loss_and_gradient(
+                actual_matrix.as(CudaMatrix),
+                expected_matrix.as(CudaMatrix),
+                pointerof(loss_value),
+                grad_matrix.as(CudaMatrix)
+              )
             end
-          else
-            # CPU fallback for non-CudaMatrix types or when GPU computation is unavailable
+            batch_error = loss_value
+          rescue
             if use_label_gpu
               one_hot = SimpleMatrix.zeros(expected_matrix.rows, actual_matrix.cols)
               expected_matrix.rows.times do |i|
                 label = expected_matrix.as(CudaMatrix).unsafe_get(i, 0).to_i
                 one_hot[i, label] = 1.0_f32 if label >= 0 && label < actual_matrix.cols
               end
-              sample_error = compute_cost_and_gradient(actual_matrix, one_hot, grad_matrix, cost_proc)
+              batch_error = compute_cost_and_gradient(actual_matrix, one_hot, grad_matrix, cost_proc)
             else
-              sample_error = compute_cost_and_gradient(actual_matrix, expected_matrix, grad_matrix, cost_proc)
+              batch_error = compute_cost_and_gradient(actual_matrix, expected_matrix, grad_matrix, cost_proc)
             end
           end
+        else
+          if use_label_gpu
+            one_hot = SimpleMatrix.zeros(expected_matrix.rows, actual_matrix.cols)
+            expected_matrix.rows.times do |i|
+              label = expected_matrix.as(CudaMatrix).unsafe_get(i, 0).to_i
+              one_hot[i, label] = 1.0_f32 if label >= 0 && label < actual_matrix.cols
+            end
+            batch_error = compute_cost_and_gradient(actual_matrix, one_hot, grad_matrix, cost_proc)
+          else
+            batch_error = compute_cost_and_gradient(actual_matrix, expected_matrix, grad_matrix, cost_proc)
+          end
+        end
 
-          batch_error += sample_error
+        extras = Hash(Int32, CudaMatrix | SimpleMatrix).new
+        if list = @residual_edges[@hidden_layers.size]?
+          list.each { |src| extras[src] = clone_matrix(grad_matrix) }
+        end
 
-          # grad_matrix is already GPU-compatible and reused across samples
-          extras = Hash(Int32, CudaMatrix | SimpleMatrix).new
-          if list = @residual_edges[@hidden_layers.size]?
+        grad = output_layer.backward(grad_matrix)
+
+        if @transformer_layers.any?
+          d_model = @transformer_layers.first.size
+          seq_len = input_matrix.rows
+          if grad.rows == 1 && grad.cols != d_model
+            if grad.is_a?(CudaMatrix)
+              output_weights = @output_layers.last.weights.as(CudaMatrix)
+              transformed_grad = grad.as(CudaMatrix) * output_weights.transpose
+            else
+              output_weights = @output_layers.last.weights.as(SimpleMatrix)
+              transformed_grad = grad.as(SimpleMatrix) * output_weights.transpose
+            end
+            if @cached_expanded_grad.nil? || @cached_seq_len != seq_len || @cached_d_model != d_model ||
+               @cached_expanded_grad.not_nil!.class != transformed_grad.class
+              @cached_expanded_grad = transformed_grad.is_a?(CudaMatrix) ? CudaMatrix.zeros(seq_len, d_model) : SimpleMatrix.zeros(seq_len, d_model)
+              @cached_seq_len = seq_len
+              @cached_d_model = d_model
+            end
+            expanded_grad = @cached_expanded_grad.not_nil!
+            d_model.times { |j| expanded_grad[seq_len - 1, j] = transformed_grad[0, j] }
+            grad = expanded_grad
+          end
+
+          @transformer_layers.reverse_each do |layer|
+            grad = layer.backward(grad)
+          end
+        end
+
+        (@hidden_layers.size - 1).downto(0) do |idx|
+          if extra = extras[idx]?
+            add_matrix!(grad, extra)
+          end
+
+          if list = @residual_edges[idx]?
             list.each do |src|
-              extras[src] = clone_matrix(grad_matrix)
-            end
-          end
-
-          grad = output_layer.backward(grad_matrix)
-
-          # Handle transformer layers backward pass with proper gradient reshaping
-          if @transformer_layers.any?
-            # For transformers, we need to map gradients from output space back to transformer space
-            # The gradient from output layer is (1 x vocab_size), but transformer expects (seq_len x d_model)
-
-            # Get the transformer's d_model dimension from layer size
-            d_model = @transformer_layers.first.size
-            seq_len = input_matrix.rows
-
-            if grad.rows == 1 && grad.cols != d_model
-              # We have output gradients (1 x vocab_size), need to transform to (seq_len x d_model)
-              # This requires going through the output layer weights transpose
-
-              # Use appropriate matrix type based on whether grad is CudaMatrix or SimpleMatrix
-              if grad.is_a?(CudaMatrix)
-                output_weights = @output_layers.last.weights.as(CudaMatrix)
+              if extras[src]?
+                add_matrix!(extras[src], grad)
               else
-                output_weights = @output_layers.last.weights.as(SimpleMatrix)
+                extras[src] = clone_matrix(grad)
               end
-
-              # Transform: (1 x vocab_size) * (vocab_size x d_model) -> (1 x d_model)
-              if grad.cols == output_weights.rows
-                if grad.is_a?(CudaMatrix)
-                  transformed_grad = grad * output_weights.as(CudaMatrix).transpose
-                else
-                  transformed_grad = grad * output_weights.as(SimpleMatrix).transpose
-                end
-              else
-                # Fallback: create zero gradients with correct dimensions
-                mat_klass = grad.is_a?(CudaMatrix) ? CudaMatrix : SimpleMatrix
-                transformed_grad = mat_klass.zeros(1, d_model)
-              end
-
-              # Check if we can reuse cached gradient matrix
-              if @cached_expanded_grad.nil? || @cached_seq_len != seq_len || @cached_d_model != d_model ||
-                 @cached_expanded_grad.not_nil!.class != transformed_grad.class
-                # Create new cached matrix
-                @cached_expanded_grad = if transformed_grad.is_a?(CudaMatrix)
-                                          CudaMatrix.zeros(seq_len, d_model)
-                                        else
-                                          SimpleMatrix.zeros(seq_len, d_model)
-                                        end
-                @cached_seq_len = seq_len
-                @cached_d_model = d_model
-              end
-
-              # Reuse cached matrix - zero only the last row that we'll update
-              expanded_grad = @cached_expanded_grad.not_nil!
-              # Zero out only the last row efficiently
-              d_model.times do |j|
-                expanded_grad[seq_len - 1, j] = transformed_grad[0, j]
-              end
-
-              grad = expanded_grad
-            end
-
-            @transformer_layers.reverse_each do |layer|
-              grad = layer.backward(grad)
             end
           end
 
-          (@hidden_layers.size - 1).downto(0) do |idx|
-            if extra = extras[idx]?
-              add_matrix!(grad, extra)
-            end
-
-            if list = @residual_edges[idx]?
-              list.each do |src|
-                if extras[src]?
-                  add_matrix!(extras[src], grad)
-                else
-                  extras[src] = clone_matrix(grad)
-                end
-              end
-            end
-
-            layer = @hidden_layers[idx]
-            if layer.is_a?(MatrixLayer)
-              grad = layer.backward(grad)
-            elsif layer.is_a?(EmbeddingLayer)
-              layer.accumulate_gradient
-            end
+          layer = @hidden_layers[idx]
+          if layer.is_a?(MatrixLayer)
+            grad = layer.backward(grad)
+          elsif layer.is_a?(EmbeddingLayer)
+            layer.accumulate_gradient
           end
-        end
-
-        # Explicit GPU memory cleanup after processing each sample
-        # Force cleanup of temporary matrices created during forward/backward pass
-        # Persistent GPU buffers handle workspace reuse
-
-        # Return workspace matrices used for this sample
-        if input_matrix.is_a?(CudaMatrix) && input_workspace && input_matrix.object_id == input_workspace.object_id
-          CudaMatrix.return_workspace(input_matrix)
-        end
-        if expected_matrix.is_a?(CudaMatrix) && expected_workspace && expected_matrix.object_id == expected_workspace.object_id
-          CudaMatrix.return_workspace(expected_matrix)
         end
       end
 
@@ -1407,13 +1301,8 @@ module SHAInet
 
         update_transformer_layers if @transformer_layers.any?
 
-        # Reset gradients for next accumulation cycle
-        @hidden_layers.each do |layer|
-          layer.zero_gradients if layer.is_a?(MatrixLayer)
-        end
-        @output_layers.each do |layer|
-          layer.zero_gradients if layer.is_a?(MatrixLayer)
-        end
+        @hidden_layers.each { |layer| layer.zero_gradients if layer.is_a?(MatrixLayer) }
+        @output_layers.each { |layer| layer.zero_gradients if layer.is_a?(MatrixLayer) }
 
         @accumulation_counter = 0
       end

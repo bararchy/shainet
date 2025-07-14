@@ -8,7 +8,7 @@ describe "CUDA copy_device_to_device FP16" do
     dst = SHAInet::CudaMatrix.new(1, 4, precision: SHAInet::Precision::Fp16)
 
     4.times do |i|
-      src[0, i] = (i + 1).to_f
+      src[0, i] = (i + 1).to_f32
       dst[0, i] = 0.0_f32
     end
 

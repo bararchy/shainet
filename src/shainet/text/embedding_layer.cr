@@ -248,7 +248,7 @@ module SHAInet
           CUDA.destroy_handle(handle)
           zeros = Array(Float32).new(total, 0.0)
           CUDA.memcpy(g_ptr.as(Pointer(Void)), zeros.to_unsafe.as(Pointer(Void)), (total * 8).to_u64, CUDA::MemcpyKind::HostToDevice)
-          @embeddings.as(CudaMatrix).scale!(1.0 - weight_decay) if weight_decay != 0.0
+          @embeddings.as(CudaMatrix).scale!(1.0_f32 - weight_decay) if weight_decay != 0.0
           # Don't sync embeddings from device - keep them on GPU for performance
           @embeddings.as(CudaMatrix).mark_device_dirty!
           @gradients.as(CudaMatrix).mark_device_clean! # gradients were zeroed on GPU
@@ -270,7 +270,7 @@ module SHAInet
       end
       if weight_decay != 0.0
         if @embeddings.is_a?(CudaMatrix)
-          @embeddings.as(CudaMatrix).scale!(1.0 - weight_decay)
+          @embeddings.as(CudaMatrix).scale!(1.0_f32 - weight_decay)
         else
           @embeddings = @embeddings.as(SimpleMatrix) * (1.0 - weight_decay)
         end

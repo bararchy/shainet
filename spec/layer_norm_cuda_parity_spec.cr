@@ -7,8 +7,8 @@ describe "LayerNorm GPU parity" do
     rows = 3
     cols = 4
 
-    data = Array.new(rows) { Array.new(cols) { rand } }
-    dout_data = Array.new(rows) { Array.new(cols) { rand } }
+    data = Array.new(rows) { Array.new(cols) { rand.to_f32 } }
+    dout_data = Array.new(rows) { Array.new(cols) { rand.to_f32 } }
 
     # CPU-only version
     ENV["SHAINET_DISABLE_CUDA"] = "1"

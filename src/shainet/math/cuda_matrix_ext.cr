@@ -70,9 +70,9 @@ module SHAInet
       self.sync_from_device!("softmax_fallback") if device_dirty?
 
       @rows.times do |i|
-        sum = 0.0
-        @cols.times { |j| sum += Math.exp(self[i, j]) }
-        @cols.times { |j| result[i, j] = Math.exp(self[i, j]) / sum }
+        sum = 0.0_f32
+        @cols.times { |j| sum += Math.exp(self[i, j]).to_f32 }
+        @cols.times { |j| result[i, j] = Math.exp(self[i, j]).to_f32 / sum }
       end
       result.sync_to_device! if CUDA.fully_available?
       result
@@ -125,7 +125,7 @@ module SHAInet
 
       @rows.times do |i|
         @cols.times do |j|
-          result[i, j] = rand < prob ? 0.0 : self[i, j]
+          result[i, j] = rand < prob ? 0.0_f32 : self[i, j]
         end
       end
       result.sync_to_device! if CUDA.fully_available?

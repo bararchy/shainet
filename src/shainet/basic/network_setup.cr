@@ -441,30 +441,30 @@ module SHAInet
         emb_layer = @hidden_layers.find(&.is_a?(EmbeddingLayer)).as(EmbeddingLayer)
         emb_w.each_with_index do |row, idx|
           row.as_a.each_with_index do |val, j|
-            emb_layer.embeddings[idx, j] = val.as_f
+            emb_layer.embeddings[idx, j] = val.as_f32
           end
         end
 
         blocks.each_with_index do |prefix, idx|
           t_layer = @transformer_layers[idx]
           mha = t_layer.mha
-          mha.w_q = SimpleMatrix.from_a(lookup["#{prefix}.mha.w_q"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
-          mha.w_k = SimpleMatrix.from_a(lookup["#{prefix}.mha.w_k"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
-          mha.w_v = SimpleMatrix.from_a(lookup["#{prefix}.mha.w_v"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
-          mha.w_o = SimpleMatrix.from_a(lookup["#{prefix}.mha.w_o"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
+          mha.w_q = SimpleMatrix.from_a(lookup["#{prefix}.mha.w_q"]["weight"].as_a.map { |r| r.as_a.map(&.as_f32) }).transpose
+          mha.w_k = SimpleMatrix.from_a(lookup["#{prefix}.mha.w_k"]["weight"].as_a.map { |r| r.as_a.map(&.as_f32) }).transpose
+          mha.w_v = SimpleMatrix.from_a(lookup["#{prefix}.mha.w_v"]["weight"].as_a.map { |r| r.as_a.map(&.as_f32) }).transpose
+          mha.w_o = SimpleMatrix.from_a(lookup["#{prefix}.mha.w_o"]["weight"].as_a.map { |r| r.as_a.map(&.as_f32) }).transpose
 
           ffn = t_layer.ffn
-          ffn.w1 = SimpleMatrix.from_a(lookup["#{prefix}.ffn.w1"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
-          ffn.b1 = SimpleMatrix.from_a([lookup["#{prefix}.ffn.w1"]["bias"].as_a.map(&.as_f)])
-          ffn.w2 = SimpleMatrix.from_a(lookup["#{prefix}.ffn.w2"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
-          ffn.b2 = SimpleMatrix.from_a([lookup["#{prefix}.ffn.w2"]["bias"].as_a.map(&.as_f)])
+          ffn.w1 = SimpleMatrix.from_a(lookup["#{prefix}.ffn.w1"]["weight"].as_a.map { |r| r.as_a.map(&.as_f32) }).transpose
+          ffn.b1 = SimpleMatrix.from_a([lookup["#{prefix}.ffn.w1"]["bias"].as_a.map(&.as_f32)])
+          ffn.w2 = SimpleMatrix.from_a(lookup["#{prefix}.ffn.w2"]["weight"].as_a.map { |r| r.as_a.map(&.as_f32) }).transpose
+          ffn.b2 = SimpleMatrix.from_a([lookup["#{prefix}.ffn.w2"]["bias"].as_a.map(&.as_f32)])
 
           n1 = t_layer.norm1
-          n1.gamma = SimpleMatrix.from_a([lookup["#{prefix}.norm1"]["weight"].as_a.map(&.as_f)])
-          n1.beta = SimpleMatrix.from_a([lookup["#{prefix}.norm1"]["bias"].as_a.map(&.as_f)])
+          n1.gamma = SimpleMatrix.from_a([lookup["#{prefix}.norm1"]["weight"].as_a.map(&.as_f32)])
+          n1.beta = SimpleMatrix.from_a([lookup["#{prefix}.norm1"]["bias"].as_a.map(&.as_f32)])
           n2 = t_layer.norm2
-          n2.gamma = SimpleMatrix.from_a([lookup["#{prefix}.norm2"]["weight"].as_a.map(&.as_f)])
-          n2.beta = SimpleMatrix.from_a([lookup["#{prefix}.norm2"]["bias"].as_a.map(&.as_f)])
+          n2.gamma = SimpleMatrix.from_a([lookup["#{prefix}.norm2"]["weight"].as_a.map(&.as_f32)])
+          n2.beta = SimpleMatrix.from_a([lookup["#{prefix}.norm2"]["bias"].as_a.map(&.as_f32)])
         end
 
         if out = lookup["out"]?
@@ -472,8 +472,8 @@ module SHAInet
           bias = out["bias"].as_a
           target = @output_layers.first
           # Set weights and biases using matrix operations
-          w = weights.map { |r| r.as_a.map(&.as_f) }
-          b = bias.map(&.as_f)
+          w = weights.map { |r| r.as_a.map(&.as_f32) }
+          b = bias.map(&.as_f32)
           target.weights = SimpleMatrix.from_a(w)
           target.biases = SimpleMatrix.from_a([b])
         end
@@ -502,7 +502,7 @@ module SHAInet
         emb_layer = @hidden_layers.find(&.is_a?(EmbeddingLayer)).as(EmbeddingLayer)
         emb_w.each_with_index do |row, idx|
           row.as_a.each_with_index do |val, j|
-            emb_layer.embeddings[idx, j] = val.as_f
+            emb_layer.embeddings[idx, j] = val.as_f32
           end
         end
 
@@ -510,12 +510,12 @@ module SHAInet
           t_layer = @transformer_layers[idx]
           mha = t_layer.mha
           if lookup["#{prefix}.attn.q_proj"]?
-            mha.w_q = SimpleMatrix.from_a(lookup["#{prefix}.attn.q_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
-            mha.w_k = SimpleMatrix.from_a(lookup["#{prefix}.attn.k_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
-            mha.w_v = SimpleMatrix.from_a(lookup["#{prefix}.attn.v_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
-            mha.w_o = SimpleMatrix.from_a(lookup["#{prefix}.attn.o_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
+            mha.w_q = SimpleMatrix.from_a(lookup["#{prefix}.attn.q_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f32) }).transpose
+            mha.w_k = SimpleMatrix.from_a(lookup["#{prefix}.attn.k_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f32) }).transpose
+            mha.w_v = SimpleMatrix.from_a(lookup["#{prefix}.attn.v_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f32) }).transpose
+            mha.w_o = SimpleMatrix.from_a(lookup["#{prefix}.attn.o_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f32) }).transpose
           elsif lookup["#{prefix}.self_attention.query_key_value"]?
-            qkv = lookup["#{prefix}.self_attention.query_key_value"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }
+            qkv = lookup["#{prefix}.self_attention.query_key_value"]["weight"].as_a.map { |r| r.as_a.map(&.as_f32) }
             rows = qkv.size // 3
             w_q = qkv[0, rows]
             w_k = qkv[rows, rows]
@@ -523,14 +523,14 @@ module SHAInet
             mha.w_q = SimpleMatrix.from_a(w_q).transpose
             mha.w_k = SimpleMatrix.from_a(w_k).transpose
             mha.w_v = SimpleMatrix.from_a(w_v).transpose
-            mha.w_o = SimpleMatrix.from_a(lookup["#{prefix}.self_attention.dense"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
+            mha.w_o = SimpleMatrix.from_a(lookup["#{prefix}.self_attention.dense"]["weight"].as_a.map { |r| r.as_a.map(&.as_f32) }).transpose
           end
 
           ffn = t_layer.ffn
           if lookup["#{prefix}.mlp.gate_proj"]?
-            gate = lookup["#{prefix}.mlp.gate_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }
-            up = lookup["#{prefix}.mlp.up_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }
-            down = lookup["#{prefix}.mlp.down_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }
+            gate = lookup["#{prefix}.mlp.gate_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f32) }
+            up = lookup["#{prefix}.mlp.up_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f32) }
+            down = lookup["#{prefix}.mlp.down_proj"]["weight"].as_a.map { |r| r.as_a.map(&.as_f32) }
             w1 = gate.zip(up).map { |g, u| g + u }
             ffn.w1 = SimpleMatrix.from_a(w1).transpose
             ffn.w2 = SimpleMatrix.from_a(down).transpose
@@ -538,25 +538,25 @@ module SHAInet
             ffn.b2 = SimpleMatrix.zeros(1, down.size)
             ffn.refresh_transposes!
           else
-            ffn.w1 = SimpleMatrix.from_a(lookup["#{prefix}.mlp.dense_h_to_4h"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
-            ffn.w2 = SimpleMatrix.from_a(lookup["#{prefix}.mlp.dense_4h_to_h"]["weight"].as_a.map { |r| r.as_a.map(&.as_f) }).transpose
-            ffn.b1 = SimpleMatrix.from_a([lookup["#{prefix}.mlp.dense_h_to_4h"]["bias"].as_a.map(&.as_f)]) if lookup["#{prefix}.mlp.dense_h_to_4h"]["bias"]?
-            ffn.b2 = SimpleMatrix.from_a([lookup["#{prefix}.mlp.dense_4h_to_h"]["bias"].as_a.map(&.as_f)]) if lookup["#{prefix}.mlp.dense_4h_to_h"]["bias"]?
+            ffn.w1 = SimpleMatrix.from_a(lookup["#{prefix}.mlp.dense_h_to_4h"]["weight"].as_a.map { |r| r.as_a.map(&.as_f32) }).transpose
+            ffn.w2 = SimpleMatrix.from_a(lookup["#{prefix}.mlp.dense_4h_to_h"]["weight"].as_a.map { |r| r.as_a.map(&.as_f32) }).transpose
+            ffn.b1 = SimpleMatrix.from_a([lookup["#{prefix}.mlp.dense_h_to_4h"]["bias"].as_a.map(&.as_f32)]) if lookup["#{prefix}.mlp.dense_h_to_4h"]["bias"]?
+            ffn.b2 = SimpleMatrix.from_a([lookup["#{prefix}.mlp.dense_4h_to_h"]["bias"].as_a.map(&.as_f32)]) if lookup["#{prefix}.mlp.dense_4h_to_h"]["bias"]?
             ffn.refresh_transposes!
           end
 
           n1 = t_layer.norm1
           if lookup["#{prefix}.input_layernorm"]?
-            n1.gamma = SimpleMatrix.from_a([lookup["#{prefix}.input_layernorm"]["weight"].as_a.map(&.as_f)])
+            n1.gamma = SimpleMatrix.from_a([lookup["#{prefix}.input_layernorm"]["weight"].as_a.map(&.as_f32)])
           elsif lookup["#{prefix}.ln_attn"]?
-            n1.gamma = SimpleMatrix.from_a([lookup["#{prefix}.ln_attn"]["weight"].as_a.map(&.as_f)])
+            n1.gamma = SimpleMatrix.from_a([lookup["#{prefix}.ln_attn"]["weight"].as_a.map(&.as_f32)])
           end
           n1.beta = SimpleMatrix.zeros(1, n1.gamma.cols)
           n2 = t_layer.norm2
           if lookup["#{prefix}.post_attention_layernorm"]?
-            n2.gamma = SimpleMatrix.from_a([lookup["#{prefix}.post_attention_layernorm"]["weight"].as_a.map(&.as_f)])
+            n2.gamma = SimpleMatrix.from_a([lookup["#{prefix}.post_attention_layernorm"]["weight"].as_a.map(&.as_f32)])
           elsif lookup["#{prefix}.ln_mlp"]?
-            n2.gamma = SimpleMatrix.from_a([lookup["#{prefix}.ln_mlp"]["weight"].as_a.map(&.as_f)])
+            n2.gamma = SimpleMatrix.from_a([lookup["#{prefix}.ln_mlp"]["weight"].as_a.map(&.as_f32)])
           end
           n2.beta = SimpleMatrix.zeros(1, n2.gamma.cols)
         end
@@ -564,7 +564,7 @@ module SHAInet
         if out_key
           weights = out_key["weight"].as_a
           target = @output_layers.first
-          w = weights.map { |r| r.as_a.map(&.as_f) }
+          w = weights.map { |r| r.as_a.map(&.as_f32) }
           target.weights = SimpleMatrix.from_a(w)
           target.biases = SimpleMatrix.zeros(1, w.size)
         end
@@ -589,8 +589,8 @@ module SHAInet
           bias = l["bias"].as_a
           target = target_layers[idx]
           # Set weights and biases using matrix operations
-          w = weights.map { |r| r.as_a.map(&.as_f) }
-          b = bias.map(&.as_f)
+          w = weights.map { |r| r.as_a.map(&.as_f32) }
+          b = bias.map(&.as_f32)
           target.weights = SimpleMatrix.from_a(w)
           target.biases = SimpleMatrix.from_a([b])
         end
