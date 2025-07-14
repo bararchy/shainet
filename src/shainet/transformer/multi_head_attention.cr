@@ -219,6 +219,9 @@ module SHAInet
     # GPU path - all operations with CudaMatrix - optimized with workspace pool
     def forward(x : CudaMatrix, mask : CudaMatrix | Nil = nil, rotary_freqs : CudaMatrix | Nil = nil) : CudaMatrix
       @x = x
+      if mask && (mask.rows != x.rows || mask.cols != x.rows)
+        raise ArgumentError.new("mask size mismatch: input is #{x.rows}x#{x.rows}, mask is #{mask.rows}x#{mask.cols}")
+      end
 
       # Ensure workspace matrices are allocated for this batch size
       ensure_workspace_matrices(x.rows)
@@ -325,6 +328,9 @@ module SHAInet
 
     # GPU path with KV caching. Returns a tuple of the output and updated cache.
     def forward(x : CudaMatrix, mask : CudaMatrix | Nil, cache : KVCache, layer : Int32, rotary_freqs : CudaMatrix | Nil = nil) : Tuple(CudaMatrix, KVCache)
+      if mask && (mask.rows != x.rows || mask.cols != x.rows)
+        raise ArgumentError.new("mask size mismatch: input is #{x.rows}x#{x.rows}, mask is #{mask.rows}x#{mask.cols}")
+      end
       # Compute fresh projections for the new step
       q = x * @w_q.as(CudaMatrix)
       k_proj = x * @w_k.as(CudaMatrix)
@@ -378,6 +384,9 @@ module SHAInet
     # CPU path - all operations with SimpleMatrix
     def forward(x : SimpleMatrix, mask : SimpleMatrix | Nil = nil, rotary_freqs : SimpleMatrix | Nil = nil) : SimpleMatrix
       @x = x
+      if mask && (mask.rows != x.rows || mask.cols != x.rows)
+        raise ArgumentError.new("mask size mismatch: input is #{x.rows}x#{x.rows}, mask is #{mask.rows}x#{mask.cols}")
+      end
 
       # Compute Q, K, V projections - CPU path
       q = x * @w_q.as(SimpleMatrix)
@@ -435,6 +444,9 @@ module SHAInet
 
     # CPU path with KV caching. Returns a tuple of the output and updated cache.
     def forward(x : SimpleMatrix, mask : SimpleMatrix | Nil, cache : KVCache, layer : Int32, rotary_freqs : SimpleMatrix | Nil = nil) : Tuple(SimpleMatrix, KVCache)
+      if mask && (mask.rows != x.rows || mask.cols != x.rows)
+        raise ArgumentError.new("mask size mismatch: input is #{x.rows}x#{x.rows}, mask is #{mask.rows}x#{mask.cols}")
+      end
       q = x * @w_q.as(SimpleMatrix)
       k_proj = x * @w_k.as(SimpleMatrix)
       v_proj = x * @w_v.as(SimpleMatrix)
