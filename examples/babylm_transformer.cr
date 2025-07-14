@@ -69,7 +69,7 @@ tk = 10
 # Top-p: sample from the smallest set of tokens with cumulative probability >= 0.9
 tp = 0.9_f32
 # network precision: Use Fp16 for better GPU performance, Fp32 for compatibility
-precision = SHAInet::Precision::Fp16
+precision = SHAInet::Precision::Fp32
 
 puts "Reading dataset from #{path}..."
 text = File.read(path)
