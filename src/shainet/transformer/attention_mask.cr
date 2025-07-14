@@ -1,6 +1,6 @@
 module SHAInet
   module AttentionMask
-    NEG_INF = -1e9_f64
+    NEG_INF = -1e9_f32
 
     # Returns a causal attention mask (lower triangular with 0 and -1e9 above diag)
     def self.causal(size : Int32) : SimpleMatrix
