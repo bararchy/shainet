@@ -3,6 +3,14 @@ module SHAInet
   # contain a JSON array: [[inputs...], [outputs...]]
   class StreamingData
     alias Datum = Array(Float32) | Array(Array(Float32))
+    alias Batch = Array(Array(Datum)) | Array(Array(CudaMatrix))
+
+    @queue : Channel(Batch)?
+    @prefetch_fiber : Fiber?
+    @prefetch_done : Channel(Nil)?
+    @batch_size : Int32 = 0
+    @stop_prefetch : Bool = false
+    @mutex = Mutex.new
     @path : String
     @file : File
     @buffer : Array(String)
@@ -24,12 +32,26 @@ module SHAInet
       @buffer = [] of String
       @index = 0
       read_chunk
+      @queue = nil
+      @prefetch_fiber = nil
+      @prefetch_done = nil
     end
 
     # Returns the next `batch_size` examples. Each line may contain either a
     # flat array of numbers or nested arrays of token ids. All numbers are
-    # converted to `Float32`.
+    # converted to `Float32`. When prefetching is enabled, this will
+    # pull the next batch from the internal queue.
     def next_batch(batch_size : Int32)
+      start_prefetch(batch_size) unless @prefetch_fiber
+
+      if batch = @queue.not_nil!.receive?
+        batch
+      else
+        @gpu_batches ? ([] of Array(CudaMatrix)) : ([] of Array(Datum))
+      end
+    end
+
+    private def load_batch(batch_size : Int32) : Batch
       batch = [] of Array(Datum)
       batch_size.times do
         line = next_line
@@ -128,8 +150,11 @@ module SHAInet
 
     # Resets the data pointer for a new epoch and reshuffles if enabled.
     def rewind
-      @file.seek(0)
-      read_chunk
+      stop_prefetch
+      @mutex.synchronize do
+        @file.seek(0)
+        read_chunk
+      end
     end
 
     private def shuffle!
@@ -137,13 +162,15 @@ module SHAInet
     end
 
     private def next_line : String?
-      if @index >= @buffer.size
-        read_chunk
-        return nil if @buffer.empty?
+      @mutex.synchronize do
+        if @index >= @buffer.size
+          read_chunk
+          return nil if @buffer.empty?
+        end
+        line = @buffer[@index]
+        @index += 1
+        line
       end
-      line = @buffer[@index]
-      @index += 1
-      line
     end
 
     private def read_chunk
@@ -180,6 +207,37 @@ module SHAInet
       else
         SimpleMatrix.from_a([d.as(Array(Float32))])
       end
+    end
+
+    private def start_prefetch(batch_size : Int32)
+      if @prefetch_fiber && @batch_size == batch_size && !@stop_prefetch
+        return
+      end
+
+      stop_prefetch
+
+      @batch_size = batch_size
+      @queue = Channel(Batch).new(2)
+      @prefetch_done = Channel(Nil).new
+      @stop_prefetch = false
+      @prefetch_fiber = spawn { prefetch_loop }
+    end
+
+    private def prefetch_loop
+      loop do
+        break if @stop_prefetch
+        batch = load_batch(@batch_size)
+        @queue.not_nil!.send(batch)
+        break if batch.empty?
+      end
+      @prefetch_done.try &.send(nil)
+    end
+
+    private def stop_prefetch
+      return unless @prefetch_fiber
+      @stop_prefetch = true
+      @prefetch_done.try &.receive?
+      @prefetch_fiber = nil
     end
   end
 end
