@@ -6,7 +6,7 @@ private def cpu_softmax_cross_entropy(logits : SHAInet::SimpleMatrix, target : S
   grad = SHAInet::SimpleMatrix.zeros(rows, cols)
   loss = 0.0
   rows.times do |i|
-    max = -Float64::INFINITY
+    max = -Float32::INFINITY
     cols.times { |j| max = Math.max(max, logits[i, j]) }
     sum = 0.0
     cols.times { |j| sum += Math.exp(logits[i, j] - max) }

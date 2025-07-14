@@ -2,7 +2,7 @@ module SHAInet
   # StreamingData reads training data lazily from a text file. Each line should
   # contain a JSON array: [[inputs...], [outputs...]]
   class StreamingData
-    alias Datum = Array(Float64) | Array(Array(Float64))
+    alias Datum = Array(Float32) | Array(Array(Float32))
     @path : String
     @file : File
     @buffer : Array(String)
@@ -28,7 +28,7 @@ module SHAInet
 
     # Returns the next `batch_size` examples. Each line may contain either a
     # flat array of numbers or nested arrays of token ids. All numbers are
-    # converted to `Float64`.
+    # converted to `Float32`.
     def next_batch(batch_size : Int32)
       batch = [] of Array(Datum)
       batch_size.times do
@@ -81,10 +81,10 @@ module SHAInet
       first_out = batch.first[1]
 
       get_dims = ->(d : Datum) do
-        if d.is_a?(Array(Array(Float64)))
+        if d.is_a?(Array(Array(Float32)))
           {d.size, d.first.size}
         else
-          {1, d.as(Array(Float64)).size}
+          {1, d.as(Array(Float32)).size}
         end
       end
 
@@ -158,27 +158,27 @@ module SHAInet
       shuffle! if @shuffle
     end
 
-    # Parses a JSON array and converts all numeric values to Float64. Supports
+    # Parses a JSON array and converts all numeric values to Float32. Supports
     # both 1‑D and 2‑D arrays which is useful for tokenized inputs.
     private def parse_array(json_any : JSON::Any) : Datum
       if json_any.raw.is_a?(Array)
         arr = json_any.as_a
-        return [] of Float64 if arr.empty?
+        return [] of Float32 if arr.empty?
         if arr.first.raw.is_a?(Array)
-          Array(Array(Float64)).from_json(json_any.to_json)
+          Array(Array(Float32)).from_json(json_any.to_json)
         else
-          Array(Float64).from_json(json_any.to_json)
+          Array(Float32).from_json(json_any.to_json)
         end
       else
-        [json_any.as_f] of Float64
+        [json_any.as_f32] of Float32
       end
     end
 
     private def to_matrix(d : Datum) : SimpleMatrix
-      if d.is_a?(Array(Array(Float64)))
+      if d.is_a?(Array(Array(Float32)))
         SimpleMatrix.from_a(d)
       else
-        SimpleMatrix.from_a([d.as(Array(Float64))])
+        SimpleMatrix.from_a([d.as(Array(Float32))])
       end
     end
   end

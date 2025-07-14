@@ -65,7 +65,7 @@ module SHAInet
     end
 
     # Migration helper for legacy models using hash based storage
-    def self.from_hash(hash : Hash(Int32, Array(Float64)), activation_function : ActivationFunction = SHAInet.none)
+    def self.from_hash(hash : Hash(Int32, Array(Float32)), activation_function : ActivationFunction = SHAInet.none)
       vocab_size = hash.keys.max? ? hash.keys.max + 1 : 0
       l_size = hash.values.first?.try(&.size) || 0
       layer = new(vocab_size, l_size, activation_function)
@@ -77,7 +77,7 @@ module SHAInet
 
     # Retrieve embedding vector for the given token id. If the token id does not
     # exist in the table, it is initialized with random values.
-    def lookup(id : Int32) : Array(Float64)
+    def lookup(id : Int32) : Array(Float32)
       Array.new(@l_size) { |i| @embeddings[id, i] }
     end
 
@@ -110,7 +110,7 @@ module SHAInet
             when Precision::Bf16
               CUDA.gather_rows_bf16(r_ptr.as(Pointer(UInt16)), e_ptr.as(Pointer(UInt16)), ids_dev, ids.size, @l_size)
             else
-              CUDA.gather_rows(r_ptr.as(Pointer(Float64)), e_ptr.as(Pointer(Float64)), ids_dev, ids.size, @l_size)
+              CUDA.gather_rows(r_ptr.as(Pointer(Float32)), e_ptr.as(Pointer(Float32)), ids_dev, ids.size, @l_size)
             end
           rescue
             elem_size = @embeddings.as(CudaMatrix).element_size
@@ -158,14 +158,14 @@ module SHAInet
     # Set the neuron activations for this layer according to the embedding of the
     # provided token id. Returns the embedding vector as an Array for
     # compatibility with previous API versions.
-    def embed(id : Int32) : Array(Float64)
+    def embed(id : Int32) : Array(Float32)
       mat = if CUDA.fully_available? && @embeddings.is_a?(CudaMatrix)
               embed([id])
             else
               embed_cpu([id])
             end
 
-      # Only sync if we absolutely need to return an Array(Float64)
+      # Only sync if we absolutely need to return an Array(Float32)
       # For better performance, try to keep the caller working with matrices
       if mat.is_a?(CudaMatrix) && CUDA.fully_available?
         # Only sync when the caller actually needs the array
@@ -177,7 +177,7 @@ module SHAInet
       @activations = mat_klass.new(1, @l_size)
       @l_size.times { |i| @activations.not_nil![0, i] = mat[0, i] }
 
-      arr = Array(Float64).new(@l_size) { |i| mat[0, i] }
+      arr = Array(Float32).new(@l_size) { |i| mat[0, i] }
       arr
     end
 
@@ -189,20 +189,20 @@ module SHAInet
           # Create host vector from activation and sigma_prime matrices
           # Check if activations and sigma_primes are available from forward pass
           if @activations && @sigma_primes
-            host_vec = Array(Float64).new(@l_size) do |i|
+            host_vec = Array(Float32).new(@l_size) do |i|
               @activations.not_nil![0, i] * @sigma_primes.not_nil![0, i]
             end
           else
             # Fallback: use identity (no activation derivative applied)
-            host_vec = Array(Float64).new(@l_size, 1.0)
+            host_vec = Array(Float32).new(@l_size, 1.0)
           end
 
           bytes = (@l_size * 8).to_u64
-          g_dev = Pointer(Float64).null
+          g_dev = Pointer(Float32).null
           CUDA.malloc(pointerof(g_dev).as(Pointer(Pointer(Void))), bytes)
           CUDA.memcpy(g_dev.as(Pointer(Void)), host_vec.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
           one_val = 1.0
-          one_dev = Pointer(Float64).null
+          one_dev = Pointer(Float32).null
           CUDA.malloc(pointerof(one_dev).as(Pointer(Pointer(Void))), 8_u64)
           CUDA.memcpy(one_dev.as(Pointer(Void)), pointerof(one_val).as(Pointer(Void)), 8_u64, CUDA::MemcpyKind::HostToDevice)
           handle = CUDA.create_handle
@@ -232,7 +232,7 @@ module SHAInet
     end
 
     # Update embeddings using stored gradients and clear them
-    def apply_gradients(lr : Float64, weight_decay : Float64 = 0.0)
+    def apply_gradients(lr : Float32, weight_decay : Float32 = 0.0)
       if CUDA.fully_available? && @embeddings.is_a?(CudaMatrix) && @gradients.is_a?(CudaMatrix)
         e_ptr = @embeddings.as(CudaMatrix).device_ptr
         g_ptr = @gradients.as(CudaMatrix).device_ptr
@@ -242,11 +242,11 @@ module SHAInet
           CUDA.axpy(
             handle,
             -lr,
-            g_ptr.as(Pointer(Float64)),
-            e_ptr.as(Pointer(Float64)),
+            g_ptr.as(Pointer(Float32)),
+            e_ptr.as(Pointer(Float32)),
             total)
           CUDA.destroy_handle(handle)
-          zeros = Array(Float64).new(total, 0.0)
+          zeros = Array(Float32).new(total, 0.0)
           CUDA.memcpy(g_ptr.as(Pointer(Void)), zeros.to_unsafe.as(Pointer(Void)), (total * 8).to_u64, CUDA::MemcpyKind::HostToDevice)
           @embeddings.as(CudaMatrix).scale!(1.0 - weight_decay) if weight_decay != 0.0
           # Don't sync embeddings from device - keep them on GPU for performance

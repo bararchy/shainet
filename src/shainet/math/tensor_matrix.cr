@@ -83,7 +83,7 @@ module SHAInet
       result
     end
 
-    def self.from_a(array : Array(Array(Float64)))
+    def self.from_a(array : Array(Array(Float32)))
       rows = array.size
       cols = array.first.size
       m = TensorMatrix.new(rows, cols)
@@ -95,7 +95,7 @@ module SHAInet
       m
     end
 
-    def random_fill!(min : Float64 = -0.1, max : Float64 = 0.1)
+    def random_fill!(min : Float32 = -0.1, max : Float32 = 0.1)
       @rows.times do |i|
         @cols.times do |j|
           self[i, j] = Autograd::Tensor.new(rand(min..max))

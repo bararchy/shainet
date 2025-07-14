@@ -10,7 +10,7 @@ module SHAInet
     extend self
 
     # -- Simple GPU allocator -------------------------------------------------
-    @@pool = Hash(Int32, Array(Pointer(Float64))).new { |h, k| h[k] = [] of Pointer(Float64) }
+    @@pool = Hash(Int32, Array(Pointer(Float32))).new { |h, k| h[k] = [] of Pointer(Float32) }
     @@pool_limit : Int32 = 2 # Very small pool to reduce memory pressure
 
     # Debug counter to track active GPU allocations
@@ -32,7 +32,7 @@ module SHAInet
       CUDA.set_device(device_id)
       size = rows * cols
       count.times do
-        ptr = Pointer(Float64).null
+        ptr = Pointer(Float32).null
         bytes = ((size) * 8).to_u64
         res = CUDA.malloc(pointerof(ptr).as(Pointer(Pointer(Void))), bytes)
         next unless res == 0
@@ -106,7 +106,7 @@ module SHAInet
       raise ArgumentError.new("size mismatch") unless dest.rows == 1 && dest.cols == array.size
 
       array.each_with_index do |val, idx|
-        dest[0, idx] = val.to_f64
+        dest[0, idx] = val.to_f32
       end
 
       dest.sync_to_device!("to_gpu!")
@@ -122,7 +122,7 @@ module SHAInet
 
       rows.times do |i|
         cols.times do |j|
-          dest[i, j] = array[i][j].to_f64
+          dest[i, j] = array[i][j].to_f32
         end
       end
 
@@ -142,7 +142,7 @@ module SHAInet
     end
 
     # Create a new matrix of the same type as the input
-    def like(matrix : SimpleMatrix | CudaMatrix, rows : Int32, cols : Int32, init : Float64 = 0.0)
+    def like(matrix : SimpleMatrix | CudaMatrix, rows : Int32, cols : Int32, init : Float32 = 0.0)
       if matrix.is_a?(CudaMatrix) && CUDA.fully_available?
         result = CudaMatrix.new(
           rows,
@@ -189,7 +189,7 @@ module SHAInet
           total_elements += matrix.rows.to_i64 * matrix.cols.to_i64
         end
       end
-      total_elements * 8 # 8 bytes per Float64
+      total_elements * 8 # 8 bytes per Float32
     end
   end
 end

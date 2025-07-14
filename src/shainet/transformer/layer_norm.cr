@@ -14,7 +14,7 @@ module SHAInet
       @beta = val
     end
 
-    @epsilon : Float64
+    @epsilon : Float32
     @x : SimpleMatrix | CudaMatrix | Nil
     @mean : SimpleMatrix | CudaMatrix
     @var : SimpleMatrix | CudaMatrix
@@ -36,7 +36,7 @@ module SHAInet
     # devices. Repeated calls without a device change keep the existing
     # workspaces to avoid unnecessary allocations.
 
-    def initialize(d_model : Int32, epsilon : Float64 = 1e-5)
+    def initialize(d_model : Int32, epsilon : Float32 = 1e-5)
       # Use CudaMatrix when CUDA is available for better performance
       mat_klass = CUDA.fully_available? ? CudaMatrix : SimpleMatrix
       @gamma = mat_klass.new(1, d_model)
@@ -272,15 +272,15 @@ module SHAInet
             rows, cols, @epsilon.to_f32)
         else
           CUDA.row_mean_var(
-            x.device_ptr.not_nil!.as(Pointer(Float64)),
-            cuda_mean.device_ptr.not_nil!.as(Pointer(Float64)),
-            cuda_var.device_ptr.not_nil!.as(Pointer(Float64)),
+            x.device_ptr.not_nil!.as(Pointer(Float32)),
+            cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
+            cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
             rows, cols)
           CUDA.layer_norm(
-            cuda_norm.device_ptr.not_nil!.as(Pointer(Float64)),
-            x.device_ptr.not_nil!.as(Pointer(Float64)),
-            cuda_mean.device_ptr.not_nil!.as(Pointer(Float64)),
-            cuda_var.device_ptr.not_nil!.as(Pointer(Float64)),
+            cuda_norm.device_ptr.not_nil!.as(Pointer(Float32)),
+            x.device_ptr.not_nil!.as(Pointer(Float32)),
+            cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
+            cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
             rows, cols, @epsilon)
         end
 
@@ -310,11 +310,11 @@ module SHAInet
       @var = SimpleMatrix.new(rows, 1)
       @norm = SimpleMatrix.new(rows, cols)
       rows.times do |i|
-        mean = 0.0
+        mean = 0.0_f32
         cols.times { |j| mean += x[i, j] }
         mean /= cols
         @mean[i, 0] = mean
-        var = 0.0
+        var = 0.0_f32
         cols.times do |j|
           diff = x[i, j] - mean
           var += diff*diff
@@ -345,11 +345,11 @@ module SHAInet
       @var = SimpleMatrix.new(rows, 1)
       @norm = SimpleMatrix.new(rows, cols)
       rows.times do |i|
-        mean = 0.0
+        mean = 0.0_f32
         cols.times { |j| mean += x[i, j] }
         mean /= cols
         @mean[i, 0] = mean
-        var = 0.0
+        var = 0.0_f32
         cols.times do |j|
           diff = x[i, j] - mean
           var += diff*diff
@@ -398,15 +398,15 @@ module SHAInet
           d_beta.zero!
 
           CUDA.layer_norm_backward(
-            d_x.device_ptr.not_nil!.as(Pointer(Float64)),
-            d_gamma.device_ptr.not_nil!.as(Pointer(Float64)),
-            d_beta.device_ptr.not_nil!.as(Pointer(Float64)),
-            d_out.device_ptr.not_nil!.as(Pointer(Float64)),
-            x.device_ptr.not_nil!.as(Pointer(Float64)),
-            @gamma.as(CudaMatrix).device_ptr.not_nil!.as(Pointer(Float64)),
-            @mean.as(CudaMatrix).device_ptr.not_nil!.as(Pointer(Float64)),
-            @var.as(CudaMatrix).device_ptr.not_nil!.as(Pointer(Float64)),
-            @norm.as(CudaMatrix).device_ptr.not_nil!.as(Pointer(Float64)),
+            d_x.device_ptr.not_nil!.as(Pointer(Float32)),
+            d_gamma.device_ptr.not_nil!.as(Pointer(Float32)),
+            d_beta.device_ptr.not_nil!.as(Pointer(Float32)),
+            d_out.device_ptr.not_nil!.as(Pointer(Float32)),
+            x.device_ptr.not_nil!.as(Pointer(Float32)),
+            @gamma.as(CudaMatrix).device_ptr.not_nil!.as(Pointer(Float32)),
+            @mean.as(CudaMatrix).device_ptr.not_nil!.as(Pointer(Float32)),
+            @var.as(CudaMatrix).device_ptr.not_nil!.as(Pointer(Float32)),
+            @norm.as(CudaMatrix).device_ptr.not_nil!.as(Pointer(Float32)),
             rows, cols, @epsilon
           )
 
@@ -440,10 +440,10 @@ module SHAInet
 
       rows.times do |i|
         denom = Math.sqrt(var_cpu[i, 0] + @epsilon)
-        inv = 1.0 / denom
+        inv = 1.0_f32 / denom
         col_f = cols.to_f32
-        sum_dout_gamma = 0.0
-        sum_dout_gamma_norm = 0.0
+        sum_dout_gamma = 0.0_f32
+        sum_dout_gamma_norm = 0.0_f32
         cols.times do |j|
           doutg = dout_cpu[i, j] * gamma_cpu[0, j]
           sum_dout_gamma += doutg
@@ -485,10 +485,10 @@ module SHAInet
 
       rows.times do |i|
         denom = Math.sqrt(@var[i, 0] + @epsilon)
-        inv = 1.0 / denom
+        inv = 1.0_f32 / denom
         col_f = cols.to_f32
-        sum_dout_gamma = 0.0
-        sum_dout_gamma_norm = 0.0
+        sum_dout_gamma = 0.0_f32
+        sum_dout_gamma_norm = 0.0_f32
         cols.times do |j|
           doutg = d_out[i, j] * @gamma[0, j]
           sum_dout_gamma += doutg
@@ -509,7 +509,7 @@ module SHAInet
       d_x
     end
 
-    def apply_gradients(lr : Float64, weight_decay : Float64 = 0.0)
+    def apply_gradients(lr : Float32, weight_decay : Float32 = 0.0)
       # Check device type and call appropriate method
       if @gamma.is_a?(CudaMatrix)
         apply_gradients_gpu(lr, weight_decay)
@@ -519,7 +519,7 @@ module SHAInet
     end
 
     # GPU path gradient application - all CudaMatrix operations with in-place operations
-    private def apply_gradients_gpu(lr : Float64, weight_decay : Float64)
+    private def apply_gradients_gpu(lr : Float32, weight_decay : Float32)
       # Use CUDA AXPY to perform: gamma = gamma - lr * g_gamma (in-place)
       # Use CUDA AXPY to perform: beta = beta - lr * g_beta (in-place)
 
@@ -535,15 +535,15 @@ module SHAInet
           # gamma := gamma - lr * g_gamma (using axpy with negative lr)
           gamma_size = @gamma.rows * @gamma.cols
           CUDA.axpy(handle, -lr,
-            gg_ptr.as(Pointer(Float64)),
-            g_ptr.as(Pointer(Float64)),
+            gg_ptr.as(Pointer(Float32)),
+            g_ptr.as(Pointer(Float32)),
             gamma_size)
 
           # beta := beta - lr * g_beta (using axpy with negative lr)
           beta_size = @beta.rows * @beta.cols
           CUDA.axpy(handle, -lr,
-            gb_ptr.as(Pointer(Float64)),
-            b_ptr.as(Pointer(Float64)),
+            gb_ptr.as(Pointer(Float32)),
+            b_ptr.as(Pointer(Float32)),
             beta_size)
 
           CUDA.destroy_handle(handle)
@@ -557,14 +557,14 @@ module SHAInet
       # Clear gradients in-place
       @g_gamma.as(CudaMatrix).zero!
       @g_beta.as(CudaMatrix).zero!
-      @gamma.as(CudaMatrix).scale!(1.0 - weight_decay) if weight_decay != 0.0
-      @beta.as(CudaMatrix).scale!(1.0 - weight_decay) if weight_decay != 0.0
+      @gamma.as(CudaMatrix).scale!(1.0_f32 - weight_decay) if weight_decay != 0.0_f32
+      @beta.as(CudaMatrix).scale!(1.0_f32 - weight_decay) if weight_decay != 0.0_f32
     end
 
     # CPU path gradient application - all SimpleMatrix operations
-    private def apply_gradients_cpu(lr : Float64, weight_decay : Float64)
-      @gamma = (@gamma.as(SimpleMatrix) - @g_gamma.as(SimpleMatrix) * lr) * (1.0 - weight_decay)
-      @beta = (@beta.as(SimpleMatrix) - @g_beta.as(SimpleMatrix) * lr) * (1.0 - weight_decay)
+    private def apply_gradients_cpu(lr : Float32, weight_decay : Float32)
+      @gamma = (@gamma.as(SimpleMatrix) - @g_gamma.as(SimpleMatrix) * lr) * (1.0_f32 - weight_decay)
+      @beta = (@beta.as(SimpleMatrix) - @g_beta.as(SimpleMatrix) * lr) * (1.0_f32 - weight_decay)
       @g_gamma = SimpleMatrix.zeros(@gamma.rows, @gamma.cols)
       @g_beta = SimpleMatrix.zeros(@beta.rows, @beta.cols)
     end

@@ -288,7 +288,7 @@ module SHAInet
       # Efficient bias gradient accumulation for CPU path
       db2 = SimpleMatrix.zeros(1, d_out.cols)
       d_out.cols.times do |j|
-        sum = 0.0
+        sum = 0.0_f32
         d_out.rows.times { |i| sum += d_out[i, j] }
         db2[0, j] = sum
       end
@@ -302,7 +302,7 @@ module SHAInet
         @g_w1 = @g_w1.as(SimpleMatrix) + temp_grad_w1
         db1 = SimpleMatrix.zeros(1, dest.cols)
         dest.cols.times do |j|
-          sum = 0.0
+          sum = 0.0_f32
           dest.rows.times { |i| sum += dest[i, j] }
           db1[0, j] = sum
         end
@@ -320,7 +320,7 @@ module SHAInet
         # Efficient bias gradient accumulation for CPU path
         db1 = SimpleMatrix.zeros(1, drelu.cols)
         drelu.cols.times do |j|
-          sum = 0.0
+          sum = 0.0_f32
           drelu.rows.times { |i| sum += drelu[i, j] }
           db1[0, j] = sum
         end
@@ -332,7 +332,7 @@ module SHAInet
       end
     end
 
-    def apply_gradients(lr : Float64, weight_decay : Float64 = 0.0)
+    def apply_gradients(lr : Float32, weight_decay : Float32 = 0.0)
       # Check device type and call appropriate method
       if @w1.is_a?(CudaMatrix)
         apply_gradients_gpu(lr, weight_decay)
@@ -342,13 +342,13 @@ module SHAInet
     end
 
     # GPU path gradient application - all CudaMatrix operations with in-place updates
-    private def apply_gradients_gpu(lr : Float64, weight_decay : Float64)
+    private def apply_gradients_gpu(lr : Float32, weight_decay : Float32)
       # Use in-place weight updates to eliminate matrix creation
       @w1.as(CudaMatrix).weight_update!(@g_w1.as(CudaMatrix), lr)
-      @w1.as(CudaMatrix).scale!(1.0 - weight_decay) if weight_decay != 0.0
+      @w1.as(CudaMatrix).scale!(1.0_f32 - weight_decay) if weight_decay != 0.0_f32
       @b1.as(CudaMatrix).weight_update!(@g_b1.as(CudaMatrix), lr)
       @w2.as(CudaMatrix).weight_update!(@g_w2.as(CudaMatrix), lr)
-      @w2.as(CudaMatrix).scale!(1.0 - weight_decay) if weight_decay != 0.0
+      @w2.as(CudaMatrix).scale!(1.0_f32 - weight_decay) if weight_decay != 0.0_f32
       @b2.as(CudaMatrix).weight_update!(@g_b2.as(CudaMatrix), lr)
 
       # Clear gradients in-place
@@ -360,7 +360,7 @@ module SHAInet
     end
 
     # CPU path gradient application - all SimpleMatrix operations
-    private def apply_gradients_cpu(lr : Float64, weight_decay : Float64)
+    private def apply_gradients_cpu(lr : Float32, weight_decay : Float32)
       @w1 = (@w1.as(SimpleMatrix) - @g_w1.as(SimpleMatrix) * lr) * (1.0 - weight_decay)
       @b1 = @b1.as(SimpleMatrix) - @g_b1.as(SimpleMatrix) * lr
       @w2 = (@w2.as(SimpleMatrix) - @g_w2.as(SimpleMatrix) * lr) * (1.0 - weight_decay)
@@ -453,9 +453,9 @@ module SHAInet
           begin
             dest.copy_from!(grad) unless dest.object_id == grad.object_id
             CUDA.relu_backward(
-              dest.device_ptr.not_nil!.as(Pointer(Float64)),
-              m.device_ptr.not_nil!.as(Pointer(Float64)),
-              grad.device_ptr.not_nil!.as(Pointer(Float64)),
+              dest.device_ptr.not_nil!.as(Pointer(Float32)),
+              m.device_ptr.not_nil!.as(Pointer(Float32)),
+              grad.device_ptr.not_nil!.as(Pointer(Float32)),
               m.rows * m.cols)
             dest.mark_device_dirty!
             return dest
@@ -469,7 +469,7 @@ module SHAInet
         dest.copy_from!(grad) unless dest.object_id == grad.object_id
         m.rows.times do |i|
           m.cols.times do |j|
-            dest.unsafe_set(i, j, m.unsafe_get(i, j) > 0 ? grad.unsafe_get(i, j) : 0.0)
+            dest.unsafe_set(i, j, m.unsafe_get(i, j) > 0 ? grad.unsafe_get(i, j) : 0.0_f32)
           end
         end
         dest.sync_to_device!("ff_backward_result")
@@ -511,7 +511,7 @@ module SHAInet
       elsif @activation_function == SHAInet.relu
         m.rows.times do |i|
           m.cols.times do |j|
-            dest[i, j] = m[i, j] > 0 ? grad[i, j] : 0.0
+            dest[i, j] = m[i, j] > 0 ? grad[i, j] : 0.0_f32
           end
         end
         dest
@@ -531,8 +531,8 @@ module SHAInet
       if CUDA.fully_available? && bias_grad.is_a?(CudaMatrix)
         begin
           CUDA.accumulate_bias_grad(
-            bias_grad.as(CudaMatrix).device_ptr.not_nil!.as(Pointer(Float64)),
-            d_out.device_ptr.not_nil!.as(Pointer(Float64)),
+            bias_grad.as(CudaMatrix).device_ptr.not_nil!.as(Pointer(Float32)),
+            d_out.device_ptr.not_nil!.as(Pointer(Float32)),
             d_out.rows, d_out.cols)
           bias_grad.as(CudaMatrix).mark_device_dirty!
           return
@@ -554,7 +554,7 @@ module SHAInet
 
         temp_bias = @workspace_temp_bias.not_nil!
         d_out.cols.times do |j|
-          sum = 0.0
+          sum = 0.0_f32
           d_out.rows.times { |i| sum += d_out.unsafe_get(i, j) }
           temp_bias.unsafe_set(0, j, sum)
         end

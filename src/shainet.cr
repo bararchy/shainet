@@ -54,9 +54,9 @@ require "./shainet/version"
 module SHAInet
   Log = ::Log.for(self)
   # Generic numeric types supported across SHAInet.
-  # Float64 is excluded to promote Float32 as the default floating
+  # Float32 is excluded to promote Float32 as the default floating
   # point representation.
-  alias GenNum = Int32 | Int64 | Float32 | Float16 | BFloat16
+  alias GenNum = Int32 | Float32 | Float16 | BFloat16
 
   lvl = {
     "info"  => ::Log::Severity::Info,

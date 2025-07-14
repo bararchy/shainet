@@ -37,7 +37,7 @@ module SHAInet
       when Precision::Bf16
         BFloat16.new(v.to_f32)
       when Precision::Int8
-        v.to_f32.to_f64
+        v.to_f32.to_f32
       else
         v.to_f32
       end
@@ -53,7 +53,7 @@ module SHAInet
 
     # Run an input through the network to get an output (weights & biases do not change)
     # Simple wrapper that converts array input to matrix and calls the core matrix method
-    def run(input : Array(GenNum), stealth : Bool = false) : Array(Float64)
+    def run(input : Array(GenNum), stealth : Bool = false) : Array(Float32)
       verify_net_before_train
       expected_size = @input_layers.reduce(0) { |acc, l| acc + l.size }
       raise NeuralNetRunError.new(
@@ -86,7 +86,7 @@ module SHAInet
     end
 
     # Overload allowing retrieval of the raw matrix
-    def run(input : Array(GenNum), *, return_matrix : Bool, stealth : Bool = false) : Array(Float64) | CudaMatrix | SimpleMatrix
+    def run(input : Array(GenNum), *, return_matrix : Bool, stealth : Bool = false) : Array(Float32) | CudaMatrix | SimpleMatrix
       verify_net_before_train
       expected_size = @input_layers.reduce(0) { |acc, l| acc + l.size }
       raise NeuralNetRunError.new(
@@ -315,11 +315,11 @@ module SHAInet
 
     # Run a batch of sequences by calling `run` for each sequence
     # This is a convenience wrapper that can be consolidated with more direct matrix operations
-    def run(input : Array(Array(Array(GenNum))), stealth : Bool = false) : Array(Array(Array(Float64)))
+    def run(input : Array(Array(Array(GenNum))), stealth : Bool = false) : Array(Array(Array(Float32)))
       input.map { |seq| run(seq, stealth: stealth) }
     end
 
-    def run(input : Array(Array(Array(GenNum))), *, return_matrix : Bool, stealth : Bool = false) : Array(Array(Array(Float64))) | Array(CudaMatrix | SimpleMatrix)
+    def run(input : Array(Array(Array(GenNum))), *, return_matrix : Bool, stealth : Bool = false) : Array(Array(Array(Float32))) | Array(CudaMatrix | SimpleMatrix)
       if return_matrix
         input.map { |seq| run(seq, stealth: stealth, return_matrix: true) }
       else
@@ -329,25 +329,25 @@ module SHAInet
 
     # Accept a sequence of integer tokens for embedding layers
     # This is a convenience wrapper around the standard run method
-    def run(input : Array(Array(Int32)), stealth : Bool = false) : Array(Array(Float64))
-      seq = input.map { |x| x.map(&.to_f64) }
+    def run(input : Array(Array(Int32)), stealth : Bool = false) : Array(Array(Float32))
+      seq = input.map { |x| x.map(&.to_f32) }
       run(seq, stealth: stealth)
     end
 
-    def run(input : Array(Array(Int32)), *, return_matrix : Bool, stealth : Bool = false) : Array(Array(Float64)) | CudaMatrix | SimpleMatrix
-      seq = input.map { |x| x.map(&.to_f64) }
+    def run(input : Array(Array(Int32)), *, return_matrix : Bool, stealth : Bool = false) : Array(Array(Float32)) | CudaMatrix | SimpleMatrix
+      seq = input.map { |x| x.map(&.to_f32) }
       run(seq, stealth: stealth, return_matrix: return_matrix)
     end
 
     # Accept integer input for embedding layers
     # This is a convenience wrapper around the standard run method
-    def run(input : Array(Int32), stealth : Bool = false) : Array(Float64)
-      float_in = input.map(&.to_f64)
+    def run(input : Array(Int32), stealth : Bool = false) : Array(Float32)
+      float_in = input.map(&.to_f32)
       run(float_in, stealth: stealth)
     end
 
-    def run(input : Array(Int32), *, return_matrix : Bool, stealth : Bool = false) : Array(Float64) | CudaMatrix | SimpleMatrix
-      float_in = input.map(&.to_f64)
+    def run(input : Array(Int32), *, return_matrix : Bool, stealth : Bool = false) : Array(Float32) | CudaMatrix | SimpleMatrix
+      float_in = input.map(&.to_f32)
       run(float_in, stealth: stealth, return_matrix: return_matrix)
     end
 
@@ -368,7 +368,7 @@ module SHAInet
         idx = 0
         current.rows.times do |r|
           current.cols.times do |c|
-            q_in[r, c] = q_in_buf[idx].to_f64
+            q_in[r, c] = q_in_buf[idx].to_f32
             idx += 1
           end
         end
@@ -378,7 +378,7 @@ module SHAInet
         layer.q_weights.not_nil!.each do |v|
           row = (idx / layer.weights.cols).to_i
           col = (idx % layer.weights.cols).to_i
-          q_w[row, col] = v.to_f64
+          q_w[row, col] = v.to_f32
           idx += 1
         end
 
@@ -392,7 +392,7 @@ module SHAInet
         prod.rows.times do |i|
           prod.cols.times do |j|
             val = prod[i, j] * mult
-            bias = Int8Value.new(bias_vals[j]).to_f32(b_scale, b_zp).to_f64
+            bias = Int8Value.new(bias_vals[j]).to_f32(b_scale, b_zp).to_f32
             prod[i, j] = val + bias
           end
         end
@@ -417,12 +417,12 @@ module SHAInet
     # processes one new token while reusing the previously computed keys and
     # values. Pass `reset_cache: true` at the start of a new sequence to clear
     # any stored caches.
-    def run_cached(token : Int32, *, reset_cache : Bool = false) : Array(Float64)
+    def run_cached(token : Int32, *, reset_cache : Bool = false) : Array(Float32)
       results = run_cached([token], reset_cache: reset_cache)
       results.last
     end
 
-    def run_cached(tokens : Array(Int32), *, reset_cache : Bool = false) : Array(Array(Float64))
+    def run_cached(tokens : Array(Int32), *, reset_cache : Bool = false) : Array(Array(Float32))
       verify_net_before_train
 
       # Allocate caches for transformer layers if needed or when resetting.
@@ -440,9 +440,9 @@ module SHAInet
         end
       end
 
-      outputs = [] of Array(Float64)
+      outputs = [] of Array(Float32)
       tokens.each do |t|
-        sm = SimpleMatrix.from_a([[t.to_f64]], @precision)
+        sm = SimpleMatrix.from_a([[t.to_f32]], @precision)
         matrix = CUDA.fully_available? ? sm.to_cuda : sm
         out_matrix = run(matrix, stealth: true)
         if out_matrix.is_a?(CudaMatrix)
@@ -458,7 +458,7 @@ module SHAInet
     end
 
     # Accept sequence input - converts to matrix and calls core matrix method
-    def run(input : Array(Array(GenNum)), stealth : Bool = false) : Array(Array(Float64))
+    def run(input : Array(Array(GenNum)), stealth : Bool = false) : Array(Array(Float32))
       verify_net_before_train
       expected_size = @input_layers.reduce(0) { |acc, l| acc + l.size }
       input.each do |step|
@@ -482,7 +482,7 @@ module SHAInet
       raise NeuralNetRunError.new("Error running on layers: #{e} #{e.inspect_with_backtrace}")
     end
 
-    def run(input : Array(Array(GenNum)), *, return_matrix : Bool, stealth : Bool = false) : Array(Array(Float64)) | CudaMatrix | SimpleMatrix
+    def run(input : Array(Array(GenNum)), *, return_matrix : Bool, stealth : Bool = false) : Array(Array(Float32)) | CudaMatrix | SimpleMatrix
       verify_net_before_train
       expected_size = @input_layers.reduce(0) { |acc, l| acc + l.size }
       input.each do |step|
@@ -520,7 +520,7 @@ module SHAInet
       validate_values(actual_output, "actual_output")
 
       # Get the error signal for the final layer, based on the cost function
-      @error_signal = [] of Float64 # Collect all the errors for current run
+      @error_signal = [] of Float32 # Collect all the errors for current run
 
       actual_output.size.times do |i|
         cost = cost_function.call(expected_output[i], actual_output[i])
@@ -538,7 +538,7 @@ module SHAInet
 
       if @hidden_layers.any? &.is_a?(TransformerLayer)
         # Create matrices efficiently using GPU when available
-        exp_data = expected_output.map(&.to_f64)
+        exp_data = expected_output.map(&.to_f32)
 
         exp = if CUDA.fully_available?
                 mat = CudaMatrix.new(1, exp_data.size, precision: @precision)
@@ -637,7 +637,7 @@ module SHAInet
     def evaluate(input_data : Array(Int32),
                  expected_output : Array(GenNum),
                  cost_function : CostFunction = SHAInet.quadratic_cost)
-      evaluate(input_data.map(&.to_f64), expected_output, cost_function)
+      evaluate(input_data.map(&.to_f32), expected_output, cost_function)
     end
 
     def evaluate_sequence(input_data : Array(Array(GenNum)),
@@ -651,7 +651,7 @@ module SHAInet
       validate_values(actual_output, "actual_output")
 
       # Get the error signal for the final layer, based on the cost function
-      @error_signal = [] of Float64 # Collect all the errors for current run
+      @error_signal = [] of Float32 # Collect all the errors for current run
 
       actual_output.size.times do |i|
         cost = cost_function.call(expected_output[i], actual_output[i])
@@ -668,7 +668,7 @@ module SHAInet
       @total_error = @error_signal.reduce(0.0) { |acc, i| acc + i }
 
       if @hidden_layers.any? &.is_a?(TransformerLayer)
-        exp_row_sm = SimpleMatrix.from_a([expected_output.map(&.to_f64)], @precision)
+        exp_row_sm = SimpleMatrix.from_a([expected_output.map(&.to_f32)], @precision)
         act_row_sm = SimpleMatrix.from_a([actual_output], @precision)
         exp_row = CUDA.fully_available? ? exp_row_sm.to_cuda : exp_row_sm
         act_row = CUDA.fully_available? ? act_row_sm.to_cuda : act_row_sm
@@ -691,13 +691,13 @@ module SHAInet
 
     # Convenience wrapper for integer inputs
     def evaluate_sequence_label(input_data : Array(Array(Int32)), label : Int32)
-      seq = input_data.map { |x| x.map(&.to_f64) }
+      seq = input_data.map { |x| x.map(&.to_f32) }
       evaluate_sequence_label(seq, label)
     end
 
     # Evaluate a single example using a class label and softmax cross entropy
     def evaluate_label(input_data : Array(GenNum), label : Int32)
-      processed = input_data.map(&.to_f64)
+      processed = input_data.map(&.to_f32)
       sm = SimpleMatrix.from_a([processed], @precision)
       matrix = CUDA.fully_available? ? sm.to_cuda : sm
       logits = run(matrix, stealth: true)
@@ -724,7 +724,7 @@ module SHAInet
           loss_val = -Math.log(logits.as(CudaMatrix).unsafe_get(0, label).clamp(1e-9, 1.0))
         end
 
-        @error_signal = Array(Float64).new(logits.cols, 0.0)
+        @error_signal = Array(Float32).new(logits.cols, 0.0)
         @error_signal[label] = loss_val
         @total_error = loss_val
 
@@ -743,7 +743,7 @@ module SHAInet
           raise NeuralNetRunError.new("Label #{label} out of bounds for output size #{probs.size}")
         end
 
-        @error_signal = [] of Float64
+        @error_signal = [] of Float32
         probs.size.times do |i|
           @error_signal << (i == label ? -Math.log(probs[i].clamp(1e-9, 1.0)) : 0.0)
         end
@@ -755,18 +755,18 @@ module SHAInet
 
     # Convenience wrapper for integer inputs
     def evaluate_label(input_data : Array(Int32), label : Int32)
-      evaluate_label(input_data.map(&.to_f64), label)
+      evaluate_label(input_data.map(&.to_f32), label)
     end
 
     # Convenience wrapper for matrix inputs
     def evaluate_label(input_data : SimpleMatrix, label : Int32)
-      vec = input_data.to_a.first.map(&.to_f64)
+      vec = input_data.to_a.first.map(&.to_f32)
       evaluate_label(vec, label)
     end
 
     # Evaluate a sequence example with a class label and softmax cross entropy
     def evaluate_sequence_label(input_data : Array(Array(GenNum)), label : Int32)
-      seq = input_data.map { |x| x.map(&.to_f64) }
+      seq = input_data.map { |x| x.map(&.to_f32) }
       sm = SimpleMatrix.from_a(seq, @precision)
       matrix = CUDA.fully_available? ? sm.to_cuda : sm
       logits = run(matrix, stealth: true)
@@ -793,7 +793,7 @@ module SHAInet
           loss_val = -Math.log(logits.as(CudaMatrix).unsafe_get(0, label).clamp(1e-9, 1.0))
         end
 
-        @error_signal = Array(Float64).new(logits.cols, 0.0)
+        @error_signal = Array(Float32).new(logits.cols, 0.0)
         @error_signal[label] = loss_val
         @total_error = loss_val
 
@@ -819,7 +819,7 @@ module SHAInet
           raise NeuralNetRunError.new("Label #{label} out of bounds for output size #{probs.size}")
         end
 
-        @error_signal = [] of Float64
+        @error_signal = [] of Float32
         @total_error = -Math.log(probs[label].clamp(1e-9, 1.0))
 
         if @hidden_layers.any? &.is_a?(TransformerLayer)
@@ -841,7 +841,7 @@ module SHAInet
 
     # Convenience wrapper for integer inputs
     def evaluate_sequence_label(input_data : Array(Array(Int32)), label : Int32)
-      seq = input_data.map { |x| x.map(&.to_f64) }
+      seq = input_data.map { |x| x.map(&.to_f32) }
       evaluate_sequence_label(seq, label)
     end
 
@@ -849,11 +849,11 @@ module SHAInet
     def update_mse
       n = @output_layers.last.size
       if @error_signal.size == 1
-        error_avg = 0.0
+        error_avg = 0.0_f32
       else
         error_avg = @total_error / n
       end
-      sqrd_dists = 0.0
+      sqrd_dists = 0.0_f32
       @error_signal.each { |e| sqrd_dists += (e - error_avg)**2 }
       @mse = sqrd_dists / n
     end
@@ -863,7 +863,7 @@ module SHAInet
               training_type : Symbol | String = :sgdm,
               cost_function : Symbol | String | CostFunction = :mse,
               epochs : Int32 = 1,
-              error_threshold : Float64 = 0.00000001,
+              error_threshold : Float32 = 0.00000001,
               mini_batch_size : Int32 = 1,
               log_each : Int32 = 1,
               show_slice : Bool = false,
@@ -884,7 +884,7 @@ module SHAInet
                  elsif data.is_a?(Array)
                    data.as(Array)
                  else
-                   [] of Array(Array(Float64))
+                   [] of Array(Array(Float32))
                  end
 
       # Validate and convert cost function
@@ -931,7 +931,7 @@ module SHAInet
         end
 
         # Shuffle or rewind data for each epoch
-        total_error = 0.0
+        total_error = 0.0_f32
         sample_count = 0
 
         if stream
@@ -1007,7 +1007,7 @@ module SHAInet
     end
 
     private def process_batch(batch, cost_proc, training_type)
-      batch_error = 0.0
+      batch_error = 0.0_f32
 
       # Zero gradients only at the start of an accumulation cycle
       if @accumulation_counter == 0
@@ -1028,14 +1028,14 @@ module SHAInet
          !first_output.as(Array)[0].is_a?(Array) && @output_layers.last.is_a?(MatrixLayer)
         if !(CUDA.fully_available? && CUDNN.available? &&
            @output_layers.last.as(MatrixLayer).size > 1)
-          label = first_output.as(Array).first.as(GenNum).to_f64.to_i
-          oh = Array(Float64).new(@output_layers.last.as(MatrixLayer).size, 0.0)
-          oh[label] = 1.0 if label >= 0 && label < oh.size
+          label = first_output.as(Array).first.as(GenNum).to_f32.to_i
+          oh = Array(Float32).new(@output_layers.last.as(MatrixLayer).size, 0.0_f32)
+          oh[label] = 1.0_f32 if label >= 0 && label < oh.size
           first_output = oh
         end
       end
 
-      get_dims = ->(obj : SimpleMatrix | CudaMatrix | Array(Array(Float64)) | Array(Float64)) do
+      get_dims = ->(obj : SimpleMatrix | CudaMatrix | Array(Array(Float32)) | Array(Float32)) do
         case obj
         when SimpleMatrix
           {obj.rows, obj.cols}
@@ -1086,9 +1086,9 @@ module SHAInet
            !expected_output.as(Array)[0].is_a?(Array) && @output_layers.last.is_a?(MatrixLayer)
           if !(CUDA.fully_available? && CUDNN.available? &&
              @output_layers.last.as(MatrixLayer).size > 1)
-            label = expected_output.as(Array).first.as(GenNum).to_f64.to_i
-            oh = Array(Float64).new(@output_layers.last.as(MatrixLayer).size, 0.0)
-            oh[label] = 1.0 if label >= 0 && label < oh.size
+            label = expected_output.as(Array).first.as(GenNum).to_f32.to_i
+            oh = Array(Float32).new(@output_layers.last.as(MatrixLayer).size, 0.0_f32)
+            oh[label] = 1.0_f32 if label >= 0 && label < oh.size
             expected_output = oh
           end
         end
@@ -1107,18 +1107,18 @@ module SHAInet
                             arr = expected_output.as(Array)
                             if expected_workspace
                               case arr
-                              when Array(Array(GenNum)), Array(Array(Float64))
-                                # 2D: arr is Array(Array(GenNum)) or Array(Array(Float64))
-                                GPUMemory.to_gpu!(arr.map { |row| row.map(&.to_f64) }, expected_workspace)
-                              when Array(Float64)
-                                # 1D: arr is Array(Float64)
+                              when Array(Array(GenNum)), Array(Array(Float32))
+                                # 2D: arr is Array(Array(GenNum)) or Array(Array(Float32))
+                                GPUMemory.to_gpu!(arr.map { |row| row.map(&.to_f32) }, expected_workspace)
+                              when Array(Float32)
+                                # 1D: arr is Array(Float32)
                                 GPUMemory.to_gpu!([arr], expected_workspace)
                               when Array(GenNum)
                                 # 1D: arr is Array(GenNum)
-                                GPUMemory.to_gpu!([arr.map(&.to_f64)], expected_workspace)
+                                GPUMemory.to_gpu!([arr.map(&.to_f32)], expected_workspace)
                               else
                                 # Scalar fallback (should not happen, but for safety)
-                                GPUMemory.to_gpu!([[arr.to_f64]], expected_workspace)
+                                GPUMemory.to_gpu!([[arr.to_f32]], expected_workspace)
                               end
                               expected_workspace
                             else
@@ -1140,9 +1140,9 @@ module SHAInet
                          arr = input_data.as(Array)
                          if input_workspace
                            if arr.size > 0 && arr[0].is_a?(Array)
-                             GPUMemory.to_gpu!(arr.as(Array(Array(Float64))), input_workspace)
+                             GPUMemory.to_gpu!(arr.as(Array(Array(Float32))), input_workspace)
                            else
-                             GPUMemory.to_gpu!(arr.as(Array(Float64)), input_workspace)
+                             GPUMemory.to_gpu!(arr.as(Array(Float32)), input_workspace)
                            end
                            input_workspace
                          else
@@ -1199,7 +1199,7 @@ module SHAInet
           # Try GPU-accelerated cross-entropy when possible
           if actual_matrix.is_a?(CudaMatrix) && expected_matrix.is_a?(CudaMatrix) && CUDNN.available?
             begin
-              loss_value = 0.0
+              loss_value = 0.0_f32
               if use_label_gpu
                 CUDNN.softmax_cross_entropy_label_loss_and_gradient(
                   actual_matrix.as(CudaMatrix),
@@ -1421,14 +1421,14 @@ module SHAInet
                 SimpleMatrix.new(rows, cols, 0.0, @precision).tap do |m|
                   rows.times do |i|
                     cols.times do |j|
-                      m[i, j] = arr[i].as(Array)[j].as(GenNum).to_f64
+                      m[i, j] = arr[i].as(Array)[j].as(GenNum).to_f32
                     end
                   end
                 end
               else
                 SimpleMatrix.new(1, arr.size, 0.0, @precision).tap do |m|
                   arr.size.times do |i|
-                    m[0, i] = arr[i].as(GenNum).to_f64
+                    m[0, i] = arr[i].as(GenNum).to_f32
                   end
                 end
               end
@@ -1438,7 +1438,7 @@ module SHAInet
 
     def current_learning_rate
       if @warmup_steps > 0 && @time_step < @warmup_steps
-        @learning_rate * (@time_step.to_f64 / @warmup_steps)
+        @learning_rate * (@time_step.to_f32 / @warmup_steps)
       else
         lr = @learning_rate
         if dt = @decay_type
@@ -1461,7 +1461,7 @@ module SHAInet
       end
     end
 
-    def validate_values(array : Array(Float64), location : String)
+    def validate_values(array : Array(Float32), location : String)
       # Detect NaNs in output
       array.each { |ar| raise NeuralNetRunError.new(
         "Found a NaN value, run stopped.\n#{location}: #{array}") if ar.nan? }
@@ -1586,7 +1586,7 @@ module SHAInet
             Log.info { "Reshaping matrix for single-token transformer operation" }
             reshaped = CudaMatrix.new(1, weights.cols, precision: @precision, device_id: matrix.device_id)
             weights.cols.times do |j|
-              sum = 0.0
+              sum = 0.0_f32
               matrix.cols.times do |k|
                 sum += matrix[0, k] * weights[j, k]
               end
@@ -1634,7 +1634,7 @@ module SHAInet
             Log.info { "Reshaping matrix for single-token transformer operation" }
             reshaped = SimpleMatrix.new(1, weights.cols, 0.0, @precision)
             weights.cols.times do |j|
-              sum = 0.0
+              sum = 0.0_f32
               matrix.cols.times do |k|
                 sum += matrix[0, k] * weights[j, k]
               end
@@ -1656,7 +1656,7 @@ module SHAInet
     end
 
     # Optimized matrix creation from arrays using batch operations
-    private def create_matrix_from_arrays(data : Array(Array(Float64)), use_gpu : Bool = true) : SimpleMatrix | CudaMatrix
+    private def create_matrix_from_arrays(data : Array(Array(Float32)), use_gpu : Bool = true) : SimpleMatrix | CudaMatrix
       return SimpleMatrix.from_a(data, @precision) unless use_gpu && CUDA.fully_available?
 
       # Create GPU matrix directly from array data in batch
@@ -1676,7 +1676,7 @@ module SHAInet
     end
 
     # Optimized matrix population from single array using batch operations
-    private def populate_matrix_batch(matrix : CudaMatrix | SimpleMatrix, data : Array(Float64), row : Int32)
+    private def populate_matrix_batch(matrix : CudaMatrix | SimpleMatrix, data : Array(Float32), row : Int32)
       if matrix.is_a?(CudaMatrix)
         data.each_with_index do |val, col|
           matrix.unsafe_set(row, col, val)
@@ -1738,7 +1738,7 @@ module SHAInet
          actual_matrix.is_a?(CudaMatrix) && expected_output.is_a?(CudaMatrix) &&
          grad_matrix.is_a?(CudaMatrix) && cost_proc == SHAInet.quadratic_cost
         begin
-          loss_val = 0.0
+          loss_val = 0.0_f32
           CUDNN.mse_loss_and_gradient(
             actual_matrix.as(CudaMatrix),
             expected_output.as(CudaMatrix),
@@ -1800,7 +1800,7 @@ module SHAInet
         cols = expected_output.as(Array)[0].as(Array).size
         rows.times do |i|
           cols.times do |j|
-            expected = expected_output.as(Array)[i].as(Array)[j].as(GenNum).to_f64
+            expected = expected_output.as(Array)[i].as(Array)[j].as(GenNum).to_f32
             actual = actual_matrix.is_a?(CudaMatrix) ? actual_matrix.as(CudaMatrix).unsafe_get(i, j) : actual_matrix.as(SimpleMatrix)[i, j]
             cost_result = cost_proc.call(expected, actual)
             sample_error += cost_result[:value]
@@ -1814,7 +1814,7 @@ module SHAInet
       else
         arr = expected_output.as(Array)
         arr.size.times do |i|
-          expected = arr[i].as(GenNum).to_f64
+          expected = arr[i].as(GenNum).to_f32
           actual = actual_matrix.is_a?(CudaMatrix) ? actual_matrix.as(CudaMatrix).unsafe_get(0, i) : actual_matrix.as(SimpleMatrix)[0, i]
           cost_result = cost_proc.call(expected, actual)
           sample_error += cost_result[:value]

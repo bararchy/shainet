@@ -1,11 +1,11 @@
 module SHAInet
-  alias ActivationFunction = Proc(GenNum, Tuple(Float64, Float64))
-  alias CostFunction = Proc(GenNum, GenNum, NamedTuple(value: Float64, derivative: Float64))
+  alias ActivationFunction = Proc(GenNum, Tuple(Float32, Float32))
+  alias CostFunction = Proc(GenNum, GenNum, NamedTuple(value: Float32, derivative: Float32))
 
   # As Procs
 
   def self.none : ActivationFunction # Output range -inf..inf)
-    ->(value : GenNum) { {value.to_f64, 1.0_f64} }
+    ->(value : GenNum) { {value.to_f32, 1.0_f32} }
   end
 
   def self.sigmoid : ActivationFunction # Output range (0..1)
@@ -29,7 +29,7 @@ module SHAInet
   end
 
   def self.l_relu : ActivationFunction # Output range (-inf..inf)
-    # (value : GenNum, slope : Float64 = 0.01) : Float64
+    # (value : GenNum, slope : Float32 = 0.01) : Float32
     ->(value : GenNum) { {_l_relu(value), _l_relu_prime(value)} }
   end
 
@@ -42,74 +42,74 @@ module SHAInet
   end
 
   def self.identity : ActivationFunction # Output range (-inf..inf)
-    ->(value : GenNum) { {value.to_f64, 1.0} }
+    ->(value : GenNum) { {value.to_f32, 1.0_f32} }
   end
 
   # # Activation functions # #
 
-  def self._sigmoid(value : GenNum) : Float64 # Output range (0..1)
-    v = value.to_f64
-    (1.0/(1.0 + Math::E**(-v))).to_f64
+  def self._sigmoid(value : GenNum) : Float32 # Output range (0..1)
+    v = value.to_f32
+    (1.0/(1.0 + Math::E**(-v))).to_f32
   end
 
-  def self._bp_sigmoid(value : GenNum) : Float64 # Output range (-1..1)
-    v = value.to_f64
-    ((1.0 - Math::E**(-v))/(1.0 + Math::E**(-v))).to_f64
+  def self._bp_sigmoid(value : GenNum) : Float32 # Output range (-1..1)
+    v = value.to_f32
+    ((1.0 - Math::E**(-v))/(1.0 + Math::E**(-v))).to_f32
   end
 
-  def self._log_sigmoid(value : GenNum) : Float64 # Output range (0..1)
-    v = value.to_f64
-    ((Math::E**(v))/(1.0 + Math::E**(v))).to_f64
+  def self._log_sigmoid(value : GenNum) : Float32 # Output range (0..1)
+    v = value.to_f32
+    ((Math::E**(v))/(1.0 + Math::E**(v))).to_f32
   end
 
-  def self._tanh(value : GenNum) : Float64 # Output range (-1..1)
-    v = value.to_f64
-    ((Math::E**(v) - Math::E**(-v))/(Math::E**(v) + Math::E**(-v))).to_f64
+  def self._tanh(value : GenNum) : Float32 # Output range (-1..1)
+    v = value.to_f32
+    ((Math::E**(v) - Math::E**(-v))/(Math::E**(v) + Math::E**(-v))).to_f32
   end
 
   def self._relu(value : GenNum) # Output range (0..inf)
-    v = value.to_f64
+    v = value.to_f32
     if v < 0
-      0.0
+      0.0_f32
     else
       v
     end
   end
 
-  def self._l_relu(value : GenNum, slope : Float64 = 0.01) : Float64 # Output range (-inf..inf)
-    v = value.to_f64
+  def self._l_relu(value : GenNum, slope : Float32 = 0.01) : Float32 # Output range (-inf..inf)
+    v = value.to_f32
     if v < 0
-      slope.to_f64 * v
+      slope.to_f32 * v
     else
       v
     end
   end
 
-  def self._gelu(value : GenNum) : Float64
-    x = value.to_f64
-    0.5*x*(1.0 + Math.erf(x / Math.sqrt(2.0)))
+  def self._gelu(value : GenNum) : Float32
+    x = value.to_f32
+    (0.5*x*(1.0 + Math.erf(x / Math.sqrt(2.0)))).to_f32
   end
 
-  def self.softmax(array : Array(GenNum)) : Array(Float64)
-    out_array = Array(Float64).new(array.size) { 0.0 }
-    exp_sum = Float64.new(0.0)
+  def self.softmax(array : Array(GenNum)) : Array(Float32)
+    out_array = Array(Float32).new(array.size) { 0.0_f32 }
+    exp_sum = Float32.new(0.0)
     array.each { |value| exp_sum += Math::E**(value) }
     array.size.times { |i| out_array[i] += (Math::E**array[i])/exp_sum }
     out_array
   end
 
   # The input array in this case has to be the output array of the softmax function
-  def self.softmax_prime(array : Array(GenNum)) : Array(Float64)
-    out_array = Array(Float64).new(array.size) { 0.0 }
+  def self.softmax_prime(array : Array(GenNum)) : Array(Float32)
+    out_array = Array(Float32).new(array.size) { 0.0 }
     array.each_with_index { |_, i| out_array[i] = array[i]*(1 - array[i]) }
     out_array
   end
 
   # Not working yet, do not use
-  def self.log_softmax(array : Array(GenNum)) : Array(Float64)
-    out_array = Array(Float64).new(array.size) { 0.0 }
+  def self.log_softmax(array : Array(GenNum)) : Array(Float32)
+    out_array = Array(Float32).new(array.size) { 0.0 }
     m = array.max # Max exponent from input array
-    exp_sum = Float64.new(0.0)
+    exp_sum = Float32.new(0.0)
     array.each { |value| exp_sum += Math::E**(value - m) }
 
     array.size.times { |i| out_array[i] = (Math::E**(array[i] - m - Math.log(exp_sum, 10))) }
@@ -118,56 +118,56 @@ module SHAInet
 
   # # Derivatives of activation functions # #
 
-  def self._sigmoid_prime(value : GenNum) : Float64
-    _sigmoid(value)*(1.0 - _sigmoid(value)).to_f64
+  def self._sigmoid_prime(value : GenNum) : Float32
+    _sigmoid(value)*(1.0 - _sigmoid(value)).to_f32
   end
 
-  def self._bp_sigmoid_prime(value : GenNum) : Float64
-    v = value.to_f64
-    (2 * Math::E**(v) / (Math::E**(v) + 1)**2).to_f64
+  def self._bp_sigmoid_prime(value : GenNum) : Float32
+    v = value.to_f32
+    (2 * Math::E**(v) / (Math::E**(v) + 1)**2).to_f32
   end
 
-  def self._log_sigmoid_prime(value : GenNum) : Float64
-    v = value.to_f64
-    (Math::E**(v) / (Math::E**(v) + 1)**2).to_f64
+  def self._log_sigmoid_prime(value : GenNum) : Float32
+    v = value.to_f32
+    (Math::E**(v) / (Math::E**(v) + 1)**2).to_f32
   end
 
-  def self._tanh_prime(value : GenNum) : Float64
-    (1.0 - _tanh(value)**2).to_f64
+  def self._tanh_prime(value : GenNum) : Float32
+    (1.0 - _tanh(value)**2).to_f32
   end
 
-  def self._relu_prime(value : GenNum) : Float64
-    v = value.to_f64
+  def self._relu_prime(value : GenNum) : Float32
+    v = value.to_f32
     if v < 0
-      0.0
+      0.0_f32
     else
-      1.0
+      1.0_f32
     end
   end
 
-  def self._l_relu_prime(value : GenNum, slope : Float64 = 0.01) : Float64
-    v = value.to_f64
+  def self._l_relu_prime(value : GenNum, slope : Float32 = 0.01_f32) : Float32
+    v = value.to_f32
     if v < 0
       slope
     else
-      1.0
+      1.0_f32
     end
   end
 
-  def self._gelu_prime(value : GenNum) : Float64
-    x = value.to_f64
-    0.5*(1.0 + Math.erf(x / Math.sqrt(2.0))) + x*Math.exp(-0.5*x*x)/Math.sqrt(2.0*Math::PI)
+  def self._gelu_prime(value : GenNum) : Float32
+    x = value.to_f32
+    (0.5*(1.0 + Math.erf(x / Math.sqrt(2.0))) + x*Math.exp(-0.5*x*x)/Math.sqrt(2.0*Math::PI)).to_f32
   end
 
-  def self._swiglu(value : GenNum) : Float64
+  def self._swiglu(value : GenNum) : Float32
     v = value.to_f32
-    v.to_f64 * _sigmoid(v)
+    v.to_f32 * _sigmoid(v)
   end
 
-  def self._swiglu_prime(value : GenNum) : Float64
+  def self._swiglu_prime(value : GenNum) : Float32
     v = value.to_f32
     s = _sigmoid(v)
-    s + v.to_f64 * s * (1.0 - s)
+    s + v.to_f32 * s * (1.0 - s)
   end
 
   ##################################################################
@@ -175,41 +175,41 @@ module SHAInet
 
   def self.quadratic_cost : CostFunction
     ->(expected : GenNum, actual : GenNum) {
-      {value:      _quadratic_cost(expected.to_f64, actual.to_f64),
-       derivative: _quadratic_cost_derivative(expected.to_f64, actual.to_f64)}
+      {value:      _quadratic_cost(expected.to_f32, actual.to_f32),
+       derivative: _quadratic_cost_derivative(expected.to_f32, actual.to_f32)}
     }
   end
 
   def self.cross_entropy_cost : CostFunction
     ->(expected : GenNum, actual : GenNum) {
-      {value:      _cross_entropy_cost(expected.to_f64, actual.to_f64),
-       derivative: _cross_entropy_cost_derivative(expected.to_f64, actual.to_f64)}
+      {value:      _cross_entropy_cost(expected.to_f32, actual.to_f32),
+       derivative: _cross_entropy_cost_derivative(expected.to_f32, actual.to_f32)}
     }
   end
 
   # # Cost functions  # #
 
-  def self._quadratic_cost(expected : Float64, actual : Float64) : Float64
-    (0.5*(actual - expected)**2).to_f64
+  def self._quadratic_cost(expected : Float32, actual : Float32) : Float32
+    (0.5*(actual - expected)**2).to_f32
   end
 
-  def self._cross_entropy_cost(expected : Float64, actual : Float64) : Float64
+  def self._cross_entropy_cost(expected : Float32, actual : Float32) : Float32
     # Standard binary cross entropy
     # Clamp actual to avoid log(0) which would yield NaN
     a = actual.clamp(1e-15, 1.0 - 1e-15)
     e = expected.clamp(0.0, 1.0)
-    (-e * Math.log(a, Math::E) - (1.0 - e) * Math.log(1.0 - a, Math::E)).to_f64
+    (-e * Math.log(a, Math::E) - (1.0 - e) * Math.log(1.0 - a, Math::E)).to_f32
   end
 
   # # Derivatives of cost functions # #
-  def self._quadratic_cost_derivative(expected : Float64, actual : Float64) : Float64
-    (actual - expected).to_f64
+  def self._quadratic_cost_derivative(expected : Float32, actual : Float32) : Float32
+    (actual - expected).to_f32
   end
 
-  def self._cross_entropy_cost_derivative(expected : Float64, actual : Float64) : Float64
+  def self._cross_entropy_cost_derivative(expected : Float32, actual : Float32) : Float32
     a = actual.clamp(1e-15, 1.0 - 1e-15)
     e = expected.clamp(0.0, 1.0)
-    ((1.0 - e) / (1.0 - a) - e / a).to_f64
+    ((1.0 - e) / (1.0 - a) - e / a).to_f32
   end
 
   ##################################################################

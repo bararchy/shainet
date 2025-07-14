@@ -1,6 +1,6 @@
 require "./spec_helper"
 
-private def f(x : Float64)
+private def f(x : Float32)
   x * x + 3.0
 end
 

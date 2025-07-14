@@ -502,8 +502,8 @@ module SHAInet
       self.sync_to_device!("slice_cols_into") unless device_dirty?
 
       CUDA.slice_cols(
-        dptr.as(Pointer(Float64)),
-        sptr.as(Pointer(Float64)),
+        dptr.as(Pointer(Float32)),
+        sptr.as(Pointer(Float32)),
         @rows, @cols, start_col, length)
 
       dest.mark_device_dirty!
@@ -531,8 +531,8 @@ module SHAInet
       other.sync_to_device!("set_cols") unless other.device_dirty?
 
       CUDA.set_cols(
-        dptr.as(Pointer(Float64)),
-        sptr.as(Pointer(Float64)),
+        dptr.as(Pointer(Float32)),
+        sptr.as(Pointer(Float32)),
         @rows, @cols, start_col, other.cols)
 
       # Mark self as having newer GPU data
@@ -625,7 +625,7 @@ module SHAInet
             other.sync_from_device!("gemm_fallback") if other.device_dirty?
             @rows.times do |i|
               other.cols.times do |j|
-                sum = 0.0
+                sum = 0.0_f32
                 @cols.times do |k|
                   sum += self.unsafe_get(i, k) * other.unsafe_get(k, j)
                 end
@@ -656,7 +656,7 @@ module SHAInet
               other.sync_from_device!("gemm_fallback") if other.device_dirty?
               @rows.times do |i|
                 other.cols.times do |j|
-                  sum = 0.0
+                  sum = 0.0_f32
                   @cols.times do |k|
                     sum += self.unsafe_get(i, k) * other.unsafe_get(k, j)
                   end
@@ -677,7 +677,7 @@ module SHAInet
               other.sync_from_device!("gemm_fallback") if other.device_dirty?
               @rows.times do |i|
                 other.cols.times do |j|
-                  sum = 0.0
+                  sum = 0.0_f32
                   @cols.times do |k|
                     sum += self.unsafe_get(i, k) * other.unsafe_get(k, j)
                   end
@@ -691,7 +691,7 @@ module SHAInet
           # Optimized cuBLAS GEMM - account for row-major vs column-major difference
           # To compute C = A * B in row-major, we compute C^T = B^T * A^T
           # So we swap the order: gemm(B, A, C) with dimensions swapped
-          CUDA.gemm(handle, ptr_b.as(Pointer(Float64)), ptr_a.as(Pointer(Float64)), result.device_ptr.not_nil!.as(Pointer(Float64)),
+          CUDA.gemm(handle, ptr_b.as(Pointer(Float32)), ptr_a.as(Pointer(Float32)), result.device_ptr.not_nil!.as(Pointer(Float32)),
             other.cols, @rows, other.rows,
             other.cols, @cols, result.cols)
         end
@@ -739,7 +739,7 @@ module SHAInet
       # Fallback to cuBLAS GEAM (only FP64)
       handle = CUDA.create_handle
       begin
-        CUDA.geam(handle, ptr_a.as(Pointer(Float64)), ptr_b.as(Pointer(Float64)), result.device_ptr.not_nil!.as(Pointer(Float64)), @rows, @cols, 1.0, 1.0)
+        CUDA.geam(handle, ptr_a.as(Pointer(Float32)), ptr_b.as(Pointer(Float32)), result.device_ptr.not_nil!.as(Pointer(Float32)), @rows, @cols, 1.0, 1.0)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -771,7 +771,7 @@ module SHAInet
       handle = CUDA.create_handle
       begin
         # Use GEAM with alpha=1.0, beta=-1.0 to compute A - B
-        CUDA.geam(handle, ptr_a.as(Pointer(Float64)), ptr_b.as(Pointer(Float64)), result.device_ptr.not_nil!.as(Pointer(Float64)), @rows, @cols, 1.0, -1.0)
+        CUDA.geam(handle, ptr_a.as(Pointer(Float32)), ptr_b.as(Pointer(Float32)), result.device_ptr.not_nil!.as(Pointer(Float32)), @rows, @cols, 1.0, -1.0)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -862,7 +862,7 @@ module SHAInet
       # Fallback to cuBLAS GEAM (only FP64)
       handle = CUDA.create_handle
       begin
-        CUDA.geam(handle, ptr_a.as(Pointer(Float64)), ptr_b.as(Pointer(Float64)), ptr_a.as(Pointer(Float64)), @rows, @cols, 1.0, 1.0)
+        CUDA.geam(handle, ptr_a.as(Pointer(Float32)), ptr_b.as(Pointer(Float32)), ptr_a.as(Pointer(Float32)), @rows, @cols, 1.0, 1.0)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -883,7 +883,7 @@ module SHAInet
 
       handle = CUDA.create_handle
       begin
-        CUDA.geam(handle, ptr_a.as(Pointer(Float64)), ptr_b.as(Pointer(Float64)), ptr_a.as(Pointer(Float64)), @rows, @cols, 1.0, -1.0)
+        CUDA.geam(handle, ptr_a.as(Pointer(Float32)), ptr_b.as(Pointer(Float32)), ptr_a.as(Pointer(Float32)), @rows, @cols, 1.0, -1.0)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -913,11 +913,11 @@ module SHAInet
 
       # Create a copy to avoid modifying the original
       out = self.clone
-      ptr = out.device_ptr.not_nil!.as(Pointer(Float64))
+      ptr = out.device_ptr.not_nil!.as(Pointer(Float32))
 
       handle = CUDA.create_handle
       begin
-        CUDA.scal(handle, ptr, (@rows*@cols), scalar.to_f64)
+        CUDA.scal(handle, ptr, (@rows*@cols), scalar.to_f32)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -997,7 +997,7 @@ module SHAInet
       @rows.times do |i|
         @cols.times do |j|
           val = unsafe_get(i, j)
-          unsafe_set(i, j, val > 0 ? val : 0.0)
+          unsafe_set(i, j, val > 0 ? val : 0.0_f32)
         end
       end
       self.sync_to_device!("relu_result")
@@ -1030,7 +1030,7 @@ module SHAInet
         @rows.times do |i|
           @cols.times do |j|
             x = unsafe_get(i, j)
-            unsafe_set(i, j, 0.5*x*(1.0 + Math.erf(x / Math.sqrt(2.0))))
+            unsafe_set(i, j, (0.5*x*(1.0 + Math.erf(x / Math.sqrt(2.0)))).to_f32)
           end
         end
         self.sync_to_device!("gelu_fallback")
@@ -1321,7 +1321,7 @@ module SHAInet
     end
 
     # High-performance in-place scalar multiplication using cuBLAS SCAL
-    def scale!(scalar : Float64)
+    def scale!(scalar : Float32)
       if CUDA.fully_available? && (dptr = self.device_ptr) && !dptr.null?
         self.sync_to_device!("scalar_scale_inplace") unless device_dirty?
 
@@ -1356,7 +1356,7 @@ module SHAInet
       end
     end
 
-    private def scale_cpu!(scalar : Float64)
+    private def scale_cpu!(scalar : Float32)
       self.sync_from_device!("scale_cpu") if device_dirty?
       @rows.times do |i|
         @cols.times do |j|
@@ -1375,7 +1375,7 @@ module SHAInet
       @rows.times do |i|
         @cols.times do |j|
           val = unsafe_get(i, j)
-          unsafe_set(i, j, 1.0 / (1.0 + Math.exp(-val)))
+          unsafe_set(i, j, 1.0_f32 / (1.0_f32 + Math.exp(-val)))
         end
       end
 
@@ -1474,8 +1474,8 @@ module SHAInet
               @rows, @cols)
           else
             CUDA.softmax_rows(
-              dptr.as(Pointer(Float64)),
-              dptr.as(Pointer(Float64)),
+              dptr.as(Pointer(Float32)),
+              dptr.as(Pointer(Float32)),
               @rows, @cols)
           end
 
@@ -1493,17 +1493,17 @@ module SHAInet
       self.sync_from_device!("softmax_fallback")
       @rows.times do |i|
         # Compute softmax for each row
-        row_max = -Float64::INFINITY
+        row_max = -Float32::INFINITY
         @cols.times { |j| row_max = Math.max(row_max, unsafe_get(i, j)) }
 
-        row_sum = 0.0
+        row_sum = 0.0_f32
         @cols.times do |j|
           val = Math.exp(unsafe_get(i, j) - row_max)
           unsafe_set(i, j, val)
           row_sum += val
         end
 
-        @cols.times { |j| unsafe_set(i, j, unsafe_get(i, j) / row_sum) }
+        @cols.times { |j| unsafe_set(i, j, unsafe_get(i, j) / row_sum).to_f32 }
       end
       self.sync_to_device!("softmax_result")
 
@@ -1564,7 +1564,7 @@ module SHAInet
     end
 
     # In-place matrix multiplication with accumulation: self = alpha * A * B + beta * self
-    def gemm!(a : CudaMatrix, b : CudaMatrix, alpha : Float64 = 1.0, beta : Float64 = 0.0)
+    def gemm!(a : CudaMatrix, b : CudaMatrix, alpha : Float32 = 1.0, beta : Float32 = 0.0)
       raise ArgumentError.new("size mismatch for in-place GEMM") unless a.cols == b.rows && @rows == a.rows && @cols == b.cols
       ensure_same_device(a)
       ensure_same_device(b)
@@ -1673,7 +1673,7 @@ module SHAInet
           # transpose trick used in `*` by swapping operands and dimensions.
           # Treating row-major A,B as column-major A^T,B^T results in:
           # C^T = B^T * A^T
-          status = CUDA.gemm_accumulate(handle, ptr_b.as(Pointer(Float64)), ptr_a.as(Pointer(Float64)), ptr_c.as(Pointer(Float64)),
+          status = CUDA.gemm_accumulate(handle, ptr_b.as(Pointer(Float32)), ptr_a.as(Pointer(Float32)), ptr_c.as(Pointer(Float32)),
             b.cols, a.rows, b.rows,
             b.cols, a.cols, @cols, alpha, beta)
           if status != 0
@@ -1691,7 +1691,7 @@ module SHAInet
     end
 
     # Matrix multiplication for INT8 matrices using cuBLAS cublasGemmEx.
-    # The result is returned as a regular Float64 CudaMatrix.
+    # The result is returned as a regular Float32 CudaMatrix.
     def self.gemm_int8(a : CudaMatrix, b : CudaMatrix) : CudaMatrix
       raise ArgumentError.new("precision mismatch") unless a.precision == Precision::Int8 && b.precision == Precision::Int8
       raise ArgumentError.new("size mismatch") unless a.cols == b.rows
@@ -1724,7 +1724,7 @@ module SHAInet
         buf.each_with_index do |v, idx|
           r = idx // result.cols
           c = idx % result.cols
-          result.unsafe_set(r, c, v.to_f64)
+          result.unsafe_set(r, c, v.to_f32)
         end
         result.sync_to_device!("gemm_int8_result")
       ensure
@@ -1737,7 +1737,7 @@ module SHAInet
     end
 
     # In-place weight update: self = self - lr * gradient
-    def weight_update!(gradient : CudaMatrix, learning_rate : Float64)
+    def weight_update!(gradient : CudaMatrix, learning_rate : Float32)
       raise ArgumentError.new("size mismatch for weight update") unless @rows == gradient.rows && @cols == gradient.cols
       ensure_same_device(gradient)
       raise RuntimeError.new("GPU weight update requires valid device pointers") unless (grad_ptr = gradient.device_ptr) && (weight_ptr = self.device_ptr) && !grad_ptr.null? && !weight_ptr.null?
@@ -1780,7 +1780,7 @@ module SHAInet
             raise "axpyEx unavailable"
           end
         else
-          CUDA.axpy(handle, -learning_rate, grad_ptr.as(Pointer(Float64)), weight_ptr.as(Pointer(Float64)), total_elements)
+          CUDA.axpy(handle, -learning_rate, grad_ptr.as(Pointer(Float32)), weight_ptr.as(Pointer(Float32)), total_elements)
         end
       rescue
         # CPU fallback when CUDA routines are missing
@@ -1804,7 +1804,7 @@ module SHAInet
     end
 
     # Element-wise multiplication using cuDNN OpTensor
-    def element_mul!(other : CudaMatrix, alpha : Float64 = 1.0, beta : Float64 = 0.0)
+    def element_mul!(other : CudaMatrix, alpha : Float32 = 1.0, beta : Float32 = 0.0)
       # Use cuDNN for optimized element-wise multiplication
       if CUDNN.available?
         begin
@@ -1831,7 +1831,7 @@ module SHAInet
           when Precision::Fp32
             CUDA.element_mul_fp32(sptr.as(Pointer(Float32)), sptr.as(Pointer(Float32)), optr.as(Pointer(Float32)), alpha, beta, size)
           else
-            CUDA.element_mul(sptr.as(Pointer(Float64)), sptr.as(Pointer(Float64)), optr.as(Pointer(Float64)), alpha, beta, size)
+            CUDA.element_mul(sptr.as(Pointer(Float32)), sptr.as(Pointer(Float32)), optr.as(Pointer(Float32)), alpha, beta, size)
           end
 
           mark_device_dirty!
@@ -1858,8 +1858,8 @@ module SHAInet
       self
     end
 
-    # Dropout using custom CUDA kernel (always, since cuDNN does not support Float64)
-    def dropout!(prob : Float64, seed : UInt64 = Random.rand(UInt64::MAX))
+    # Dropout using custom CUDA kernel (always, since cuDNN does not support Float32)
+    def dropout!(prob : Float32, seed : UInt64 = Random.rand(UInt64::MAX))
       if CUDA.fully_available? && (dptr = self.device_ptr) && !dptr.null?
         begin
           self.sync_to_device!("dropout_kernel") unless device_dirty?
@@ -1882,8 +1882,8 @@ module SHAInet
               @rows, @cols, prob, seed)
           else
             CUDA.dropout(
-              dptr.as(Pointer(Float64)),
-              dptr.as(Pointer(Float64)),
+              dptr.as(Pointer(Float32)),
+              dptr.as(Pointer(Float32)),
               @rows, @cols, prob, seed)
           end
 
@@ -1898,7 +1898,7 @@ module SHAInet
       self.sync_from_device!("dropout_fallback") if device_dirty?
       @rows.times do |i|
         @cols.times do |j|
-          result_val = Random.rand < prob ? 0.0 : self.unsafe_get(i, j)
+          result_val = Random.rand < prob ? 0.0_f32 : self.unsafe_get(i, j)
           self.unsafe_set(i, j, result_val)
         end
       end

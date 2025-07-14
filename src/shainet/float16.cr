@@ -2,9 +2,7 @@ module SHAInet
   # LLVM intrinsic helpers for half precision conversions
   lib LibIntrinsics
     fun f16tof32 = "llvm.convert.from.fp16.f32"(Int16) : Float32
-    fun f16tof64 = "llvm.convert.from.fp16.f64"(Int16) : Float64
     fun f32tof16 = "llvm.convert.to.fp16.f32"(Float32) : Int16
-    fun f64tof16 = "llvm.convert.to.fp16.f64"(Float64) : Int16
   end
 
   @[Extern]
@@ -15,10 +13,6 @@ module SHAInet
       new LibIntrinsics.f32tof16(value)
     end
 
-    def self.new(value : Float64)
-      new LibIntrinsics.f64tof16(value)
-    end
-
     private def initialize(@value : Int16)
     end
 
@@ -26,12 +20,8 @@ module SHAInet
       LibIntrinsics.f16tof32(@value)
     end
 
-    def to_f64 : Float64
-      LibIntrinsics.f16tof64(@value)
-    end
-
-    def to_f : Float64
-      to_f64
+    def to_f : Float32
+      to_f32
     end
   end
 
@@ -47,8 +37,8 @@ module SHAInet
       ((@bits.to_u32) << 16).unsafe_as(Float32)
     end
 
-    def to_f64 : Float64
-      to_f32.to_f64
+    def to_f32 : Float32
+      to_f32
     end
   end
 end
@@ -60,7 +50,7 @@ struct Float32
   end
 end
 
-struct Float64
+struct Float32
   def to_f16 : SHAInet::Float16
     SHAInet::Float16.new(self)
   end

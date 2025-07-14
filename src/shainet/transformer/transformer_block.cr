@@ -217,7 +217,7 @@ module SHAInet
       end
     end
 
-    def apply_gradients(lr : Float64, weight_decay : Float64 = 0.0)
+    def apply_gradients(lr : Float32, weight_decay : Float32 = 0.0)
       # Determine device type from weights
       if @weights.is_a?(CudaMatrix)
         # GPU path
@@ -234,7 +234,7 @@ module SHAInet
 
     # Override MatrixLayer's update_weights to prevent conflicts
     # TransformerBlock manages its own weight updates through apply_gradients
-    def update_weights(learning_rate : Float64, weight_decay : Float64 = 0.0)
+    def update_weights(learning_rate : Float32, weight_decay : Float32 = 0.0)
       # No-op: weights are updated via apply_gradients in update_transformer_layers
     end
 

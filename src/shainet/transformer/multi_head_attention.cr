@@ -267,7 +267,7 @@ module SHAInet
 
           # Compute attention scores directly into workspace
           scores_workspace.gemm!(qs, @workspace_k_transposed[h].not_nil!)
-          scores_workspace.scale!(1.0 / Math.sqrt(@head_dim.to_f))
+          scores_workspace.scale!(1.0_f32 / Math.sqrt(@head_dim.to_f32))
 
           # Apply mask if provided
           if m = mask
@@ -305,8 +305,8 @@ module SHAInet
 
             # Direct GPU memory copy for each column block
             CUDA.set_cols(
-              concat_ptr.as(Pointer(Float64)),
-              output_ptr.as(Pointer(Float64)),
+              concat_ptr.as(Pointer(Float32)),
+              output_ptr.as(Pointer(Float32)),
               concat.rows, concat.cols, start_col, @head_dim)
             concat.mark_device_dirty!
           else
@@ -619,7 +619,7 @@ module SHAInet
           d_attn_temp.gemm!(d_out_h, v_t)
 
           softmax_backward(d_attn_temp, @attn[h].as(CudaMatrix), d_scores_temp)
-          d_scores_temp.scale!(1.0 / Math.sqrt(@head_dim.to_f))
+          d_scores_temp.scale!(1.0_f32 / Math.sqrt(@head_dim.to_f32))
 
           d_q_temp.gemm!(d_scores_temp, @k_heads[h].as(CudaMatrix))
           scores_t = @scores_t_ws[h].not_nil!
@@ -679,16 +679,16 @@ module SHAInet
     end
 
     # GPU path for applying gradients
-    def apply_gradients(lr : Float64, device : CudaMatrix.class, weight_decay : Float64 = 0.0)
+    def apply_gradients(lr : Float32, device : CudaMatrix.class, weight_decay : Float32 = 0.0)
       # Use in-place weight updates to eliminate matrix creation
       @w_q.as(CudaMatrix).weight_update!(@g_w_q.as(CudaMatrix), lr)
-      @w_q.as(CudaMatrix).scale!(1.0 - weight_decay) if weight_decay != 0.0
+      @w_q.as(CudaMatrix).scale!(1.0_f32 - weight_decay) if weight_decay != 0.0_f32
       @w_k.as(CudaMatrix).weight_update!(@g_w_k.as(CudaMatrix), lr)
-      @w_k.as(CudaMatrix).scale!(1.0 - weight_decay) if weight_decay != 0.0
+      @w_k.as(CudaMatrix).scale!(1.0_f32 - weight_decay) if weight_decay != 0.0_f32
       @w_v.as(CudaMatrix).weight_update!(@g_w_v.as(CudaMatrix), lr)
-      @w_v.as(CudaMatrix).scale!(1.0 - weight_decay) if weight_decay != 0.0
+      @w_v.as(CudaMatrix).scale!(1.0_f32 - weight_decay) if weight_decay != 0.0_f32
       @w_o.as(CudaMatrix).weight_update!(@g_w_o.as(CudaMatrix), lr)
-      @w_o.as(CudaMatrix).scale!(1.0 - weight_decay) if weight_decay != 0.0
+      @w_o.as(CudaMatrix).scale!(1.0_f32 - weight_decay) if weight_decay != 0.0_f32
 
       # Clear gradients
       zero_gradients(CudaMatrix)
@@ -696,7 +696,7 @@ module SHAInet
     end
 
     # CPU path for applying gradients
-    def apply_gradients(lr : Float64, device : SimpleMatrix.class, weight_decay : Float64 = 0.0)
+    def apply_gradients(lr : Float32, device : SimpleMatrix.class, weight_decay : Float32 = 0.0)
       @w_q = (@w_q.as(SimpleMatrix) - (@g_w_q.as(SimpleMatrix) * lr)) * (1.0 - weight_decay)
       @w_k = (@w_k.as(SimpleMatrix) - (@g_w_k.as(SimpleMatrix) * lr)) * (1.0 - weight_decay)
       @w_v = (@w_v.as(SimpleMatrix) - (@g_w_v.as(SimpleMatrix) * lr)) * (1.0 - weight_decay)
@@ -772,9 +772,9 @@ module SHAInet
     # GPU version of softmax backward
     private def softmax_backward(d_out : CudaMatrix, softmax_out : CudaMatrix, dest : CudaMatrix) : CudaMatrix
       CUDA.softmax_backward(
-        dest.device_ptr.not_nil!.as(Pointer(Float64)),
-        d_out.device_ptr.not_nil!.as(Pointer(Float64)),
-        softmax_out.device_ptr.not_nil!.as(Pointer(Float64)),
+        dest.device_ptr.not_nil!.as(Pointer(Float32)),
+        d_out.device_ptr.not_nil!.as(Pointer(Float32)),
+        softmax_out.device_ptr.not_nil!.as(Pointer(Float32)),
         d_out.rows, d_out.cols)
       dest.mark_device_dirty!
       dest

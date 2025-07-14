@@ -279,9 +279,9 @@ module SHAInet
 
         size = local_grad.rows * local_grad.cols
         CUDA.apply_gradient(
-          local_grad.device_ptr.not_nil!.as(Pointer(Float64)),
-          grad.device_ptr.not_nil!.as(Pointer(Float64)),
-          sigma_primes.device_ptr.not_nil!.as(Pointer(Float64)),
+          local_grad.device_ptr.not_nil!.as(Pointer(Float32)),
+          grad.device_ptr.not_nil!.as(Pointer(Float32)),
+          sigma_primes.device_ptr.not_nil!.as(Pointer(Float32)),
           size
         )
 
@@ -304,8 +304,8 @@ module SHAInet
         g_b_cuda.sync_to_device!("matrix_layer_bias_grad") unless g_b_cuda.device_dirty?
 
         CUDA.accumulate_bias_grad(
-          g_b_cuda.device_ptr.not_nil!.as(Pointer(Float64)),
-          local_grad.device_ptr.not_nil!.as(Pointer(Float64)),
+          g_b_cuda.device_ptr.not_nil!.as(Pointer(Float32)),
+          local_grad.device_ptr.not_nil!.as(Pointer(Float32)),
           local_grad.rows,
           local_grad.cols
         )
@@ -336,7 +336,7 @@ module SHAInet
       local_grad.rows.times do |i|
         local_grad.cols.times do |j|
           v = grad[i, j].to_f32 * sigma_primes[i, j].to_f32
-          local_grad[i, j] = v.to_f64
+          local_grad[i, j] = v.to_f32
         end
       end
 
@@ -347,7 +347,7 @@ module SHAInet
       local_grad.rows.times do |i|
         local_grad.cols.times do |j|
           val = @g_b[0, j].to_f32 + local_grad[i, j].to_f32
-          @g_b[0, j] = val.to_f64
+          @g_b[0, j] = val.to_f32
         end
       end
 
@@ -356,7 +356,7 @@ module SHAInet
     end
 
     # Update weights using accumulated gradients - device-specific versions
-    def update_weights(learning_rate : Float64, weight_decay : Float64 = 0.0)
+    def update_weights(learning_rate : Float32, weight_decay : Float32 = 0.0)
       # Check device type and call appropriate method
       if @weights.is_a?(CudaMatrix)
         update_weights_gpu(learning_rate, weight_decay)
@@ -366,7 +366,7 @@ module SHAInet
     end
 
     # GPU path weight update - all CudaMatrix operations with in-place updates
-    private def update_weights_gpu(learning_rate : Float64, weight_decay : Float64)
+    private def update_weights_gpu(learning_rate : Float32, weight_decay : Float32)
       # W := W - lr * ∂L/∂W - weight_decay * W
       # b := b - lr * ∂L/∂b
 
@@ -374,7 +374,7 @@ module SHAInet
         master = @master_weights.as(CudaMatrix)
         gw_f32 = convert_matrix_precision(@g_w.as(CudaMatrix), Precision::Fp32).as(CudaMatrix)
         master.weight_update!(gw_f32, learning_rate)
-        master.scale!(1.0 - weight_decay) if weight_decay != 0.0
+        master.scale!(1.0_f32 - weight_decay) if weight_decay != 0.0_f32
         @master_weights = master
         @weights = convert_matrix_precision(master, @precision)
 
@@ -385,13 +385,13 @@ module SHAInet
       else
         w_cuda = @weights.as(CudaMatrix)
         w_cuda.weight_update!(@g_w.as(CudaMatrix), learning_rate)
-        if weight_decay != 0.0
+        if weight_decay != 0.0_f32
           if w_cuda.precision.fp32?
-            w_cuda.scale!(1.0 - weight_decay)
+            w_cuda.scale!(1.0_f32 - weight_decay)
           else
             # CPU fallback for precisions lacking cuBLAS scal
             w_cuda.sync_from_device!("weight_decay") if w_cuda.device_dirty?
-            factor = 1.0 - weight_decay
+            factor = 1.0_f32 - weight_decay
             w_cuda.rows.times do |i|
               w_cuda.cols.times do |j|
                 val = w_cuda.unsafe_get(i, j) * factor
@@ -407,7 +407,7 @@ module SHAInet
     end
 
     # CPU path weight update - all SimpleMatrix operations
-    private def update_weights_cpu(learning_rate : Float64, weight_decay : Float64)
+    private def update_weights_cpu(learning_rate : Float32, weight_decay : Float32)
       if @precision.in?({Precision::Fp16, Precision::Bf16})
         master = @master_weights.as(SimpleMatrix)
         gw_f32 = convert_matrix_precision(@g_w.as(SimpleMatrix), Precision::Fp32).as(SimpleMatrix)

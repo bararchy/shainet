@@ -15,13 +15,13 @@ module SHAInet
     # should be between 0 and 100.
     def self.apply!(matrix : SimpleMatrix, drop_percent : Int32)
       raise ArgumentError.new("drop_percent must be between 0 and 100") unless 0 <= drop_percent && drop_percent <= 100
-      matrix.dropout!(drop_percent.to_f / 100.0)
+      matrix.dropout!(drop_percent.to_f32 / 100.0_f32)
     end
 
     # Applies dropout to the given CUDA matrix in-place and returns it.
     def self.apply!(matrix : CudaMatrix, drop_percent : Int32)
       raise ArgumentError.new("drop_percent must be between 0 and 100") unless 0 <= drop_percent && drop_percent <= 100
-      matrix.dropout!(drop_percent.to_f / 100.0)
+      matrix.dropout!(drop_percent.to_f32 / 100.0_f32)
     end
   end
 end

@@ -11,14 +11,14 @@ module SHAInet
 
           {% if flag?(:softmax_debug) %}
             # Verify source data
-            test_buf = Array(Float64).new(@rows * @cols, 0.0)
+            test_buf = Array(Float32).new(@rows * @cols, 0.0)
             CUDA.memcpy(test_buf.to_unsafe.as(Pointer(Void)),
               dptr.as(Pointer(Void)),
               (@rows * @cols * 8).to_u64,
               CUDA::MemcpyKind::DeviceToHost)
 
             # Ensure result is zeroed
-            zeroes = Array(Float64).new(@rows * @cols, 0.0)
+            zeroes = Array(Float32).new(@rows * @cols, 0.0)
             CUDA.memcpy(rptr.as(Pointer(Void)),
               zeroes.to_unsafe.as(Pointer(Void)),
               (@rows * @cols * 8).to_u64,
@@ -50,8 +50,8 @@ module SHAInet
             )
           else
             CUDA.softmax_rows(
-              rptr.as(Pointer(Float64)),
-              dptr.as(Pointer(Float64)),
+              rptr.as(Pointer(Float32)),
+              dptr.as(Pointer(Float32)),
               @rows,
               @cols
             )
@@ -106,8 +106,8 @@ module SHAInet
               @rows, @cols, prob, seed)
           else
             CUDA.dropout(
-              rptr.as(Pointer(Float64)),
-              dptr.as(Pointer(Float64)),
+              rptr.as(Pointer(Float32)),
+              dptr.as(Pointer(Float32)),
               @rows, @cols, prob, seed)
           end
 

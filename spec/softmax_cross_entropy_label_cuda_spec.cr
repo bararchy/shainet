@@ -45,9 +45,9 @@ describe "CUDA softmax cross entropy with labels" do
     {% if flag?(:enable_cuda) %}
       # Call the CUDA kernel directly, not via CUDNN wrapper
       SHAInet::CUDA.softmax_cross_entropy_label(
-        g_pred.device_ptr.not_nil!.as(Pointer(Float64)),
+        g_pred.device_ptr.not_nil!.as(Pointer(Float32)),
         labels_dev,
-        grad.device_ptr.not_nil!.as(Pointer(Float64)),
+        grad.device_ptr.not_nil!.as(Pointer(Float32)),
         pointerof(loss_val),
         g_pred.rows,
         g_pred.cols

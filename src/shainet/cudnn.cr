@@ -544,7 +544,7 @@ module SHAInet
 
     # Optimized element-wise addition using cuDNN OpTensor.
     # Falls back to cuBLAS GEAM only for FP64 precisions.
-    def self.element_add!(result : CudaMatrix, a : CudaMatrix, b : CudaMatrix, alpha : Float64 = 1.0, beta : Float64 = 1.0)
+    def self.element_add!(result : CudaMatrix, a : CudaMatrix, b : CudaMatrix, alpha : Float32 = 1.0, beta : Float32 = 1.0)
       raise "Matrices must have same dimensions" unless a.rows == b.rows && a.cols == b.cols && result.rows == a.rows && result.cols == a.cols
 
       a.sync_to_device!("cudnn_element_add_a") unless a.device_dirty?
@@ -621,7 +621,7 @@ module SHAInet
     end
 
     # Optimized element-wise multiplication (fallback to custom kernel)
-    def self.element_mul!(result : CudaMatrix, a : CudaMatrix, b : CudaMatrix, alpha : Float64 = 1.0, beta : Float64 = 0.0)
+    def self.element_mul!(result : CudaMatrix, a : CudaMatrix, b : CudaMatrix, alpha : Float32 = 1.0, beta : Float32 = 0.0)
       # Element-wise multiplication requires custom implementation since cuBLAS doesn't have direct support
       # For now, fall back to CPU implementation
       raise "Matrices must have same dimensions" unless a.rows == b.rows && a.cols == b.cols && result.rows == a.rows && result.cols == a.cols
@@ -643,7 +643,7 @@ module SHAInet
 
     # Cross-entropy loss and gradient computation.
     # Uses CUDA kernels for FP32 matrices when available, otherwise falls back to CPU.
-    def self.cross_entropy_loss_gradient(predicted : CudaMatrix, target : CudaMatrix, loss_output : Float64*, grad_output : CudaMatrix)
+    def self.cross_entropy_loss_gradient(predicted : CudaMatrix, target : CudaMatrix, loss_output : Float32*, grad_output : CudaMatrix)
       raise "Matrices must have same dimensions" unless predicted.rows == target.rows && predicted.cols == target.cols
 
       if CUDA.available? && predicted.precision.fp32? && target.precision.fp32? && grad_output.precision.fp32?
@@ -669,8 +669,8 @@ module SHAInet
       loss = 0.0
       predicted.rows.times do |i|
         predicted.cols.times do |j|
-          p = predicted.unsafe_get(i, j).to_f64.clamp(1e-15, 1.0)
-          t = target.unsafe_get(i, j).to_f64
+          p = predicted.unsafe_get(i, j).to_f32.clamp(1e-15, 1.0)
+          t = target.unsafe_get(i, j).to_f32
           grad_output.unsafe_set(i, j, p - t)
           loss += -t * Math.log(p)
         end
@@ -683,7 +683,7 @@ module SHAInet
 
     # CPU-based cross-entropy loss and gradient computation with optional CUDA acceleration for FP32.
     def self.cross_entropy_loss_and_gradient(predicted : CudaMatrix, target : CudaMatrix,
-                                             loss_output : Float64*, grad_output : CudaMatrix)
+                                             loss_output : Float32*, grad_output : CudaMatrix)
       raise "Matrices must have same dimensions" unless predicted.rows == target.rows && predicted.cols == target.cols
 
       if CUDA.available? && predicted.precision.fp32? && target.precision.fp32? && grad_output.precision.fp32?
@@ -709,8 +709,8 @@ module SHAInet
       loss = 0.0
       predicted.rows.times do |i|
         predicted.cols.times do |j|
-          p = predicted.unsafe_get(i, j).to_f64.clamp(1e-15, 1.0)
-          t = target.unsafe_get(i, j).to_f64
+          p = predicted.unsafe_get(i, j).to_f32.clamp(1e-15, 1.0)
+          t = target.unsafe_get(i, j).to_f32
           grad_output.unsafe_set(i, j, p - t)
           loss += -t * Math.log(p)
         end
@@ -724,7 +724,7 @@ module SHAInet
     # GPU-accelerated mean squared error loss and gradient computation.
     # Supports FP64 and FP32 precisions.
     def self.mse_loss_and_gradient(predicted : CudaMatrix, target : CudaMatrix,
-                                   loss_output : Float64*, grad_output : CudaMatrix)
+                                   loss_output : Float32*, grad_output : CudaMatrix)
       raise "Matrices must have same dimensions" unless predicted.rows == target.rows && predicted.cols == target.cols
 
       if predicted.precision.fp32? && target.precision.fp32? && grad_output.precision.fp32?
@@ -750,7 +750,7 @@ module SHAInet
 
     # Softmax + cross-entropy loss and gradient computation using CPU fallback.
     def self.softmax_cross_entropy_loss_and_gradient(predicted : CudaMatrix, target : CudaMatrix,
-                                                     loss : Float64*, grad_output : CudaMatrix)
+                                                     loss : Float32*, grad_output : CudaMatrix)
       raise "Predicted and target must have same dimensions" unless predicted.rows == target.rows && predicted.cols == target.cols
       raise "Gradient output must have same dimensions as predicted" unless grad_output.rows == predicted.rows && grad_output.cols == predicted.cols
 
@@ -780,7 +780,7 @@ module SHAInet
     # GPU-optimized softmax + cross-entropy using label indices.
     # +labels+ should be a column vector (rows x 1) containing integer class indices.
     def self.softmax_cross_entropy_label_loss_and_gradient(predicted : CudaMatrix, labels : CudaMatrix,
-                                                           loss : Float64*, grad_output : CudaMatrix)
+                                                           loss : Float32*, grad_output : CudaMatrix)
       raise "Labels must have one column" unless labels.cols == 1
       raise "Label rows must match predictions" unless labels.rows == predicted.rows
       raise "Gradient output must have same dimensions as predicted" unless grad_output.rows == predicted.rows && grad_output.cols == predicted.cols
@@ -789,29 +789,29 @@ module SHAInet
 
       rows = predicted.rows
       cols = predicted.cols
-      loss_acc = 0.0
+      loss_acc = 0.0_f32
 
       rows.times do |i|
-        max_val = -Float64::INFINITY
+        max_val = -Float32::INFINITY
         cols.times do |j|
-          v = predicted.unsafe_get(i, j).to_f64
+          v = predicted.unsafe_get(i, j).to_f32
           max_val = Math.max(max_val, v)
         end
 
         cols.times do |j|
-          val = Math.exp(predicted.unsafe_get(i, j).to_f64 - max_val)
+          val = Math.exp(predicted.unsafe_get(i, j).to_f32 - max_val)
           grad_output.unsafe_set(i, j, val)
         end
 
-        sum = 0.0
-        cols.times { |j| sum += grad_output.unsafe_get(i, j).to_f64 }
+        sum = 0.0_f32
+        cols.times { |j| sum += grad_output.unsafe_get(i, j).to_f32 }
 
         cols.times do |j|
-          p = grad_output.unsafe_get(i, j).to_f64 / sum
+          p = grad_output.unsafe_get(i, j).to_f32 / sum
           label = labels.unsafe_get(i, 0).to_i
-          t = (j == label) ? 1.0 : 0.0
+          t = (j == label) ? 1.0_f32 : 0.0_f32
           grad_output.unsafe_set(i, j, p - t)
-          loss_acc += -t * Math.log(p.clamp(1e-15, 1.0))
+          loss_acc += (-t * Math.log(p.clamp(1e-15, 1.0))).to_f32
         end
       end
 
@@ -820,32 +820,32 @@ module SHAInet
       loss.value = loss_acc
     end
 
-    private def self.cpu_softmax_cross_entropy(predicted : CudaMatrix, target : CudaMatrix, grad_output : CudaMatrix) : Float64
+    private def self.cpu_softmax_cross_entropy(predicted : CudaMatrix, target : CudaMatrix, grad_output : CudaMatrix) : Float32
       predicted.sync_from_device!("cpu_sm_xent_pred") if predicted.device_dirty?
       target.sync_from_device!("cpu_sm_xent_target") if target.device_dirty?
 
       rows = predicted.rows
       cols = predicted.cols
-      loss_acc = 0.0
+      loss_acc = 0.0_f32
 
       rows.times do |i|
-        max_val = -Float64::INFINITY
+        max_val = -Float32::INFINITY
         cols.times do |j|
-          v = predicted.unsafe_get(i, j).to_f64
+          v = predicted.unsafe_get(i, j).to_f32
           max_val = Math.max(max_val, v)
         end
 
         cols.times do |j|
-          val = Math.exp(predicted.unsafe_get(i, j).to_f64 - max_val)
+          val = Math.exp(predicted.unsafe_get(i, j).to_f32 - max_val)
           grad_output.unsafe_set(i, j, val)
         end
 
-        sum = 0.0
-        cols.times { |j| sum += grad_output.unsafe_get(i, j).to_f64 }
+        sum = 0.0_f32
+        cols.times { |j| sum += grad_output.unsafe_get(i, j).to_f32 }
 
         cols.times do |j|
-          p = grad_output.unsafe_get(i, j).to_f64 / sum
-          t = target.unsafe_get(i, j).to_f64
+          p = grad_output.unsafe_get(i, j).to_f32 / sum
+          t = target.unsafe_get(i, j).to_f32
           grad_output.unsafe_set(i, j, p - t)
           loss_acc += -t * Math.log(p.clamp(1e-15, 1.0))
         end
@@ -857,7 +857,7 @@ module SHAInet
     end
 
     # Element-wise operations using cuDNN OpTensor
-    def self.element_multiply!(output : CudaMatrix, a : CudaMatrix, b : CudaMatrix, alpha : Float64 = 1.0, beta : Float64 = 0.0)
+    def self.element_multiply!(output : CudaMatrix, a : CudaMatrix, b : CudaMatrix, alpha : Float32 = 1.0, beta : Float32 = 0.0)
       raise "Matrices must have same dimensions" unless a.rows == b.rows && a.cols == b.cols && output.rows == a.rows && output.cols == a.cols
 
       # Create OpTensor descriptor
@@ -922,7 +922,7 @@ module SHAInet
           input.sync_to_device!("cudnn_element_log_in") unless input.device_dirty?
           output.sync_to_device!("cudnn_element_log_out") unless output.device_dirty?
           size = input.rows * input.cols
-          CUDA.element_log(out_ptr.as(Pointer(Float64)), in_ptr.as(Pointer(Float64)), size)
+          CUDA.element_log(out_ptr.as(Pointer(Float32)), in_ptr.as(Pointer(Float32)), size)
           output.mark_device_dirty!
           return
         rescue e
@@ -941,7 +941,7 @@ module SHAInet
     end
 
     # Element-wise subtraction using OpTensor
-    def self.element_subtract!(output : CudaMatrix, a : CudaMatrix, b : CudaMatrix, alpha : Float64 = 1.0, beta : Float64 = -1.0)
+    def self.element_subtract!(output : CudaMatrix, a : CudaMatrix, b : CudaMatrix, alpha : Float32 = 1.0, beta : Float32 = -1.0)
       raise "Matrices must have same dimensions" unless a.rows == b.rows && a.cols == b.cols && output.rows == a.rows && output.cols == a.cols
 
       # Use element addition with negative beta to achieve subtraction
@@ -949,7 +949,7 @@ module SHAInet
     end
 
     # Element-wise addition using OpTensor (more general version)
-    def self.element_addition!(output : CudaMatrix, a : CudaMatrix, b : CudaMatrix, alpha : Float64 = 1.0, beta : Float64 = 1.0)
+    def self.element_addition!(output : CudaMatrix, a : CudaMatrix, b : CudaMatrix, alpha : Float32 = 1.0, beta : Float32 = 1.0)
       raise "Matrices must have same dimensions" unless a.rows == b.rows && a.cols == b.cols && output.rows == a.rows && output.cols == a.cols
 
       # Create OpTensor descriptor
@@ -1070,7 +1070,7 @@ module SHAInet
     end
 
     # Dropout forward (GPU-accelerated dropout with mask generation)
-    def self.dropout_forward!(output : CudaMatrix, input : CudaMatrix, dropout_prob : Float64, seed : UInt64 = Random.rand(UInt64::MAX))
+    def self.dropout_forward!(output : CudaMatrix, input : CudaMatrix, dropout_prob : Float32, seed : UInt64 = Random.rand(UInt64::MAX))
       raise "Input and output must have same dimensions" unless input.rows == output.rows && input.cols == output.cols
 
       # Get dropout states size

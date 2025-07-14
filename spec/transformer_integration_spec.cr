@@ -124,7 +124,7 @@ describe "Transformer Integration" do
       net.transformer_layers.first.positional_encoding = pos_enc
 
       # Test single sequence prediction
-      test_seq = ids[0, seq_len].map { |id| [id.to_f64] }
+      test_seq = ids[0, seq_len].map { |id| [id.to_f32] }
 
       output = net.run(test_seq)
       output.should_not be_nil

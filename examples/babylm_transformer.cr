@@ -56,18 +56,18 @@ warmup_steps = 4000
 # Decay type: :step (decays every decay_step) or :exp (exponential decay)
 decay_type = :step # or :exp
 # Decay rate: multiply learning rate by this factor at each decay step
-decay_rate = 0.5
+decay_rate = 0.5_f32
 # Decay step: how many steps between each decay (only for :step)
 decay_step = 1000
 # Accumulation steps: accumulate gradients over this many mini-batches before updating weights
 accumulation_steps = 4
 # weight_decay: Apply weight decay to shrink parameters on each update
-weight_decay = 0.01
+weight_decay = 0.01_f32
 # Use top-k and top-p sampling for more diverse generation
 # Top-k: sample from the 10 most likely tokens
 tk = 10
 # Top-p: sample from the smallest set of tokens with cumulative probability >= 0.9
-tp = 0.9
+tp = 0.9_f32
 # network precision: Use Fp16 for better GPU performance, Fp32 for compatibility
 precision = SHAInet::Precision::Fp16
 
@@ -186,9 +186,9 @@ while (val_batch = val_data.next_batch(val_batch_size)).size > 0
                   input_raw
                 when Array(Array(Float32))
                   input_raw.map { |row| row[0].to_i }
-                when Array(Array(Float64))
+                when Array(Array(Float32))
                   input_raw.map { |row| row[0].to_i }
-                when Array(Float64)
+                when Array(Float32)
                   input_raw.map(&.to_i)
                 when Array(Float32)
                   input_raw.map(&.to_i)
@@ -206,12 +206,12 @@ while (val_batch = val_data.next_batch(val_batch_size)).size > 0
                   target_raw
                 when Array(Float32)
                   target_raw.index(target_raw.max) || 0
-                when Array(Float64)
+                when Array(Float32)
                   target_raw.index(target_raw.max) || 0
                 when Array(Array(Float32))
                   flat = target_raw.flatten
                   flat.index(flat.max) || 0
-                when Array(Array(Float64))
+                when Array(Array(Float32))
                   flat = target_raw.flatten
                   flat.index(flat.max) || 0
                 when SHAInet::CudaMatrix

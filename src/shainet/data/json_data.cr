@@ -19,7 +19,7 @@ module SHAInet
     include JSON::Serializable
 
     property id : String
-    property bias : Float64
+    property bias : Float32
     property n_type : String
     property synapses_in : Array(SynapseDump)
     property synapses_out : Array(SynapseDump)
@@ -30,6 +30,6 @@ module SHAInet
 
     property source : String
     property destination : String
-    property weight : Float64
+    property weight : Float32
   end
 end

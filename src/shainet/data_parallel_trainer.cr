@@ -28,18 +28,18 @@ module SHAInet
     def train(data : Array(Array), *, training_type : Symbol | String = :sgd,
               cost_function : Symbol | String | CostFunction = :mse,
               epochs : Int32 = 1, mini_batch_size : Int32 = 1,
-              log_each : Int32 = 1, error_threshold : Float64 = 0.0)
+              log_each : Int32 = 1, error_threshold : Float32 = 0.0_f32)
       cost_proc = cost_function.is_a?(Proc) ? cost_function.as(CostFunction) : @net.get_cost_proc(cost_function.to_s)
       batch_size = mini_batch_size.clamp(1, data.size)
       CUDNN.ensure_label_buffer(batch_size) if CUDNN.responds_to?(:ensure_label_buffer)
 
       epochs.times do |epoch|
-        total_error = 0.0
+        total_error = 0.0_f32
         sample_count = 0
         data.shuffle.each_slice(batch_size) do |batch|
           slice_size = ((batch.size.to_f / @replicas.size).ceil).to_i
           sub_batches = batch.each_slice(slice_size).to_a
-          errors = Array(Float64).new(@replicas.size, 0.0)
+          errors = Array(Float32).new(@replicas.size, 0.0_f32)
 
           WaitGroup.wait do |wg|
             sub_batches.each_with_index do |sub, idx|
@@ -98,10 +98,10 @@ module SHAInet
           device = base_layer.weights.as(CudaMatrix).device_id
           CUDA.set_device(device)
 
-          sum_w = CudaMatrix.new(base_layer.g_w.rows, base_layer.g_w.cols, 0.0,
+          sum_w = CudaMatrix.new(base_layer.g_w.rows, base_layer.g_w.cols, 0.0_f32,
             base_layer.precision, device_id: device)
           sum_w.zero!
-          sum_b = CudaMatrix.new(base_layer.g_b.rows, base_layer.g_b.cols, 0.0,
+          sum_b = CudaMatrix.new(base_layer.g_b.rows, base_layer.g_b.cols, 0.0_f32,
             base_layer.precision, device_id: device)
           sum_b.zero!
 

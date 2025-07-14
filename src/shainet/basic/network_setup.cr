@@ -25,26 +25,26 @@ module SHAInet
     getter :input_layers, :output_layers, :hidden_layers, :recurrent_layers, :lstm_layers
     getter :transformer_layers
     getter transformer_error : SimpleMatrix
-    getter error_signal : Array(Float64), total_error : Float64, :mse, w_gradient : Array(Float64), b_gradient : Array(Float64)
+    getter error_signal : Array(Float32), total_error : Float32, :mse, w_gradient : Array(Float32), b_gradient : Array(Float32)
 
     # Parameters for SGD + Momentum
-    property learning_rate : Float64, momentum : Float64
+    property learning_rate : Float32, momentum : Float32
 
     # Parameters for Rprop
-    property etah_plus : Float64, etah_minus : Float64, delta_max : Float64, delta_min : Float64
-    getter prev_mse : Float64
+    property etah_plus : Float32, etah_minus : Float32, delta_max : Float32, delta_min : Float32
+    getter prev_mse : Float32
 
     # Parameters for Adam
-    property alpha : Float64
-    getter beta1 : Float64, beta2 : Float64, epsilon : Float64, time_step : Int32
-    property clip_threshold : Float64
+    property alpha : Float32
+    getter beta1 : Float32, beta2 : Float32, epsilon : Float32, time_step : Int32
+    property clip_threshold : Float32
     property warmup_steps : Int32
-    property weight_decay : Float64
+    property weight_decay : Float32
     property accumulation_steps : Int32
     property accumulation_counter : Int32
     property precision : Precision
     property decay_type : Symbol?
-    property decay_rate : Float64
+    property decay_rate : Float32
     property decay_step : Int32
     property exit_save_path : String?
     # Map of destination layer index to array of source layer indices for residual connections
@@ -59,28 +59,28 @@ module SHAInet
       @hidden_layers = Array(MatrixLayer).new
       @transformer_layers = Array(TransformerLayer).new
       @all_layers = Array(MatrixLayer).new
-      @error_signal = Array(Float64).new # Array of errors for each element in the output layers
-      @total_error = 1_f64               # Sum of errors from output layer, based on a specific input
-      @mse = 1_f64                       # MSE of network, based on all errors of output layer for a specific input or batch
-      @w_gradient = Array(Float64).new   # Needed for batch train
-      @b_gradient = Array(Float64).new   # Needed for batch train
+      @error_signal = Array(Float32).new # Array of errors for each element in the output layers
+      @total_error = 1_f32               # Sum of errors from output layer, based on a specific input
+      @mse = 1_f32                       # MSE of network, based on all errors of output layer for a specific input or batch
+      @w_gradient = Array(Float32).new   # Needed for batch train
+      @b_gradient = Array(Float32).new   # Needed for batch train
 
-      @learning_rate = 0.005_f64 # Standard parameter for GD
-      @momentum = 0.05_f64       # Improved GD
+      @learning_rate = 0.005_f32 # Standard parameter for GD
+      @momentum = 0.05_f32       # Improved GD
 
-      @etah_plus = 1.2_f64  # For iRprop+ , how to increase step size
-      @etah_minus = 0.5_f64 # For iRprop+ , how to decrease step size
-      @delta_max = 50_f64   # For iRprop+ , max step size
-      @delta_min = 0.1_f64  # For iRprop+ , min step size
-      @prev_mse = 1_f64     # For iRprop+ , needed for backtracking
+      @etah_plus = 1.2_f32  # For iRprop+ , how to increase step size
+      @etah_minus = 0.5_f32 # For iRprop+ , how to decrease step size
+      @delta_max = 50_f32   # For iRprop+ , max step size
+      @delta_min = 0.1_f32  # For iRprop+ , min step size
+      @prev_mse = 1_f32     # For iRprop+ , needed for backtracking
 
-      @alpha = 0.001_f64   # For Adam , step size (recomeneded: only change this hyper parameter when fine-tuning)
-      @beta1 = 0.9_f64     # For Adam , exponential decay rate (not recommended to change value)
-      @beta2 = 0.999_f64   # For Adam , exponential decay rate (not recommended to change value)
-      @epsilon = 10e-8_f64 # For Adam , prevents exploding gradients (not recommended to change value)
+      @alpha = 0.001_f32   # For Adam , step size (recomeneded: only change this hyper parameter when fine-tuning)
+      @beta1 = 0.9_f32     # For Adam , exponential decay rate (not recommended to change value)
+      @beta2 = 0.999_f32   # For Adam , exponential decay rate (not recommended to change value)
+      @epsilon = 10e-8_f32 # For Adam , prevents exploding gradients (not recommended to change value)
       @time_step = 0_i32   # For Adam
       @transformer_error = SimpleMatrix.zeros(1, 1)
-      @clip_threshold = Float64::INFINITY
+      @clip_threshold = Float32::INFINITY
       @warmup_steps = 0
       @weight_decay = 0.0
       @accumulation_steps = 1
@@ -332,10 +332,10 @@ module SHAInet
       data = JSON.parse(File.read(file_path))
 
       if lr = data["learning_rate"]?
-        @learning_rate = lr.as_f
+        @learning_rate = lr.as_f32
       end
       if mom = data["momentum"]?
-        @momentum = mom.as_f
+        @momentum = mom.as_f32
       end
       if prec = data["precision"]?
         @precision = Precision.parse(prec.as_s)
@@ -352,7 +352,7 @@ module SHAInet
                       end
       end
       if dr = data["decay_rate"]?
-        @decay_rate = dr.as_f
+        @decay_rate = dr.as_f32
       end
       if ds = data["decay_step"]?
         @decay_step = ds.as_i
@@ -386,8 +386,8 @@ module SHAInet
       layers.each_with_index do |layer_data, idx|
         next if idx == 0 # input layer has no weights to set
         dest_layer = all_layers[idx - 1]
-        w = layer_data["weights"].as_a.map { |r| r.as_a.map(&.as_f) }
-        b = layer_data["biases"].as_a.map(&.as_f)
+        w = layer_data["weights"].as_a.map { |r| r.as_a.map(&.as_f32) }
+        b = layer_data["biases"].as_a.map(&.as_f32)
         dest_layer.weights = SimpleMatrix.from_a(w)
         dest_layer.biases = SimpleMatrix.from_a([b])
       end

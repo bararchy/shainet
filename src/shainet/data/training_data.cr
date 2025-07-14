@@ -17,7 +17,7 @@ module SHAInet
     @gpu_inputs : Array(CudaMatrix) = [] of CudaMatrix
     @gpu_outputs : Array(CudaMatrix) = [] of CudaMatrix
 
-    def initialize(@inputs : Array(Array(Float64)), @outputs : Array(Array(Float64)), @preload_gpu : Bool = false)
+    def initialize(@inputs : Array(Array(Float32)), @outputs : Array(Array(Float32)), @preload_gpu : Bool = false)
       super(@inputs, @outputs)
     end
 
@@ -51,7 +51,7 @@ module SHAInet
       @preload_gpu = true
     end
 
-    # Return training pairs either as arrays of Float64 or as GPU
+    # Return training pairs either as arrays of Float32 or as GPU
     # matrices when preloaded.
     def data
       if @preload_gpu && CUDA.fully_available?
@@ -61,7 +61,7 @@ module SHAInet
         end
         arr
       else
-        arr = [] of Array(Array(Float64))
+        arr = [] of Array(Array(Float32))
         @normalized_inputs.each_with_index do |_, i|
           arr << [@normalized_inputs[i], @normalized_outputs[i]]
         end

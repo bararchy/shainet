@@ -18,13 +18,13 @@ module SHAInet
     # data = SHAInet::Data.new_with_csv_input_target("iris.csv", 0..3, 4)
     # ```
     def self.new_with_csv_input_target(csv_file_path, input_column_range, target_column)
-      inputs = Array(Array(Float64)).new
-      outputs = Array(Array(Float64)).new
+      inputs = Array(Array(Float32)).new
+      outputs = Array(Array(Float32)).new
       outputs_as_string = Array(String).new
       CSV.each_row(File.read(csv_file_path)) do |row|
-        row_arr = Array(Float64).new
+        row_arr = Array(Float32).new
         row[input_column_range].each do |num|
-          row_arr << num.to_f64
+          row_arr << num.to_f32
         end
         inputs << row_arr
         outputs_as_string << row[target_column]
@@ -36,7 +36,7 @@ module SHAInet
       d
     end
 
-    def initialize(@inputs : Array(Array(Float64)), @outputs : Array(Array(Float64)))
+    def initialize(@inputs : Array(Array(Float32)), @outputs : Array(Array(Float32)))
       @ymax = 1
       @ymin = 0
       @yrange = @ymax - @ymin
@@ -48,12 +48,12 @@ module SHAInet
 
       @labels = Array(String).new # Array of possible data labels
 
-      @normalized_inputs = Array(Array(Float64)).new
-      @normalized_outputs = Array(Array(Float64)).new
+      @normalized_inputs = Array(Array(Float32)).new
+      @normalized_outputs = Array(Array(Float32)).new
     end
 
     def data
-      arr = Array(Array(Array(Float64))).new
+      arr = Array(Array(Array(Float32))).new
       @normalized_inputs.each_with_index do |_, i|
         arr << [@normalized_inputs[i], @normalized_outputs[i]]
       end
@@ -61,15 +61,15 @@ module SHAInet
     end
 
     def raw_data
-      arr = Array(Array(Array(Float64))).new
+      arr = Array(Array(Array(Float32))).new
       @inputs.each_with_index do |_, i|
         arr << [@inputs[i], @outputs[i]]
       end
       arr
     end
 
-    def normalize_min_max(data : Array(Array(Float64)))
-      normalized_data = Array(Array(Float64)).new
+    def normalize_min_max(data : Array(Array(Float32)))
+      normalized_data = Array(Array(Float32)).new
 
       # Get min-max
       data.transpose.each { |a| @i_max << a.max; @i_min << a.min }
@@ -98,7 +98,7 @@ module SHAInet
     end
 
     def normalize_inputs(inputs : Array(GenNum))
-      results = Array(Float64).new
+      results = Array(Float32).new
       inputs.each_with_index do |input, i|
         results << normalize(input, @i_min[i], @i_max[i])
       end
@@ -106,7 +106,7 @@ module SHAInet
     end
 
     def normalize_outputs(outputs : Array(GenNum))
-      results = Array(Float64).new
+      results = Array(Float32).new
       outputs.each_with_index do |output, i|
         results << normalize(output, @o_min[i], @o_max[i])
       end
@@ -114,9 +114,9 @@ module SHAInet
     end
 
     def normalize(x, xmin, xmax)
-      range = xmax.to_f64 - xmin.to_f64
-      return @ymax.to_f64 if range == 0
-      adj_x = x.to_f64 - (xmin.to_f64 + @ymin)
+      range = xmax.to_f32 - xmin.to_f32
+      return @ymax.to_f32 if range == 0
+      adj_x = x.to_f32 - (xmin.to_f32 + @ymin)
       norm = (@yrange / range)
       value = adj_x * norm
       return 0.0 if value.nan?
@@ -124,7 +124,7 @@ module SHAInet
     end
 
     def denormalize_outputs(outputs : Array(GenNum))
-      results = Array(Float64).new
+      results = Array(Float32).new
       outputs.each_with_index do |output, i|
         results << denormalize(output, @o_min[i], @o_max[i])
       end
@@ -132,10 +132,10 @@ module SHAInet
     end
 
     def denormalize(x, xmin, xmax)
-      range = xmax.to_f64 - xmin.to_f64
-      return xmin.to_f64 if range == 0
-      denorm = x.to_f64 * (range / @yrange)
-      adj_x = @ymin + xmin.to_f64
+      range = xmax.to_f32 - xmin.to_f32
+      return xmin.to_f32 if range == 0
+      denorm = x.to_f32 * (range / @yrange)
+      adj_x = @ymin + xmin.to_f32
       value = denorm + adj_x
       return 0.0 if value.nan?
       value
@@ -176,12 +176,12 @@ module SHAInet
 
     # Takes a label as a String and returns the corresponding output array
     def array_for_label(a_label)
-      @labels.map { |label| a_label == label ? 1.to_f64 : 0.to_f64 }
+      @labels.map { |label| a_label == label ? 1.to_f32 : 0.to_f32 }
     end
 
     # Takes an output array of 0,1s and returns the corresponding label
     def label_for_array(an_array)
-      index = an_array.index(an_array.max.to_f64)
+      index = an_array.index(an_array.max.to_f32)
       index ? @labels[index] : ""
     end
 
@@ -189,10 +189,10 @@ module SHAInet
       @inputs.size
     end
 
-    def to_onehot(data : Array(Array(Float64)), vector_size : Int32)
+    def to_onehot(data : Array(Array(Float32)), vector_size : Int32)
       data.each_with_index do |point, i|
         lbl = point.first.clone.to_i
-        one_hot = Array(Float64).new(vector_size) { 0.0 }
+        one_hot = Array(Float32).new(vector_size) { 0.0 }
         one_hot[lbl] = 1.0
         data[i] = one_hot
       end

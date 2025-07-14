@@ -1,6 +1,6 @@
 module SHAInet
   # Minimal matrix implementation used as the CPU fallback for
-  # CudaMatrix.  Originally this class only supported `Float64`
+  # CudaMatrix.  Originally this class only supported `Float32`
   # storage.  To support additional precisions we extend it with a
   # `precision` flag and optionally store values as `Float32`,
   # `Float16`, `BFloat16` or `Int8`.
@@ -182,7 +182,7 @@ module SHAInet
       else
         @rows.times do |i|
           other.cols.times do |j|
-            sum = 0.0
+            sum = 0.0_f32
             @cols.times do |k|
               sum += self[i, k] * other[k, j]
             end
@@ -249,10 +249,10 @@ module SHAInet
     def self.from_a(array : Array(Array(GenNum)), precision : Precision = Precision::Fp32)
       rows = array.size
       cols = array.first.size
-        m = SimpleMatrix.new(rows, cols, 0_f32, precision)
+      m = SimpleMatrix.new(rows, cols, 0_f32, precision)
       rows.times do |i|
         cols.times do |j|
-            m[i, j] = array[i][j].to_f32
+          m[i, j] = array[i][j].to_f32
         end
       end
       m
@@ -275,18 +275,18 @@ module SHAInet
       end
     end
 
-    # Return the underlying data as `Array(Float64)` regardless of
+    # Return the underlying data as `Array(Float32)` regardless of
     # storage precision.
-    def to_f64 : Array(Float64)
+    def to_f32 : Array(Float32)
       case @precision
       when Precision::Fp32
-        @data_f32.not_nil!.map(&.to_f64)
+        @data_f32.not_nil!.map(&.to_f32)
       when Precision::Fp16
-        @data_f16.not_nil!.map(&.to_f64)
+        @data_f16.not_nil!.map(&.to_f32)
       when Precision::Bf16
-        @data_bf16.not_nil!.map(&.to_f64)
+        @data_bf16.not_nil!.map(&.to_f32)
       when Precision::Int8
-        @data_i8.not_nil!.map(&.to_f64)
+        @data_i8.not_nil!.map(&.to_f32)
       else
         raise "Unknown precision #{precision}"
       end
@@ -393,7 +393,7 @@ module SHAInet
         @rows.times do |i|
           @cols.times do |j|
             v = self[i, j]
-            self[i, j] = v > 0 ? v : 0.0
+            self[i, j] = v > 0 ? v : 0.0_f32
           end
         end
       end
@@ -413,7 +413,7 @@ module SHAInet
         @rows.times do |i|
           @cols.times do |j|
             x = self[i, j]
-            self[i, j] = 0.5*x*(1.0 + Math.erf(x / Math.sqrt(2.0)))
+            self[i, j] = (0.5*x*(1.0 + Math.erf(x / Math.sqrt(2.0)))).to_f32
           end
         end
       end
