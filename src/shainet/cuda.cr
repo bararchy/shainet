@@ -384,7 +384,7 @@ module SHAInet
     def ensure_loss_buffer : Pointer(Float32)
       @@loss_buffer_mutex.synchronize do
         if @@loss_buffer.null?
-          CUDA.malloc(pointerof(@@loss_buffer).as(Pointer(Pointer(Void))), 8_u64)
+          CUDA.malloc(pointerof(@@loss_buffer).as(Pointer(Pointer(Void))), 4_u64)
         end
       end
       @@loss_buffer
@@ -1940,7 +1940,7 @@ module SHAInet
         loss_device = ensure_loss_buffer
         fn.call(predicted, target, grad_output, loss_device, rows, cols)
         # Copy loss back to host
-        CUDA.memcpy(loss_output.as(Pointer(Void)), loss_device.as(Pointer(Void)), 8_u64, MemcpyKind::DeviceToHost)
+        CUDA.memcpy(loss_output.as(Pointer(Void)), loss_device.as(Pointer(Void)), 4_u64, MemcpyKind::DeviceToHost)
         0
       rescue e
         Log.error { "CUDA Error in cross_entropy_loss_gradient: #{e}" }
@@ -1968,7 +1968,7 @@ module SHAInet
       begin
         loss_device = ensure_loss_buffer
         fn.call(predicted, target, grad_output, loss_device, rows, cols)
-        CUDA.memcpy(loss_output.as(Pointer(Void)), loss_device.as(Pointer(Void)), 8_u64, MemcpyKind::DeviceToHost)
+        CUDA.memcpy(loss_output.as(Pointer(Void)), loss_device.as(Pointer(Void)), 4_u64, MemcpyKind::DeviceToHost)
         0
       rescue e
         Log.error { "CUDA Error in cross_entropy_loss_gradient_fp32: #{e}" }
@@ -1996,7 +1996,7 @@ module SHAInet
       begin
         loss_device = ensure_loss_buffer
         fn.call(predicted, labels, grad_out, loss_device, rows, cols)
-        CUDA.memcpy(loss_out.as(Pointer(Void)), loss_device.as(Pointer(Void)), 8_u64, MemcpyKind::DeviceToHost)
+        CUDA.memcpy(loss_out.as(Pointer(Void)), loss_device.as(Pointer(Void)), 4_u64, MemcpyKind::DeviceToHost)
         0
       rescue e
         Log.error { "CUDA Error in softmax_cross_entropy_label: #{e}" }
@@ -2024,7 +2024,7 @@ module SHAInet
       begin
         loss_device = ensure_loss_buffer
         fn.call(predicted, labels, grad_out, loss_device, rows, cols)
-        CUDA.memcpy(loss_out.as(Pointer(Void)), loss_device.as(Pointer(Void)), 8_u64, MemcpyKind::DeviceToHost)
+        CUDA.memcpy(loss_out.as(Pointer(Void)), loss_device.as(Pointer(Void)), 4_u64, MemcpyKind::DeviceToHost)
         0
       rescue e
         Log.error { "CUDA Error in softmax_cross_entropy_label_fp32: #{e}" }
@@ -2052,7 +2052,7 @@ module SHAInet
       begin
         loss_device = ensure_loss_buffer
         fn.call(predicted, labels, grad_out, loss_device, rows, cols)
-        CUDA.memcpy(loss_out.as(Pointer(Void)), loss_device.as(Pointer(Void)), 8_u64, MemcpyKind::DeviceToHost)
+        CUDA.memcpy(loss_out.as(Pointer(Void)), loss_device.as(Pointer(Void)), 4_u64, MemcpyKind::DeviceToHost)
         0
       rescue e
         Log.error { "CUDA Error in softmax_cross_entropy_label_matrix: #{e}" }
@@ -2080,7 +2080,7 @@ module SHAInet
       begin
         loss_device = ensure_loss_buffer
         fn.call(predicted, labels, grad_out, loss_device, rows, cols)
-        CUDA.memcpy(loss_out.as(Pointer(Void)), loss_device.as(Pointer(Void)), 8_u64, MemcpyKind::DeviceToHost)
+        CUDA.memcpy(loss_out.as(Pointer(Void)), loss_device.as(Pointer(Void)), 4_u64, MemcpyKind::DeviceToHost)
         0
       rescue e
         Log.error { "CUDA Error in softmax_cross_entropy_label_matrix_fp32: #{e}" }
@@ -2224,7 +2224,7 @@ module SHAInet
       begin
         loss_dev = ensure_loss_buffer
         fn.call(actual_ptr, expected_ptr, grad_ptr, loss_dev, rows, cols)
-        CUDA.memcpy(loss_ptr.as(Pointer(Void)), loss_dev.as(Pointer(Void)), 8_u64, MemcpyKind::DeviceToHost)
+        CUDA.memcpy(loss_ptr.as(Pointer(Void)), loss_dev.as(Pointer(Void)), 4_u64, MemcpyKind::DeviceToHost)
         0
       rescue e
         Log.error { "CUDA Error in mse_cost_gradient_fp32: #{e}" }
