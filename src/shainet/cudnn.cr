@@ -774,9 +774,9 @@ module SHAInet
         target.sync_to_device! unless target.device_dirty?
         grad_output.sync_to_device! unless grad_output.device_dirty?
         result = CUDA.mse_cost_gradient_fp16(
-          predicted.device_ptr.not_nil!.as(UInt16Ptr),
-          target.device_ptr.not_nil!.as(UInt16Ptr),
-          grad_output.device_ptr.not_nil!.as(UInt16Ptr),
+          predicted.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
+          target.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
+          grad_output.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
           loss_output,
           predicted.rows,
           predicted.cols
@@ -786,9 +786,9 @@ module SHAInet
         target.sync_to_device! unless target.device_dirty?
         grad_output.sync_to_device! unless grad_output.device_dirty?
         result = CUDA.mse_cost_gradient_bf16(
-          predicted.device_ptr.not_nil!.as(UInt16Ptr),
-          target.device_ptr.not_nil!.as(UInt16Ptr),
-          grad_output.device_ptr.not_nil!.as(UInt16Ptr),
+          predicted.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
+          target.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
+          grad_output.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
           loss_output,
           predicted.rows,
           predicted.cols
@@ -831,9 +831,9 @@ module SHAInet
         target.sync_to_device! unless target.device_dirty?
         grad_output.sync_to_device! unless grad_output.device_dirty?
         result = CUDA.softmax_cross_entropy_label_matrix_fp16(
-          predicted.device_ptr.not_nil!.as(UInt16Ptr),
-          target.device_ptr.not_nil!.as(UInt16Ptr),
-          grad_output.device_ptr.not_nil!.as(UInt16Ptr),
+          predicted.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
+          target.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
+          grad_output.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
           loss,
           predicted.rows,
           predicted.cols
@@ -845,9 +845,9 @@ module SHAInet
         target.sync_to_device! unless target.device_dirty?
         grad_output.sync_to_device! unless grad_output.device_dirty?
         result = CUDA.softmax_cross_entropy_label_matrix_bf16(
-          predicted.device_ptr.not_nil!.as(UInt16Ptr),
-          target.device_ptr.not_nil!.as(UInt16Ptr),
-          grad_output.device_ptr.not_nil!.as(UInt16Ptr),
+          predicted.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
+          target.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
+          grad_output.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
           loss,
           predicted.rows,
           predicted.cols
