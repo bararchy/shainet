@@ -45,7 +45,7 @@ epochs = 100
 batch = 800
 # Learning rate for the AdamW optimizer.
 # A smaller learning rate can help with stability, especially for larger models.
-learning_rate = 0.0005
+learning_rate = 0.0005_f32
 # log_each: How often to log training progress.
 log_each = 1
 # val_batch_size: Batch size for validation.
@@ -184,9 +184,13 @@ while (val_batch = val_data.next_batch(val_batch_size)).size > 0
     input_ids = case input_raw
                 when Array(Int32)
                   input_raw
+                when Array(Array(Float32))
+                  input_raw.map { |row| row[0].to_i }
                 when Array(Array(Float64))
                   input_raw.map { |row| row[0].to_i }
                 when Array(Float64)
+                  input_raw.map(&.to_i)
+                when Array(Float32)
                   input_raw.map(&.to_i)
                 when SHAInet::CudaMatrix
                   input_raw.to_a.map { |row| row[0].to_i }
@@ -200,8 +204,13 @@ while (val_batch = val_data.next_batch(val_batch_size)).size > 0
     target_id = case target_raw
                 when Int32
                   target_raw
+                when Array(Float32)
+                  target_raw.index(target_raw.max) || 0
                 when Array(Float64)
                   target_raw.index(target_raw.max) || 0
+                when Array(Array(Float32))
+                  flat = target_raw.flatten
+                  flat.index(flat.max) || 0
                 when Array(Array(Float64))
                   flat = target_raw.flatten
                   flat.index(flat.max) || 0

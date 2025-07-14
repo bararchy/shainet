@@ -10,8 +10,8 @@ describe SHAInet::Network do
     net.add_layer(:output, 1, SHAInet.sigmoid)
     net.fully_connect
     net.add_residual(0, 1)
-    net.learning_rate = 0.01
-    net.momentum = 0.9
+    net.learning_rate = 0.01_f32
+    net.momentum = 0.9_f32
     net.precision = SHAInet::Precision::Fp32
     net.warmup_steps = 5
     net.decay_type = :step

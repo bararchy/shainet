@@ -6,7 +6,7 @@ describe "Learning rate scheduler" do
     net.add_layer(:input, 1)
     net.add_layer(:output, 1)
     net.fully_connect
-    net.learning_rate = 1.0
+    net.learning_rate = 1.0_f32
     net.warmup_steps = 2
     net.decay_type = :step
     net.decay_rate = 0.5
