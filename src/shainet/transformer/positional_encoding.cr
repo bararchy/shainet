@@ -6,8 +6,8 @@ module SHAInet
       pe = SimpleMatrix.new(max_len, d_model)
       max_len.times do |pos|
         d_model.times do |i|
-          div_term = 1.0 / (10000.0 ** ((2 * (i // 2)).to_f64 / d_model))
-          angle = pos.to_f64 * div_term
+          div_term = 1.0_f32 / (10000.0_f32 ** ((2 * (i // 2)).to_f32 / d_model.to_f32))
+          angle = pos.to_f32 * div_term
           if i.even?
             pe[pos, i] = Math.sin(angle)
           else

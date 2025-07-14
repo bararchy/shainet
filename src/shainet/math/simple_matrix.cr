@@ -58,15 +58,15 @@ module SHAInet
       Slice(UInt8).new(ptr, bytes)
     end
 
-    # Return the matrix data as an `Array(Float64)` regardless of the
+    # Return the matrix data as an `Array(Float32)` regardless of the
     # underlying storage type.  This keeps compatibility with older
     # code which accessed `matrix.data` directly.
     def data
-      to_f64
+      to_f32
     end
 
     def initialize(@rows : Int32, @cols : Int32,
-                   init : Float64 = 0.0,
+                   init : Float32 = 0_f32,
                    @precision : Precision = Precision::Fp32)
       case @precision
       when Precision::Fp32
@@ -83,46 +83,46 @@ module SHAInet
     end
 
     def self.zeros(rows : Int32, cols : Int32, precision : Precision = Precision::Fp32)
-      new(rows, cols, 0.0, precision)
+      new(rows, cols, 0_f32, precision)
     end
 
     def self.ones(rows : Int32, cols : Int32, precision : Precision = Precision::Fp32)
-      new(rows, cols, 1.0, precision)
+      new(rows, cols, 1_f32, precision)
     end
 
     def self.tensor(rows : Int32, cols : Int32)
       TensorMatrix.new(rows, cols)
     end
 
-    def [](r : Int32, c : Int32)
+    def [](r : Int32, c : Int32) : Float32
       idx = r * @cols + c
       case @precision
       when Precision::Int8
-        @data_i8.not_nil![idx].to_f64
+        @data_i8.not_nil![idx].to_f32
       when Precision::Fp32
-        @data_f32.not_nil![idx].to_f64
+        @data_f32.not_nil![idx]
       when Precision::Fp16
-        @data_f16.not_nil![idx].to_f64
+        @data_f16.not_nil![idx].to_f32
       when Precision::Bf16
-        @data_bf16.not_nil![idx].to_f64
+        @data_bf16.not_nil![idx].to_f32
       else
-        @data_f32.not_nil![idx].to_f64
+        @data_f32.not_nil![idx]
       end
     end
 
-    def []=(r : Int32, c : Int32, v : Float64)
+    def []=(r : Int32, c : Int32, v : Float32)
       idx = r * @cols + c
       case @precision
       when Precision::Int8
         @data_i8.not_nil![idx] = v.round.clamp(-128, 127).to_i8
       when Precision::Fp32
-        @data_f32.not_nil![idx] = v.to_f32
+        @data_f32.not_nil![idx] = v
       when Precision::Fp16
         @data_f16.not_nil![idx] = Float16.new(v)
       when Precision::Bf16
-        @data_bf16.not_nil![idx] = BFloat16.new(v.to_f32)
+        @data_bf16.not_nil![idx] = BFloat16.new(v)
       else
-        @data_f32.not_nil![idx] = v.to_f32
+        @data_f32.not_nil![idx] = v
       end
     end
 
@@ -133,7 +133,7 @@ module SHAInet
         @rows.times do |i|
           @cols.times do |j|
             val = self[i, j].to_f32 + other[i, j].to_f32
-            result[i, j] = val.to_f64
+            result[i, j] = val
           end
         end
       else
@@ -153,7 +153,7 @@ module SHAInet
         @rows.times do |i|
           @cols.times do |j|
             val = self[i, j].to_f32 - other[i, j].to_f32
-            result[i, j] = val.to_f64
+            result[i, j] = val
           end
         end
       else
@@ -176,7 +176,7 @@ module SHAInet
             @cols.times do |k|
               sum += self[i, k].to_f32 * other[k, j].to_f32
             end
-            result[i, j] = sum.to_f64
+            result[i, j] = sum
           end
         end
       else
@@ -200,13 +200,13 @@ module SHAInet
         @rows.times do |i|
           @cols.times do |j|
             val = self[i, j].to_f32 * s
-            result[i, j] = val.to_f64
+            result[i, j] = val
           end
         end
       else
         @rows.times do |i|
           @cols.times do |j|
-            result[i, j] = self[i, j] * scalar.to_f64
+            result[i, j] = self[i, j] * scalar.to_f32
           end
         end
       end
@@ -249,10 +249,10 @@ module SHAInet
     def self.from_a(array : Array(Array(GenNum)), precision : Precision = Precision::Fp32)
       rows = array.size
       cols = array.first.size
-      m = SimpleMatrix.new(rows, cols, 0.0, precision)
+        m = SimpleMatrix.new(rows, cols, 0_f32, precision)
       rows.times do |i|
         cols.times do |j|
-          m[i, j] = array[i][j].to_f64
+            m[i, j] = array[i][j].to_f32
         end
       end
       m
@@ -293,7 +293,7 @@ module SHAInet
     end
 
     # Fill the matrix with random values in the given range
-    def random_fill!(min : Float64 = -0.1, max : Float64 = 0.1)
+    def random_fill!(min : Float32 = -0.1_f32, max : Float32 = 0.1_f32)
       @rows.times do |i|
         @cols.times do |j|
           self[i, j] = rand(min..max)
@@ -347,7 +347,7 @@ module SHAInet
         @rows.times do |i|
           @cols.times do |j|
             val = self[i, j].to_f32 + other[i, j].to_f32
-            self[i, j] = val.to_f64
+            self[i, j] = val
           end
         end
       else
@@ -367,7 +367,7 @@ module SHAInet
         @rows.times do |i|
           @cols.times do |j|
             val = self[i, j].to_f32 + bias[0, j].to_f32
-            self[i, j] = val.to_f64
+            self[i, j] = val
           end
         end
       else
@@ -386,7 +386,7 @@ module SHAInet
         @rows.times do |i|
           @cols.times do |j|
             v = self[i, j].to_f32
-            self[i, j] = (v > 0 ? v : 0.0_f32).to_f64
+            self[i, j] = (v > 0 ? v : 0.0_f32)
           end
         end
       else
@@ -406,7 +406,7 @@ module SHAInet
           @cols.times do |j|
             x = self[i, j].to_f32
             val = 0.5_f32*x*(1.0_f32 + Math.erf(x / Math.sqrt(2.0_f32)))
-            self[i, j] = val.to_f64
+            self[i, j] = val
           end
         end
       else
@@ -421,20 +421,20 @@ module SHAInet
     end
 
     # Apply dropout in-place using the given probability in the range 0.0..1.0.
-    def dropout!(prob : Float64)
+    def dropout!(prob : Float32)
       raise ArgumentError.new("prob must be between 0 and 1") unless 0.0 <= prob && prob <= 1.0
 
       if compute_in_f32?
         @rows.times do |i|
           @cols.times do |j|
             v = self[i, j].to_f32
-            self[i, j] = (Random.rand < prob ? 0.0_f32 : v).to_f64
+            self[i, j] = (Random.rand < prob ? 0.0_f32 : v)
           end
         end
       else
         @rows.times do |i|
           @cols.times do |j|
-            self[i, j] = Random.rand < prob ? 0.0 : self[i, j]
+            self[i, j] = Random.rand < prob ? 0.0_f32 : self[i, j]
           end
         end
       end
@@ -449,7 +449,7 @@ module SHAInet
         @rows.times do |i|
           @cols.times do |j|
             val = self[i, j].to_f32 * vec[0, j].to_f32
-            self[i, j] = val.to_f64
+            self[i, j] = val
           end
         end
       else
@@ -489,7 +489,7 @@ module SHAInet
           a.cols.times do |k|
             sum += a_data[i * a.cols + k].to_i32 * b_data[k * b.cols + j].to_i32
           end
-          result[i, j] = sum.to_f64
+          result[i, j] = sum.to_f32
         end
       end
       result
@@ -505,28 +505,28 @@ module SHAInet
           row_sum = 0.0_f32
           @cols.times do |j|
             val = Math.exp(self[i, j].to_f32 - row_max)
-            self[i, j] = val.to_f64
-            row_sum += val
-          end
-
-          @cols.times do |j|
-            self[i, j] = (self[i, j].to_f32 / row_sum).to_f64
-          end
-        end
-      else
-        @rows.times do |i|
-          row_max = -Float64::INFINITY
-          @cols.times { |j| row_max = Math.max(row_max, self[i, j]) }
-
-          row_sum = 0.0
-          @cols.times do |j|
-            val = Math.exp(self[i, j] - row_max)
             self[i, j] = val
             row_sum += val
           end
 
           @cols.times do |j|
-            self[i, j] = self[i, j] / row_sum
+            self[i, j] = (self[i, j].to_f32 / row_sum)
+          end
+        end
+      else
+        @rows.times do |i|
+          row_max = -Float32::INFINITY
+          @cols.times { |j| row_max = Math.max(row_max, self[i, j].to_f32) }
+
+          row_sum = 0.0_f32
+          @cols.times do |j|
+            val = Math.exp(self[i, j].to_f32 - row_max)
+            self[i, j] = val
+            row_sum += val
+          end
+
+          @cols.times do |j|
+            self[i, j] = self[i, j].to_f32 / row_sum
           end
         end
       end

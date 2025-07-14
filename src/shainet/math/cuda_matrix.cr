@@ -133,7 +133,7 @@ module SHAInet
       @@allocation_sites.clear
     end
 
-    def initialize(@rows : Int32, @cols : Int32, init : Float64 = 0.0,
+    def initialize(@rows : Int32, @cols : Int32, init : Float32 = 0_f32,
                    precision : Precision = Precision::Fp32, device_id : Int32? = nil)
       @precision = precision
       @device_id = device_id || (CUDA.current_device || 0)
@@ -204,33 +204,33 @@ module SHAInet
     end
 
     # Basic matrix access operations
-    def [](row : Int32, col : Int32)
+    def [](row : Int32, col : Int32) : Float32
       # If GPU data is newer, sync it to CPU first
       sync_from_device!("element_access") if device_dirty?
       idx = row * @cols + col
       case @precision
       when Precision::Int8
-        @data_i8.not_nil![idx].to_f64
+        @data_i8.not_nil![idx].to_f32
       when Precision::Fp16, Precision::Bf16, Precision::Fp32
-        @data_f32_master.not_nil![idx].to_f64
+        @data_f32_master.not_nil![idx]
       else
-        @data_f32_master.not_nil![idx].to_f64
+        @data_f32_master.not_nil![idx]
       end
     end
 
-    def []=(row : Int32, col : Int32, value : Float64)
+    def []=(row : Int32, col : Int32, value : Float32)
       idx = row * @cols + col
       case @precision
       when Precision::Int8
         @data_i8.not_nil![idx] = value.round.clamp(-128, 127).to_i8
       when Precision::Fp16
-        @data_f32_master.not_nil![idx] = value.to_f32
+        @data_f32_master.not_nil![idx] = value
         @data_f16.not_nil![idx] = Float16.new(value.to_f32)
       when Precision::Bf16
-        @data_f32_master.not_nil![idx] = value.to_f32
+        @data_f32_master.not_nil![idx] = value
         @data_bf16.not_nil![idx] = BFloat16.new(value.to_f32)
       when Precision::Fp32
-        @data_f32_master.not_nil![idx] = value.to_f32
+        @data_f32_master.not_nil![idx] = value
       else
         @data_f32_master.not_nil![idx] = value.to_f32
       end
@@ -239,42 +239,42 @@ module SHAInet
     end
 
     # Provide a method to access values without syncing (for performance-critical code)
-    def unsafe_get(row : Int32, col : Int32)
+    def unsafe_get(row : Int32, col : Int32) : Float32
       idx = row * @cols + col
       case @precision
       when Precision::Int8
-        @data_i8.not_nil![idx].to_f64
+        @data_i8.not_nil![idx].to_f32
       when Precision::Fp16, Precision::Bf16, Precision::Fp32
-        @data_f32_master.not_nil![idx].to_f64
+        @data_f32_master.not_nil![idx]
       else
-        @data_f32_master.not_nil![idx].to_f64
+        @data_f32_master.not_nil![idx]
       end
     end
 
     # Provide a method to set values without affecting sync state
-    def unsafe_set(row : Int32, col : Int32, value : Float64)
+    def unsafe_set(row : Int32, col : Int32, value : Float32)
       idx = row * @cols + col
       case @precision
       when Precision::Int8
         @data_i8.not_nil![idx] = value.round.clamp(-128, 127).to_i8
       when Precision::Fp16
-        @data_f32_master.not_nil![idx] = value.to_f32
-        @data_f16.not_nil![idx] = Float16.new(value.to_f32)
+        @data_f32_master.not_nil![idx] = value
+        @data_f16.not_nil![idx] = Float16.new(value)
       when Precision::Bf16
-        @data_f32_master.not_nil![idx] = value.to_f32
-        @data_bf16.not_nil![idx] = BFloat16.new(value.to_f32)
+        @data_f32_master.not_nil![idx] = value
+        @data_bf16.not_nil![idx] = BFloat16.new(value)
       when Precision::Fp32
-        @data_f32_master.not_nil![idx] = value.to_f32
+        @data_f32_master.not_nil![idx] = value
       else
-        @data_f32_master.not_nil![idx] = value.to_f32
+        @data_f32_master.not_nil![idx] = value
       end
     end
 
     def self.from_a(array : Array(Array(GenNum)), precision : Precision = Precision::Fp32)
-      m = new(array.size, array.first.size, 0.0, precision)
+      m = new(array.size, array.first.size, 0_f32, precision)
       array.each_with_index do |row, i|
         row.each_with_index do |val, j|
-          m.unsafe_set(i, j, val.to_f64)
+          m.unsafe_set(i, j, val.to_f32)
         end
       end
       m.sync_to_device!("matrix_from_array")
@@ -283,19 +283,19 @@ module SHAInet
 
     def self.zeros(rows : Int32, cols : Int32, precision : Precision = Precision::Fp32)
       # Create new matrix directly - zeros are often used for weight matrices that persist
-      m = new(rows, cols, 0.0, precision)
+      m = new(rows, cols, 0_f32, precision)
       m.zero! # Use optimized GPU zero kernel
       m
     end
 
     def self.ones(rows : Int32, cols : Int32, precision : Precision = Precision::Fp32)
       # Create new matrix directly - ones are often used for weight matrices that persist
-      m = new(rows, cols, 1.0, precision)
-      m.fill!(1.0)
+      m = new(rows, cols, 1_f32, precision)
+      m.fill!(1_f32)
       m
     end
 
-    def random_fill!(min : Float64 = -0.1, max : Float64 = 0.1)
+    def random_fill!(min : Float32 = -0.1_f32, max : Float32 = 0.1_f32)
       @rows.times do |i|
         @cols.times do |j|
           self[i, j] = Random.rand(min..max)
@@ -894,7 +894,7 @@ module SHAInet
     end
 
     # Fill matrix with a constant value in-place.
-    def fill!(value : Float64)
+    def fill!(value : Float32)
       @rows.times do |i|
         @cols.times do |j|
           unsafe_set(i, j, value)
@@ -1168,11 +1168,11 @@ module SHAInet
       sync_from_device!("bulk_to_flat_array") if device_dirty?
       case @precision
       when Precision::Int8
-        @data_i8.not_nil!.dup.map(&.to_f64)
+        @data_i8.not_nil!.dup.map(&.to_f32)
       when Precision::Fp16, Precision::Bf16, Precision::Fp32
-        @data_f32_master.not_nil!.dup.map(&.to_f64)
+        @data_f32_master.not_nil!.dup
       else
-        @data_f32_master.not_nil!.dup.map(&.to_f64)
+        @data_f32_master.not_nil!
       end
     end
 
@@ -1191,15 +1191,15 @@ module SHAInet
       self
     end
 
-    # Return matrix data as `Array(Float64)` for compatibility.
+    # Return matrix data as `Array(Float32)` for compatibility.
     # For non-`Fp32` precisions this allocates and converts values,
     # so use `raw_data_buffer` when direct mutable access is needed.
     def raw_data
       case @precision
       when Precision::Int8
-        @data_i8.not_nil!.map(&.to_f64)
+        @data_i8.not_nil!.map(&.to_f32)
       when Precision::Fp16, Precision::Bf16, Precision::Fp32
-        @data_f32_master.not_nil!.map(&.to_f64)
+        @data_f32_master.not_nil!
       else
         @data_f32_master.not_nil!
       end

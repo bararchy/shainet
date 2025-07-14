@@ -441,7 +441,7 @@ module SHAInet
       rows.times do |i|
         denom = Math.sqrt(var_cpu[i, 0] + @epsilon)
         inv = 1.0 / denom
-        col_f = cols.to_f64
+        col_f = cols.to_f32
         sum_dout_gamma = 0.0
         sum_dout_gamma_norm = 0.0
         cols.times do |j|
@@ -486,7 +486,7 @@ module SHAInet
       rows.times do |i|
         denom = Math.sqrt(@var[i, 0] + @epsilon)
         inv = 1.0 / denom
-        col_f = cols.to_f64
+        col_f = cols.to_f32
         sum_dout_gamma = 0.0
         sum_dout_gamma_norm = 0.0
         cols.times do |j|
