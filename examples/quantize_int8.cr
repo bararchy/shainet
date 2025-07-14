@@ -5,10 +5,10 @@ ENV["SHAINET_DISABLE_CUDA"] = "1"
 
 # XOR training data
 DATA = [
-  [[0.0, 0.0], [0.0]],
-  [[1.0, 0.0], [1.0]],
-  [[0.0, 1.0], [1.0]],
-  [[1.0, 1.0], [0.0]],
+  [[0.0_f32, 0.0_f32], [0.0_f32]],
+  [[1.0_f32, 0.0_f32], [1.0_f32]],
+  [[0.0_f32, 1.0_f32], [1.0_f32]],
+  [[1.0_f32, 1.0_f32], [0.0_f32]],
 ]
 
 # Build a tiny network
@@ -28,10 +28,10 @@ net.train(
 )
 
 # Inference before quantization
-puts "Full precision output: #{net.run([1.0, 0.0])[0]}"
+puts "Full precision output: #{net.run([1.0_f32, 0.0_f32])[0]}"
 
 # Quantize weights and switch to INT8 inference
 net.quantize_int8!
 net.precision = SHAInet::Precision::Int8
 
-puts "INT8 output: #{net.run([1.0, 0.0])[0]}"
+puts "INT8 output: #{net.run([1.0_f32, 0.0_f32])[0]}"

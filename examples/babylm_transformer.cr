@@ -172,11 +172,11 @@ net.train(data: train_data,
 
 # Validation after training is complete
 puts "Training complete. Running validation..."
-val_loss = 0.0
+val_loss = 0.0_f32
 count = 0
 
 while (val_batch = val_data.next_batch(val_batch_size)).size > 0
-  total_batch_loss = 0.0
+  total_batch_loss = 0.0_f32
 
   val_batch.each do |sample|
     # sample is likely an Array: [input, target], but input can be various types
@@ -235,7 +235,7 @@ while (val_batch = val_data.next_batch(val_batch_size)).size > 0
 
     # Use native softmax - it's already optimized
     probs = SHAInet.softmax(output_vec)
-    total_batch_loss += -Math.log(probs[target_id].clamp(1e-9, 1.0))
+    total_batch_loss += -Math.log(probs[target_id].clamp(1e-9_f32, 1.0_f32))
     count += 1
   end
 
