@@ -71,7 +71,9 @@ tk = 10
 # Top-p: sample from the smallest set of tokens with cumulative probability >= 0.9
 tp = 0.9_f32
 # network precision: Use Fp16 for better GPU performance, Fp32 for compatibility
-precision = SHAInet::Precision::Fp32
+precision = SHAInet::Precision::Fp16
+# prefetch_workers: Number of workers to prefetch batches in the background
+prefetch_workers = 4
 
 puts "Reading dataset from #{path}..."
 text = File.read(path)
@@ -160,8 +162,8 @@ puts "Expected training sequences: #{train_ids.size - seq_len}"
 puts "Expected validation sequences: #{val_ids.size - seq_len}"
 
 # Data loader now expects {"input": [...], "target": ...} format.
-train_data = SHAInet::BinaryStreamingData.new(train_file, seq_len, shuffle: true, gpu_batches: true)
-val_data = SHAInet::BinaryStreamingData.new(val_file, seq_len, gpu_batches: true)
+train_data = SHAInet::BinaryStreamingData.new(train_file, seq_len, shuffle: true, gpu_batches: true, prefetch_workers: prefetch_workers)
+val_data = SHAInet::BinaryStreamingData.new(val_file, seq_len, gpu_batches: true, prefetch_workers: prefetch_workers)
 
 puts "Training the network for #{epochs} epochs with batch size #{batch}..."
 # Train for all epochs at once with proper logging

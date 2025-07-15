@@ -971,7 +971,7 @@ module SHAInet
     end
 
     # Clean matrix-based training method
-    def train(data : Array(Array) | SHAInet::TrainingData | SHAInet::StreamingData,
+    def train(data : Array(Array) | TrainingData | StreamingData | BinaryStreamingData,
               training_type : Symbol | String = :sgdm,
               cost_function : Symbol | String | CostFunction = :mse,
               epochs : Int32 = 1,
@@ -986,7 +986,7 @@ module SHAInet
               devices : Array(Int32) = [] of Int32)
       verify_net_before_train
 
-      stream = data.is_a?(SHAInet::StreamingData) ? data : nil
+      stream = (data.is_a?(StreamingData) || data.is_a?(BinaryStreamingData)) ? data : nil
       if data.is_a?(SHAInet::TrainingData) && data.preload_gpu? && CUDA.fully_available?
         data.preload_gpu!(self.precision)
       end
