@@ -161,6 +161,53 @@ module SHAInet
       dest
     end
 
+    # Optimized copy for a 1D Array(Float32)
+    def to_gpu!(src : Array(Float32), dest : CudaMatrix, stream : CUDA::Stream? = nil)
+      return dest unless CUDA.fully_available?
+      raise ArgumentError.new("size mismatch") unless dest.rows == 1 && dest.cols == src.size
+
+      if dest.precision == Precision::Fp32
+        buf = dest.raw_data_buffer
+        bytes = src.size * 4
+        buf.copy_from(Slice(UInt8).new(src.to_unsafe.as(UInt8*), bytes))
+      else
+        src.each_with_index do |v, idx|
+          dest[0, idx] = v
+        end
+      end
+
+      dest.sync_to_device!("to_gpu!", stream)
+      dest
+    end
+
+    # Optimized copy for a 2D Array(Float32)
+    def to_gpu!(src : Array(Array(Float32)), dest : CudaMatrix, stream : CUDA::Stream? = nil)
+      return dest unless CUDA.fully_available?
+
+      rows = src.size
+      cols = src[0].size
+      raise ArgumentError.new("size mismatch") unless dest.rows == rows && dest.cols == cols
+
+      if dest.precision == Precision::Fp32
+        dest_buf = dest.raw_data_buffer
+        offset = 0
+        src.each do |row|
+          row_bytes = row.size * 4
+          dest_buf[offset, row_bytes].copy_from(Slice(UInt8).new(row.to_unsafe.as(UInt8*), row_bytes))
+          offset += row_bytes
+        end
+      else
+        rows.times do |i|
+          cols.times do |j|
+            dest[i, j] = src[i][j]
+          end
+        end
+      end
+
+      dest.sync_to_device!("to_gpu!", stream)
+      dest
+    end
+
     # Build a batched matrix from a list of `SimpleMatrix` rows without
     # iterating over each element. When the destination is a `CudaMatrix`
     # and CUDA is available, pinned host memory is used for faster

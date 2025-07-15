@@ -94,6 +94,30 @@ module SHAInet
       end
     end
 
+    # Convert input object to Array(Array(Float32)) for GPU batch processing
+    private def to_f32_rows(obj) : Array(Array(Float32))
+      case obj
+      when SimpleMatrix
+        obj.to_a
+      when CudaMatrix
+        obj.to_simple.to_a
+      else
+        arr = obj.as(Array)
+        first = arr.size > 0 ? arr[0] : nil
+
+        if first && first.is_a?(Array)
+          result = [] of Array(Float32)
+          arr.each do |row|
+            r = row.as(Array)
+            result << r.map { |v| v.as(GenNum).to_f32 }
+          end
+          result
+        else
+          [arr.map { |v| v.as(GenNum).to_f32 }]
+        end
+      end
+    end
+
     # Run an input through the network to get an output (weights & biases do not change)
     # Simple wrapper that converts array input to matrix and calls the core matrix method
     def run(input : Array(GenNum), stealth : Bool = false) : Array(Float32)
@@ -1201,6 +1225,8 @@ module SHAInet
 
       input_parts = [] of SimpleMatrix
       expected_parts = [] of SimpleMatrix
+      gpu_inputs = [] of Array(Float32)
+      gpu_expected = [] of Array(Float32)
 
       batch.each do |sample|
         input_data = sample[0]
@@ -1216,24 +1242,29 @@ module SHAInet
           end
         end
 
-        src_in = to_simple_matrix(input_data)
-        src_out = to_simple_matrix(expected_output)
+        if input_matrix.is_a?(CudaMatrix)
+          gpu_inputs.concat(to_f32_rows(input_data))
+          gpu_expected.concat(to_f32_rows(expected_output))
+        else
+          src_in = to_simple_matrix(input_data)
+          src_out = to_simple_matrix(expected_output)
 
-        input_parts << src_in
-        expected_parts << src_out
+          input_parts << src_in
+          expected_parts << src_out
+        end
       end
 
       stream = CUDA.fully_available? ? CUDA.stream_create : nil
 
       if input_matrix.is_a?(CudaMatrix)
-        GPUMemory.build_batch!(input_parts, input_matrix.as(CudaMatrix), stream)
+        GPUMemory.to_gpu!(gpu_inputs, input_matrix.as(CudaMatrix), stream)
       else
         GPUMemory.build_batch!(input_parts, cpu_input)
         input_matrix = cpu_input
       end
 
       if expected_matrix.is_a?(CudaMatrix)
-        GPUMemory.build_batch!(expected_parts, expected_matrix.as(CudaMatrix), stream)
+        GPUMemory.to_gpu!(gpu_expected, expected_matrix.as(CudaMatrix), stream)
       else
         GPUMemory.build_batch!(expected_parts, cpu_expected)
         expected_matrix = cpu_expected
