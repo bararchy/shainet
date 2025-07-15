@@ -321,7 +321,23 @@ module SHAInet
       raise "CUDA kernels not available"
     end
 
+    def slice_cols_fp16(*args)
+      raise "CUDA kernels not available"
+    end
+
+    def slice_cols_bf16(*args)
+      raise "CUDA kernels not available"
+    end
+
     def set_cols(*args)
+      raise "CUDA kernels not available"
+    end
+
+    def set_cols_fp16(*args)
+      raise "CUDA kernels not available"
+    end
+
+    def set_cols_bf16(*args)
       raise "CUDA kernels not available"
     end
 

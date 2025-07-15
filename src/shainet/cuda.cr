@@ -715,7 +715,11 @@ module SHAInet
     @@gather_rows_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Pointer(Int32), Int32, Int32, Void)? = nil
     @@gather_rows_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Pointer(Int32), Int32, Int32, Void)? = nil
     @@slice_cols_proc : Proc(Pointer(Float32), Pointer(Float32), Int32, Int32, Int32, Int32, Void)? = nil
+    @@slice_cols_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Int32, Int32, Void)? = nil
+    @@slice_cols_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Int32, Int32, Void)? = nil
     @@set_cols_proc : Proc(Pointer(Float32), Pointer(Float32), Int32, Int32, Int32, Int32, Void)? = nil
+    @@set_cols_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Int32, Int32, Void)? = nil
+    @@set_cols_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Int32, Int32, Void)? = nil
     @@row_mean_var_proc : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
     @@row_mean_var_fp16_proc : Proc(Pointer(UInt16), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
     @@row_mean_var_bf16_proc : Proc(Pointer(UInt16), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
@@ -1094,6 +1098,40 @@ module SHAInet
       end
     end
 
+    def slice_cols_fp16(dst : Pointer(UInt16), src : Pointer(UInt16), rows : Int32, src_cols : Int32, start_col : Int32, len : Int32)
+      unless fn = @@slice_cols_fp16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "slice_cols_fp16")
+          unless sym.null?
+            @@slice_cols_fp16_proc = Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@slice_cols_fp16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(dst, src, rows, src_cols, start_col, len)
+    end
+
+    def slice_cols_bf16(dst : Pointer(UInt16), src : Pointer(UInt16), rows : Int32, src_cols : Int32, start_col : Int32, len : Int32)
+      unless fn = @@slice_cols_bf16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "slice_cols_bf16")
+          unless sym.null?
+            @@slice_cols_bf16_proc = Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@slice_cols_bf16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(dst, src, rows, src_cols, start_col, len)
+    end
+
     def set_cols(dst : Pointer(Float32), src : Pointer(Float32), rows : Int32, dst_cols : Int32, start_col : Int32, len : Int32)
       # Validate inputs
       if dst.null? || src.null? || rows <= 0 || dst_cols <= 0 || len <= 0 || start_col < 0 || (start_col + len) > dst_cols
@@ -1121,6 +1159,40 @@ module SHAInet
         Log.error { "CUDA Error in set_cols: #{e}" }
         raise e
       end
+    end
+
+    def set_cols_fp16(dst : Pointer(UInt16), src : Pointer(UInt16), rows : Int32, dst_cols : Int32, start_col : Int32, len : Int32)
+      unless fn = @@set_cols_fp16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "set_cols_fp16")
+          unless sym.null?
+            @@set_cols_fp16_proc = Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@set_cols_fp16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(dst, src, rows, dst_cols, start_col, len)
+    end
+
+    def set_cols_bf16(dst : Pointer(UInt16), src : Pointer(UInt16), rows : Int32, dst_cols : Int32, start_col : Int32, len : Int32)
+      unless fn = @@set_cols_bf16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "set_cols_bf16")
+          unless sym.null?
+            @@set_cols_bf16_proc = Proc(Pointer(UInt16), Pointer(UInt16), Int32, Int32, Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@set_cols_bf16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(dst, src, rows, dst_cols, start_col, len)
     end
 
     def row_mean_var(src : Pointer(Float32), mean : Pointer(Float32), var : Pointer(Float32), rows : Int32, cols : Int32)

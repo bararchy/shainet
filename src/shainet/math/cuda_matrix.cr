@@ -509,10 +509,23 @@ module SHAInet
       # Ensure source data is on the GPU
       self.sync_to_device!("slice_cols_into") unless device_dirty?
 
-      CUDA.slice_cols(
-        dptr.as(Pointer(Float32)),
-        sptr.as(Pointer(Float32)),
-        @rows, @cols, start_col, length)
+      case @precision
+      when Precision::Fp16
+        CUDA.slice_cols_fp16(
+          dptr.as(CUDA::UInt16Ptr),
+          sptr.as(CUDA::UInt16Ptr),
+          @rows, @cols, start_col, length)
+      when Precision::Bf16
+        CUDA.slice_cols_bf16(
+          dptr.as(CUDA::UInt16Ptr),
+          sptr.as(CUDA::UInt16Ptr),
+          @rows, @cols, start_col, length)
+      else
+        CUDA.slice_cols(
+          dptr.as(Pointer(Float32)),
+          sptr.as(Pointer(Float32)),
+          @rows, @cols, start_col, length)
+      end
 
       dest.mark_device_dirty!
       dest
@@ -538,10 +551,23 @@ module SHAInet
       self.sync_to_device!("set_cols") unless device_dirty?
       other.sync_to_device!("set_cols") unless other.device_dirty?
 
-      CUDA.set_cols(
-        dptr.as(Pointer(Float32)),
-        sptr.as(Pointer(Float32)),
-        @rows, @cols, start_col, other.cols)
+      case @precision
+      when Precision::Fp16
+        CUDA.set_cols_fp16(
+          dptr.as(CUDA::UInt16Ptr),
+          sptr.as(CUDA::UInt16Ptr),
+          @rows, @cols, start_col, other.cols)
+      when Precision::Bf16
+        CUDA.set_cols_bf16(
+          dptr.as(CUDA::UInt16Ptr),
+          sptr.as(CUDA::UInt16Ptr),
+          @rows, @cols, start_col, other.cols)
+      else
+        CUDA.set_cols(
+          dptr.as(Pointer(Float32)),
+          sptr.as(Pointer(Float32)),
+          @rows, @cols, start_col, other.cols)
+      end
 
       # Mark self as having newer GPU data
       mark_device_dirty!
