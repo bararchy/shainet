@@ -61,24 +61,35 @@ module SHAInet
         obj.to_simple
       else
         arr = obj.as(Array)
-        if arr.size > 0 && arr[0].is_a?(Array)
-          rows = arr.size
-          cols = arr[0].as(Array).size
-          sm = SimpleMatrix.new(rows, cols, 0.0_f32, @precision)
-          rows.times do |i|
-            row = arr[i].as(Array)
-            cols.times do |j|
-              sm[i, j] = convert_num(row[j].as(GenNum)).to_f32
+        first = arr.size > 0 ? arr[0] : nil
+
+        if first && first.is_a?(Array)
+          if arr.is_a?(Array(Array(Float32)))
+            SimpleMatrix.from_a(arr.as(Array(Array(Float32))), @precision)
+          else
+            rows = arr.size
+            cols = first.as(Array).size
+            sm = SimpleMatrix.new(rows, cols, 0.0_f32, @precision)
+            rows.times do |i|
+              row = arr[i].as?(Array).not_nil!
+              cols.times do |j|
+                sm[i, j] = convert_num(row[j].as(GenNum)).to_f32
+              end
             end
+            sm
           end
-          sm
         else
-          cols = arr.size
-          sm = SimpleMatrix.new(1, cols, 0.0_f32, @precision)
-          cols.times do |j|
-            sm[0, j] = convert_num(arr[j].as(GenNum)).to_f32
+          if arr.is_a?(Array(Float32))
+            SimpleMatrix.from_a([arr.as(Array(Float32))], @precision)
+          else
+            cols = arr.size
+            sm = SimpleMatrix.new(1, cols, 0.0_f32, @precision)
+            cols.times do |j|
+              val = arr[j].as?(GenNum).not_nil!
+              sm[0, j] = convert_num(val).to_f32
+            end
+            sm
           end
-          sm
         end
       end
     end
