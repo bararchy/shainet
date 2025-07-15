@@ -36,18 +36,21 @@ module SHAInet
     # devices. Repeated calls without a device change keep the existing
     # workspaces to avoid unnecessary allocations.
 
-    def initialize(d_model : Int32, epsilon : Float32 = 1e-5)
+    property precision : Precision
+
+    def initialize(d_model : Int32, epsilon : Float32 = 1e-5, *, precision : Precision = Precision::Fp32)
+      @precision = precision
       # Use CudaMatrix when CUDA is available for better performance
       mat_klass = CUDA.fully_available? ? CudaMatrix : SimpleMatrix
-      @gamma = mat_klass.new(1, d_model)
+      @gamma = mat_klass.new(1, d_model, 0.0_f32, precision)
       d_model.times { |j| @gamma[0, j] = 1.0 }
-      @beta = mat_klass.zeros(1, d_model)
-      @g_gamma = mat_klass.zeros(1, d_model)
-      @g_beta = mat_klass.zeros(1, d_model)
+      @beta = mat_klass.zeros(1, d_model, precision)
+      @g_gamma = mat_klass.zeros(1, d_model, precision)
+      @g_beta = mat_klass.zeros(1, d_model, precision)
       @epsilon = epsilon
-      @mean = mat_klass.zeros(1, 1)
-      @var = mat_klass.zeros(1, 1)
-      @norm = mat_klass.zeros(1, 1)
+      @mean = mat_klass.zeros(1, 1, precision)
+      @var = mat_klass.zeros(1, 1, precision)
+      @norm = mat_klass.zeros(1, 1, precision)
       @d_model = d_model
       @last_batch_size = 0
 

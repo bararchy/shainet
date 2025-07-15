@@ -22,12 +22,13 @@ module SHAInet
 
     def initialize(d_model : Int32, num_heads : Int32, ff_hidden : Int32,
                    drop_percent : Int32 = 0, pre_norm : Bool = false,
-                   ff_activation : ActivationFunction = SHAInet.relu)
-      super(d_model, SHAInet.none)
-      @mha = MultiHeadAttention.new(d_model, num_heads)
-      @ffn = PositionWiseFF.new(d_model, ff_hidden, ff_activation)
-      @norm1 = LayerNorm.new(d_model)
-      @norm2 = LayerNorm.new(d_model)
+                   ff_activation : ActivationFunction = SHAInet.relu,
+                   *, precision : Precision = Precision::Fp32)
+      super(d_model, SHAInet.none, precision: precision)
+      @mha = MultiHeadAttention.new(d_model, num_heads, precision: precision)
+      @ffn = PositionWiseFF.new(d_model, ff_hidden, ff_activation, precision: precision)
+      @norm1 = LayerNorm.new(d_model, precision: precision)
+      @norm2 = LayerNorm.new(d_model, precision: precision)
       @positional_encoding = nil
       @drop_percent = drop_percent
       @pre_norm = pre_norm
