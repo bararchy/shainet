@@ -81,7 +81,7 @@ module SHAInet
     def dropout(drop_percent : Int32)
       raise ArgumentError.new("drop_percent must be between 0 and 100") unless 0 <= drop_percent <= 100
       result = CudaMatrix.new(@rows, @cols, 0.0, @precision)
-      prob = drop_percent.to_f / 100.0
+      prob = drop_percent.to_f32 / 100.0_f32
       if CUDA.fully_available? && (dptr = self.device_ptr) && !dptr.null? && (rptr = result.device_ptr) && !rptr.null?
         seed = Random.rand(UInt64)
         begin

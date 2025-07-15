@@ -397,7 +397,7 @@ module SHAInet
       @@sync_sources.clear
     end
 
-    def sync_to_device!(source : String = "unknown")
+    def sync_to_device!(source : String = "unknown", stream : CUDA::Stream? = nil)
       return unless dptr = @device_ptr
       return if dptr.null?
 
@@ -429,7 +429,11 @@ module SHAInet
               else
                 @data_f32_master.not_nil!.to_unsafe.as(Pointer(Void))
               end
-        copy_result = CUDA.memcpy(dptr.as(Pointer(Void)), ptr, bytes, CUDA::MemcpyKind::HostToDevice)
+        copy_result = if stream
+                        CUDA.memcpy_async(dptr.as(Pointer(Void)), ptr, bytes, CUDA::MemcpyKind::HostToDevice, stream)
+                      else
+                        CUDA.memcpy(dptr.as(Pointer(Void)), ptr, bytes, CUDA::MemcpyKind::HostToDevice)
+                      end
 
         if copy_result != 0
           Log.error { "CudaMatrix.sync_to_device!: GPU memcpy failed with result #{copy_result} for #{@rows}x#{@cols}" }
@@ -443,7 +447,7 @@ module SHAInet
       end
     end
 
-    def sync_from_device!(source : String = "unknown")
+    def sync_from_device!(source : String = "unknown", stream : CUDA::Stream? = nil)
       return unless dptr = @device_ptr
       return if dptr.null?
       return unless device_dirty? # Only sync if GPU data is newer
@@ -479,7 +483,11 @@ module SHAInet
                     else
                       {@data_f32_master.not_nil!.to_unsafe.as(Pointer(Void)), -> { }}
                     end
-        copy_result = CUDA.memcpy(ptr, dptr.as(Pointer(Void)), bytes, CUDA::MemcpyKind::DeviceToHost)
+        copy_result = if stream
+                        CUDA.memcpy_async(ptr, dptr.as(Pointer(Void)), bytes, CUDA::MemcpyKind::DeviceToHost, stream)
+                      else
+                        CUDA.memcpy(ptr, dptr.as(Pointer(Void)), bytes, CUDA::MemcpyKind::DeviceToHost)
+                      end
 
         if copy_result == 0
           post.call

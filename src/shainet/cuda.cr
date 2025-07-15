@@ -6,14 +6,20 @@ module SHAInet
     extend self
 
     alias UInt16Ptr = Pointer(UInt16)
+    alias Stream = LibCUDARuntime::Stream
 
     # :nodoc:
     @[Link("cudart")]
     lib LibCUDARuntime
+      type Stream = Void*
+
       fun cudaRuntimeGetVersion(version : Pointer(Int32)) : Int32
       fun cudaMalloc(ptr : Pointer(Pointer(Void)), size : LibC::SizeT) : Int32
       fun cudaFree(ptr : Pointer(Void)) : Int32
       fun cudaMemcpy(dst : Pointer(Void), src : Pointer(Void), count : LibC::SizeT, kind : Int32) : Int32
+      fun cudaMemcpyAsync(dst : Pointer(Void), src : Pointer(Void), count : LibC::SizeT, kind : Int32, stream : Stream) : Int32
+      fun cudaStreamCreate(stream : Pointer(Stream)) : Int32
+      fun cudaStreamSynchronize(stream : Stream) : Int32
       fun cudaMallocHost(ptr : Pointer(Pointer(Void)), size : LibC::SizeT) : Int32
       fun cudaFreeHost(ptr : Pointer(Void)) : Int32
       fun cudaMemGetInfo(free : Pointer(LibC::SizeT), total : Pointer(LibC::SizeT)) : Int32
@@ -44,6 +50,8 @@ module SHAInet
 
       fun cublasCreate_v2(handle : Pointer(Handle)) : Int32
       fun cublasDestroy_v2(handle : Handle) : Int32
+      fun cublasSetStream_v2(handle : Handle, stream : LibCUDARuntime::Stream) : Int32
+      fun cublasGetStream_v2(handle : Handle, stream : Pointer(LibCUDARuntime::Stream)) : Int32
       fun cublasDgemm_v2(handle : Handle, transa : Int32, transb : Int32,
                          m : Int32, n : Int32, k : Int32,
                          alpha : Pointer(Float32), a : Pointer(Float32), lda : Int32,
@@ -359,6 +367,21 @@ module SHAInet
       LibCUDARuntime.cudaMemcpy(dst, src, bytes, kind.value)
     end
 
+    def memcpy_async(dst : Pointer(Void), src : Pointer(Void), bytes : LibC::SizeT, kind : MemcpyKind, stream : LibCUDARuntime::Stream) : Int32
+      LibCUDARuntime.cudaMemcpyAsync(dst, src, bytes, kind.value, stream)
+    end
+
+    def stream_create : LibCUDARuntime::Stream
+      stream = Pointer(Void).null.as(LibCUDARuntime::Stream)
+      res = LibCUDARuntime.cudaStreamCreate(pointerof(stream))
+      raise "cudaStreamCreate failed" unless res.zero?
+      stream
+    end
+
+    def stream_synchronize(stream : LibCUDARuntime::Stream)
+      LibCUDARuntime.cudaStreamSynchronize(stream)
+    end
+
     def copy_device_to_device(dst : Pointer(Void), src : Pointer(Void), bytes : LibC::SizeT) : Int32
       result = memcpy(dst, src, bytes, MemcpyKind::DeviceToDevice)
       unless result.zero?
@@ -436,15 +459,18 @@ module SHAInet
     @@loss_buffer : Pointer(Float32) = Pointer(Float32).null
     @@loss_buffer_mutex = Mutex.new
 
-    def create_handle
+    def create_handle(stream : Stream? = nil)
       @@handle_pool_mutex.synchronize do
         if !@@handle_pool.empty?
-          return @@handle_pool.pop
+          handle = @@handle_pool.pop
+          LibCUBLAS.cublasSetStream_v2(handle, stream) if stream
+          return handle
         end
       end
 
       handle = uninitialized LibCUBLAS::Handle
       raise "cublasCreate failed" unless LibCUBLAS.cublasCreate_v2(pointerof(handle)) == 0
+      LibCUBLAS.cublasSetStream_v2(handle, stream) if stream
       handle
     end
 
@@ -457,6 +483,16 @@ module SHAInet
       end
 
       LibCUBLAS.cublasDestroy_v2(handle)
+    end
+
+    def set_handle_stream(handle : LibCUBLAS::Handle, stream : Stream)
+      LibCUBLAS.cublasSetStream_v2(handle, stream)
+    end
+
+    def get_handle_stream(handle : LibCUBLAS::Handle)
+      stream = Pointer(Void).null.as(Stream)
+      LibCUBLAS.cublasGetStream_v2(handle, pointerof(stream))
+      stream
     end
 
     # Cleanup all pooled handles
@@ -1796,8 +1832,8 @@ module SHAInet
 
     # Add a bias row vector to each row of a matrix in GPU memory.
     # Uses multiple AXPY operations instead of DGER to avoid row-major/column-major issues.
-    def add_bias(mat : Pointer(Float32), bias : Pointer(Float32), rows : Int32, cols : Int32)
-      handle = create_handle
+    def add_bias(mat : Pointer(Float32), bias : Pointer(Float32), rows : Int32, cols : Int32, stream : Stream? = nil)
+      handle = create_handle(stream)
 
       # Add bias to each row using AXPY: row_i += 1.0 * bias
       rows.times do |i|
@@ -1817,7 +1853,7 @@ module SHAInet
     # of the layout mismatch.  Instead, use repeated AXPY operations on each
     # row which works regardless of the underlying memory layout and avoids
     # creating temporary matrices.
-    def row_sum(dst : Pointer(Float32), src : Pointer(Float32), rows : Int32, cols : Int32)
+    def row_sum(dst : Pointer(Float32), src : Pointer(Float32), rows : Int32, cols : Int32, stream : Stream? = nil)
       unless fn = @@row_sum_proc
         if @@kernels_handle.null?
           @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
@@ -1840,7 +1876,7 @@ module SHAInet
         end
       end
 
-      handle = create_handle
+      handle = create_handle(stream)
       rows.times do |i|
         row_start = src + (i * cols)
         axpy(handle, 1.0, row_start, dst, cols)

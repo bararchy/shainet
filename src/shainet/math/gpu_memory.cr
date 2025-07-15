@@ -57,7 +57,7 @@ module SHAInet
     end
 
     # Convert SimpleMatrix to CudaMatrix if CUDA is available and input is not already CudaMatrix
-    def to_gpu(matrix : SimpleMatrix, dest : CudaMatrix? = nil)
+    def to_gpu(matrix : SimpleMatrix, dest : CudaMatrix? = nil, stream : CUDA::Stream? = nil)
       return matrix if matrix.is_a?(CudaMatrix) || !CUDA.fully_available?
 
       target = dest || CudaMatrix.new(
@@ -66,12 +66,12 @@ module SHAInet
         device_id: CUDA.current_device || 0,
         precision: matrix.precision
       )
-      to_gpu!(matrix, target)
+      to_gpu!(matrix, target, stream)
     end
 
     # Copy values from +src+ into existing GPU matrix +dest+
     # Handles precision conversion on the CPU before syncing to the GPU.
-    def to_gpu!(src : SimpleMatrix, dest : CudaMatrix)
+    def to_gpu!(src : SimpleMatrix, dest : CudaMatrix, stream : CUDA::Stream? = nil)
       raise ArgumentError.new("size mismatch") unless src.rows == dest.rows && src.cols == dest.cols
 
       return dest unless CUDA.fully_available?
@@ -79,7 +79,7 @@ module SHAInet
       buf = src.raw_data_buffer
       bytes = buf.size.to_u64
       if (dptr = dest.device_ptr) && !dptr.null?
-        res = CUDA.memcpy(dptr.as(Pointer(Void)), buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
+        res = stream ? CUDA.memcpy_async(dptr.as(Pointer(Void)), buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice, stream) : CUDA.memcpy(dptr.as(Pointer(Void)), buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
         if res == 0
           dest.mark_device_dirty!
           return dest
@@ -92,21 +92,21 @@ module SHAInet
         end
       end
 
-      dest.sync_to_device!("to_gpu!")
+      dest.sync_to_device!("to_gpu!", stream)
       dest
     end
 
     # Copy data from +matrix+ into an existing CudaMatrix +dest+
     # and sync it to the device. The destination must have the
     # same dimensions as the source.
-    def to_gpu!(matrix : SimpleMatrix, dest : CudaMatrix)
+    def to_gpu!(matrix : SimpleMatrix, dest : CudaMatrix, stream : CUDA::Stream? = nil)
       return dest unless CUDA.fully_available?
       raise ArgumentError.new("size mismatch") unless matrix.rows == dest.rows && matrix.cols == dest.cols
 
       buf = matrix.raw_data_buffer
       bytes = buf.size.to_u64
       if (dptr = dest.device_ptr) && !dptr.null?
-        res = CUDA.memcpy(dptr.as(Pointer(Void)), buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
+        res = stream ? CUDA.memcpy_async(dptr.as(Pointer(Void)), buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice, stream) : CUDA.memcpy(dptr.as(Pointer(Void)), buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
         if res == 0
           dest.mark_device_dirty!
           return dest
@@ -119,12 +119,12 @@ module SHAInet
         end
       end
 
-      dest.sync_to_device!("to_gpu!")
+      dest.sync_to_device!("to_gpu!", stream)
       dest
     end
 
     # Fill a CudaMatrix from a 1D array (treated as a row vector)
-    def to_gpu!(array : Array(GenNum), dest : CudaMatrix)
+    def to_gpu!(array : Array(GenNum), dest : CudaMatrix, stream : CUDA::Stream? = nil)
       return dest unless CUDA.fully_available?
       raise ArgumentError.new("size mismatch") unless dest.rows == 1 && dest.cols == array.size
 
@@ -132,12 +132,12 @@ module SHAInet
         dest[0, idx] = val.to_f32
       end
 
-      dest.sync_to_device!("to_gpu!")
+      dest.sync_to_device!("to_gpu!", stream)
       dest
     end
 
     # Fill a CudaMatrix from a 2D array
-    def to_gpu!(array : Array(Array(GenNum)), dest : CudaMatrix)
+    def to_gpu!(array : Array(Array(GenNum)), dest : CudaMatrix, stream : CUDA::Stream? = nil)
       return dest unless CUDA.fully_available?
       rows = array.size
       cols = array[0].as(Array).size
@@ -149,7 +149,7 @@ module SHAInet
         end
       end
 
-      dest.sync_to_device!("to_gpu!")
+      dest.sync_to_device!("to_gpu!", stream)
       dest
     end
 

@@ -667,13 +667,13 @@ module SHAInet
       predicted.sync_from_device!("xent_pred") if predicted.device_dirty?
       target.sync_from_device!("xent_target") if target.device_dirty?
 
-      loss = 0.0
+      loss = 0.0_f32
       predicted.rows.times do |i|
         predicted.cols.times do |j|
-          p = predicted.unsafe_get(i, j).to_f32.clamp(1e-15, 1.0)
+          p = predicted.unsafe_get(i, j).to_f32.clamp(1e-15_f32, 1.0_f32)
           t = target.unsafe_get(i, j).to_f32
           grad_output.unsafe_set(i, j, p - t)
-          loss += -t * Math.log(p)
+          loss += -t * Math.log(p).to_f32
         end
       end
 
@@ -707,9 +707,9 @@ module SHAInet
         target.sync_to_device! unless target.device_dirty?
         grad_output.sync_to_device! unless grad_output.device_dirty?
         result = CUDA.cross_entropy_loss_gradient_fp16(
-          predicted.device_ptr.not_nil!.as(UInt16Ptr),
-          target.device_ptr.not_nil!.as(UInt16Ptr),
-          grad_output.device_ptr.not_nil!.as(UInt16Ptr),
+          predicted.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
+          target.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
+          grad_output.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
           loss_output,
           predicted.rows,
           predicted.cols
@@ -722,9 +722,9 @@ module SHAInet
         target.sync_to_device! unless target.device_dirty?
         grad_output.sync_to_device! unless grad_output.device_dirty?
         result = CUDA.cross_entropy_loss_gradient_bf16(
-          predicted.device_ptr.not_nil!.as(UInt16Ptr),
-          target.device_ptr.not_nil!.as(UInt16Ptr),
-          grad_output.device_ptr.not_nil!.as(UInt16Ptr),
+          predicted.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
+          target.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
+          grad_output.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
           loss_output,
           predicted.rows,
           predicted.cols
@@ -737,13 +737,13 @@ module SHAInet
       predicted.sync_from_device!("cross_entropy_pred") if predicted.device_dirty?
       target.sync_from_device!("cross_entropy_target") if target.device_dirty?
 
-      loss = 0.0
+      loss = 0.0_f32
       predicted.rows.times do |i|
         predicted.cols.times do |j|
-          p = predicted.unsafe_get(i, j).to_f32.clamp(1e-15, 1.0)
+          p = predicted.unsafe_get(i, j).to_f32.clamp(1e-15_f32, 1.0_f32)
           t = target.unsafe_get(i, j).to_f32
           grad_output.unsafe_set(i, j, p - t)
-          loss += -t * Math.log(p)
+          loss += -t * Math.log(p).to_f32
         end
       end
 

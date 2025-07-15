@@ -40,6 +40,7 @@ module SHAInet
     # Alias used by GPU kernels when CUDA is enabled.
     # Defined here as a noop pointer type for compatibility
     alias UInt16Ptr = Pointer(UInt16)
+    alias Stream = Void*
 
     enum MemcpyKind
       HostToHost     = 0
@@ -158,6 +159,17 @@ module SHAInet
       0
     end
 
+    def memcpy_async(*args) : Int32
+      0
+    end
+
+    def stream_create : Stream
+      Pointer(Void).null
+    end
+
+    def stream_synchronize(stream : Stream)
+    end
+
     def copy_device_to_device(dst : Pointer(Void), src : Pointer(Void), bytes : LibC::SizeT) : Int32
       # no-op when CUDA is disabled
       0
@@ -183,6 +195,13 @@ module SHAInet
     end
 
     def destroy_handle(*args)
+    end
+
+    def set_handle_stream(*args)
+    end
+
+    def get_handle_stream(*args)
+      Pointer(Void).null
     end
 
     def cleanup_handles(*args)
