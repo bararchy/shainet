@@ -117,9 +117,9 @@ module SHAInet
       layer = case l_type.to_s
               when "embedding"
                 raise NeuralNetRunError.new("vocab_size required for embedding layer") if vocab_size <= 0
-                EmbeddingLayer.new(vocab_size, l_size, activation_function)
+                EmbeddingLayer.new(vocab_size, l_size, activation_function, precision: @precision)
               when "transformer"
-                TransformerLayer.new(l_size, num_heads, ff_hidden, drop_percent, pre_norm, activation_function)
+                TransformerLayer.new(l_size, num_heads, ff_hidden, drop_percent, pre_norm, activation_function, precision: @precision)
               else
                 # Use MatrixLayer for regular feedforward layers - it has proper GPU support and gradient computation
                 # Note: MatrixLayer will be properly connected with correct input size in connect_ltl

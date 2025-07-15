@@ -14,17 +14,17 @@ module SHAInet
     @workspace_result : CudaMatrix | Nil
     @last_ids_size : Int32
 
-    def initialize(vocab_size : Int32, l_size : Int32, activation_function : ActivationFunction = SHAInet.none)
-      super(l_size, activation_function)
+    def initialize(vocab_size : Int32, l_size : Int32, activation_function : ActivationFunction = SHAInet.none, *, precision : Precision = Precision::Fp32)
+      super(l_size, activation_function, precision: precision)
       mat_klass = CUDA.fully_available? ? CudaMatrix : SimpleMatrix
       # Initialize with random values between -0.1 and 0.1
-      @embeddings = mat_klass.new(vocab_size, l_size)
+      @embeddings = mat_klass.new(vocab_size, l_size, 0.0_f32, precision)
       vocab_size.times do |r|
         l_size.times do |c|
           @embeddings[r, c] = rand(-0.1..0.1).to_f32
         end
       end
-      @gradients = mat_klass.zeros(vocab_size, l_size)
+      @gradients = mat_klass.zeros(vocab_size, l_size, precision)
       @current_ids = [] of Int32
 
       @q_embeddings = nil

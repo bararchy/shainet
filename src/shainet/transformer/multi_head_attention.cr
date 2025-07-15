@@ -86,22 +86,25 @@ module SHAInet
     getter w_q, w_k, w_v, w_o
     property g_w_q, g_w_k, g_w_v, g_w_o
 
-    def initialize(@d_model : Int32, @num_heads : Int32)
+    property precision : Precision
+
+    def initialize(@d_model : Int32, @num_heads : Int32, *, precision : Precision = Precision::Fp32)
+      @precision = precision
       @head_dim = (@d_model // @num_heads)
       # Use CudaMatrix when CUDA is available for better performance
       mat_klass = CUDA.fully_available? ? CudaMatrix : SimpleMatrix
 
       # Use consistent matrix type throughout - no more TensorMatrix mixing
-      @w_q = mat_klass.new(@d_model, @d_model).random_fill!
-      @w_k = mat_klass.new(@d_model, @d_model).random_fill!
-      @w_v = mat_klass.new(@d_model, @d_model).random_fill!
-      @w_o = mat_klass.new(@d_model, @d_model).random_fill!
+      @w_q = mat_klass.new(@d_model, @d_model, 0.0_f32, precision).random_fill!
+      @w_k = mat_klass.new(@d_model, @d_model, 0.0_f32, precision).random_fill!
+      @w_v = mat_klass.new(@d_model, @d_model, 0.0_f32, precision).random_fill!
+      @w_o = mat_klass.new(@d_model, @d_model, 0.0_f32, precision).random_fill!
 
       # Initialize gradients with same type as weights
-      @g_w_q = mat_klass.zeros(@d_model, @d_model)
-      @g_w_k = mat_klass.zeros(@d_model, @d_model)
-      @g_w_v = mat_klass.zeros(@d_model, @d_model)
-      @g_w_o = mat_klass.zeros(@d_model, @d_model)
+      @g_w_q = mat_klass.zeros(@d_model, @d_model, precision)
+      @g_w_k = mat_klass.zeros(@d_model, @d_model, precision)
+      @g_w_v = mat_klass.zeros(@d_model, @d_model, precision)
+      @g_w_o = mat_klass.zeros(@d_model, @d_model, precision)
 
       @q_heads = [] of (SimpleMatrix | CudaMatrix)
       @k_heads = [] of (SimpleMatrix | CudaMatrix)

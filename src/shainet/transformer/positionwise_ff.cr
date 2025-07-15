@@ -42,27 +42,30 @@ module SHAInet
     getter activation_function
     @activation_function : ActivationFunction
 
-    def initialize(d_model : Int32, hidden_dim : Int32, activation_function : ActivationFunction = SHAInet.relu)
+    property precision : Precision
+
+    def initialize(d_model : Int32, hidden_dim : Int32, activation_function : ActivationFunction = SHAInet.relu, *, precision : Precision = Precision::Fp32)
+      @precision = precision
       # Use CudaMatrix when CUDA is available for better performance
       mat_klass = CUDA.fully_available? ? CudaMatrix : SimpleMatrix
       first_hidden = activation_function == SHAInet.swiglu ? hidden_dim * 2 : hidden_dim
 
-      @w1 = mat_klass.new(d_model, first_hidden).random_fill!
-      @b1 = mat_klass.new(1, first_hidden).random_fill!
-      @w2 = mat_klass.new(hidden_dim, d_model).random_fill!
-      @b2 = mat_klass.new(1, d_model).random_fill!
-      @g_w1 = mat_klass.zeros(d_model, first_hidden)
-      @g_w2 = mat_klass.zeros(hidden_dim, d_model)
-      @g_b1 = mat_klass.zeros(1, first_hidden)
-      @g_b2 = mat_klass.zeros(1, d_model)
-      @h = mat_klass.zeros(1, 1)
-      @out = mat_klass.zeros(1, 1)
-      @pre_act = mat_klass.zeros(1, 1)
+      @w1 = mat_klass.new(d_model, first_hidden, 0.0_f32, precision).random_fill!
+      @b1 = mat_klass.new(1, first_hidden, 0.0_f32, precision).random_fill!
+      @w2 = mat_klass.new(hidden_dim, d_model, 0.0_f32, precision).random_fill!
+      @b2 = mat_klass.new(1, d_model, 0.0_f32, precision).random_fill!
+      @g_w1 = mat_klass.zeros(d_model, first_hidden, precision)
+      @g_w2 = mat_klass.zeros(hidden_dim, d_model, precision)
+      @g_b1 = mat_klass.zeros(1, first_hidden, precision)
+      @g_b2 = mat_klass.zeros(1, d_model, precision)
+      @h = mat_klass.zeros(1, 1, precision)
+      @out = mat_klass.zeros(1, 1, precision)
+      @pre_act = mat_klass.zeros(1, 1, precision)
       @activation_function = activation_function
 
       # Initialize cached transposes
-      @w1_t = mat_klass.new(first_hidden, d_model)
-      @w2_t = mat_klass.new(d_model, hidden_dim)
+      @w1_t = mat_klass.new(first_hidden, d_model, 0.0_f32, precision)
+      @w2_t = mat_klass.new(d_model, hidden_dim, 0.0_f32, precision)
       update_transposes
 
       # Workspace buffers will be allocated on first forward pass
@@ -395,10 +398,10 @@ module SHAInet
       mat_class = @w1.is_a?(CudaMatrix) ? CudaMatrix : SimpleMatrix
 
       if @w1_t.nil? || @w1_t.not_nil!.rows != @w1.cols || @w1_t.not_nil!.cols != @w1.rows
-        @w1_t = mat_class.new(@w1.cols, @w1.rows)
+        @w1_t = mat_class.new(@w1.cols, @w1.rows, 0.0_f32, @w1.precision)
       end
       if @w2_t.nil? || @w2_t.not_nil!.rows != @w2.cols || @w2_t.not_nil!.cols != @w2.rows
-        @w2_t = mat_class.new(@w2.cols, @w2.rows)
+        @w2_t = mat_class.new(@w2.cols, @w2.rows, 0.0_f32, @w2.precision)
       end
 
       if mat_class == CudaMatrix
