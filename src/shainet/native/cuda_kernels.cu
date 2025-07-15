@@ -394,6 +394,26 @@ __global__ void row_sum_kernel_t(T *dst, const T *src, int rows, int cols) {
   dst[col] = Convert<T>::from_float(prev + sum);
 }
 
+template <typename T>
+__global__ void slice_cols_kernel_t(T *out, const T *in, int rows,
+                                    int src_cols, int start, int len) {
+  int row = blockIdx.x;
+  int col = threadIdx.x;
+  if (row >= rows || col >= len)
+    return;
+  out[row * len + col] = in[row * src_cols + start + col];
+}
+
+template <typename T>
+__global__ void set_cols_kernel_t(T *out, const T *in, int rows,
+                                  int dst_cols, int start, int len) {
+  int row = blockIdx.x;
+  int col = threadIdx.x;
+  if (row >= rows || col >= len)
+    return;
+  out[row * dst_cols + start + col] = in[row * len + col];
+}
+
 // Host wrapper functions
 extern "C" {
 void softmax_rows(float *out, const float *in, int rows, int cols) {
@@ -550,33 +570,41 @@ void apply_layer_norm_f32(float *out, const float *in, const float *mean,
   cudaDeviceSynchronize();
 }
 
-__global__ void slice_cols_kernel(float *out, const float *in, int rows,
-                                  int src_cols, int start, int len) {
-  int row = blockIdx.x;
-  int col = threadIdx.x;
-  if (row >= rows || col >= len)
-    return;
-  out[row * len + col] = in[row * src_cols + start + col];
-}
 
 void slice_cols(float *out, const float *in, int rows, int src_cols,
                 int start, int len) {
-  slice_cols_kernel<<<rows, len>>>(out, in, rows, src_cols, start, len);
+  slice_cols_kernel_t<float><<<rows, len>>>(out, in, rows, src_cols, start, len);
   cudaDeviceSynchronize();
 }
 
-__global__ void set_cols_kernel(float *out, const float *in, int rows,
-                                int dst_cols, int start, int len) {
-  int row = blockIdx.x;
-  int col = threadIdx.x;
-  if (row >= rows || col >= len)
-    return;
-  out[row * dst_cols + start + col] = in[row * len + col];
+void slice_cols_fp16(__half *out, const __half *in, int rows, int src_cols,
+                     int start, int len) {
+  slice_cols_kernel_t<<<rows, len>>>(out, in, rows, src_cols, start, len);
+  cudaDeviceSynchronize();
 }
+
+void slice_cols_bf16(__nv_bfloat16 *out, const __nv_bfloat16 *in, int rows,
+                     int src_cols, int start, int len) {
+  slice_cols_kernel_t<<<rows, len>>>(out, in, rows, src_cols, start, len);
+  cudaDeviceSynchronize();
+}
+
 
 void set_cols(float *out, const float *in, int rows, int dst_cols, int start,
               int len) {
-  set_cols_kernel<<<rows, len>>>(out, in, rows, dst_cols, start, len);
+  set_cols_kernel_t<float><<<rows, len>>>(out, in, rows, dst_cols, start, len);
+  cudaDeviceSynchronize();
+}
+
+void set_cols_fp16(__half *out, const __half *in, int rows, int dst_cols,
+                   int start, int len) {
+  set_cols_kernel_t<<<rows, len>>>(out, in, rows, dst_cols, start, len);
+  cudaDeviceSynchronize();
+}
+
+void set_cols_bf16(__nv_bfloat16 *out, const __nv_bfloat16 *in, int rows,
+                   int dst_cols, int start, int len) {
+  set_cols_kernel_t<<<rows, len>>>(out, in, rows, dst_cols, start, len);
   cudaDeviceSynchronize();
 }
 
