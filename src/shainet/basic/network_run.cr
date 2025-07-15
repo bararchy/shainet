@@ -1474,7 +1474,7 @@ module SHAInet
                          if mptr && wptr && !mptr.null? && !wptr.null?
                            begin
                              CUDA.set_device(matrix.device_id)
-                             result = CudaMatrix.new(1, matrix.cols, precision: @precision, device_id: matrix.device_id)
+                             result = CudaMatrix.new(1, matrix.cols, precision: matrix.precision, device_id: matrix.device_id)
                              last_row_offset = (matrix.rows - 1) * matrix.cols
                              elem_size = matrix.element_size
                              byte_offset = last_row_offset * elem_size
@@ -1497,7 +1497,7 @@ module SHAInet
                                  slice_rows_helper(matrix, matrix.rows - 1, 1)
                                else
                                  result.mark_device_dirty!
-                                 result
+                                 convert_matrix_precision(result, @precision)
                                end
                              end
                            rescue e
@@ -1510,12 +1510,12 @@ module SHAInet
                          end
                        else
                          # CPU fallback
-                         last_token_cpu = CudaMatrix.new(1, matrix.cols, precision: @precision, device_id: matrix.device_id)
+                         last_token_cpu = CudaMatrix.new(1, matrix.cols, precision: matrix.precision, device_id: matrix.device_id)
                          matrix.cols.times do |j|
                            last_token_cpu[0, j] = matrix[matrix.rows - 1, j]
                          end
                          last_token_cpu.sync_to_device!
-                         last_token_cpu
+                         convert_matrix_precision(last_token_cpu, @precision)
                        end
 
           # Now multiply: last_token (1 x d_model) * weights (d_model x vocab_size)
@@ -1681,6 +1681,19 @@ module SHAInet
       num_rows.times do |i|
         matrix.cols.times do |j|
           result[i, j] = matrix[start_row + i, j]
+        end
+      end
+      result.sync_to_device! if CUDA.fully_available?
+      result
+    end
+
+    private def convert_matrix_precision(mat : CudaMatrix, prec : Precision) : CudaMatrix
+      return mat if mat.precision == prec
+      mat.sync_from_device!("convert_matrix_precision") if mat.device_dirty?
+      result = CudaMatrix.new(mat.rows, mat.cols, precision: prec, device_id: mat.device_id)
+      mat.rows.times do |i|
+        mat.cols.times do |j|
+          result[i, j] = mat[i, j]
         end
       end
       result.sync_to_device! if CUDA.fully_available?
