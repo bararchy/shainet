@@ -138,17 +138,9 @@ module SHAInet
             sum_b.add!(gb_cuda)
           end
 
-          factor = 1.0 / @replicas.size
-          sum_w.rows.times do |r|
-            sum_w.cols.times do |c|
-              sum_w[r, c] *= factor
-            end
-          end
-          sum_b.rows.times do |r|
-            sum_b.cols.times do |c|
-              sum_b[r, c] *= factor
-            end
-          end
+          factor = 1.0_f32 / @replicas.size
+          sum_w.scale!(factor)
+          sum_b.scale!(factor)
 
           base_layer.g_w = sum_w
           base_layer.g_b = sum_b
@@ -167,8 +159,8 @@ module SHAInet
             next unless rep_layer.is_a?(MatrixLayer)
             gw = rep_layer.g_w
             gb = rep_layer.g_b
-            gw_simple = gw.is_a?(CudaMatrix) ? gw.as(CudaMatrix).to_simple : gw.as(SimpleMatrix)
-            gb_simple = gb.is_a?(CudaMatrix) ? gb.as(CudaMatrix).to_simple : gb.as(SimpleMatrix)
+            gw_simple = gw.as(SimpleMatrix)
+            gb_simple = gb.as(SimpleMatrix)
             sum_w.add!(gw_simple)
             sum_b.add!(gb_simple)
           end
@@ -193,14 +185,21 @@ module SHAInet
       end
 
       # Broadcast updated weights back to replicas
-      @replicas.each do |rep|
+      @replicas.each_with_index do |rep, r_idx|
         dest_layers = rep.hidden_layers + rep.output_layers
         src_layers = @net.hidden_layers + @net.output_layers
         src_layers.each_with_index do |src, i|
           dest = dest_layers[i]
           next unless src.is_a?(MatrixLayer) && dest.is_a?(MatrixLayer)
-          dest.weights = src.weights.clone
-          dest.biases = src.biases.clone
+
+          if CUDA.fully_available? && src.weights.is_a?(CudaMatrix) && dest.weights.is_a?(CudaMatrix)
+            dest_device = @devices[r_idx]
+            dest.weights = src.weights.as(CudaMatrix).clone_to_device(dest_device)
+            dest.biases = src.biases.as(CudaMatrix).clone_to_device(dest_device)
+          else
+            dest.weights = src.weights.clone
+            dest.biases = src.biases.clone
+          end
         end
       end
     end
