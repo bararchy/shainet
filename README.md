@@ -192,7 +192,8 @@ stream = SHAInet::StreamingData.new(
   "data.txt",
   shuffle: true,
   chunk_size: 1024,
-  gpu_batches: true)
+  gpu_batches: true,
+  prefetch_workers: 2)
 
 net = SHAInet::Network.new
 net.add_layer(:input, 2, :memory, SHAInet.sigmoid)
