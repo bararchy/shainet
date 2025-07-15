@@ -1001,6 +1001,13 @@ module SHAInet
           SHAInet::CudaMatrix.reset_sync_stats
         end
 
+        next_batch_time_total = 0.0
+        next_batch_time_max = 0.0
+        next_batch_count = 0
+        process_batch_time_total = 0.0
+        process_batch_time_max = 0.0
+        process_batch_count = 0
+
         # Autosave if configured
         if autosave_path && epoch % autosave_freq == 0 && epoch > 0
           FileUtils.mkdir_p(autosave_path) unless Dir.exists?(autosave_path)
@@ -1013,20 +1020,49 @@ module SHAInet
 
         if stream
           stream.rewind if epoch > 0
-          while (batch = stream.next_batch(batch_size)).size > 0
-            batch_error = process_batch(batch, cost_proc, training_type)
-            total_error += batch_error
-            sample_count += batch.size
+          while true
+            fetch_start = Time.monotonic
+            batch = stream.next_batch(batch_size)
+            fetch_time = Time.monotonic - fetch_start
+            if batch.size > 0
+              fetch_ms = fetch_time.total_milliseconds
+              next_batch_time_total += fetch_ms
+              next_batch_time_max = Math.max(next_batch_time_max, fetch_ms)
+              next_batch_count += 1
+
+              process_start = Time.monotonic
+              batch_error = process_batch(batch, cost_proc, training_type)
+              process_time = Time.monotonic - process_start
+              process_ms = process_time.total_milliseconds
+              process_batch_time_total += process_ms
+              process_batch_time_max = Math.max(process_batch_time_max, process_ms)
+              process_batch_count += 1
+
+              total_error += batch_error
+              sample_count += batch.size
+            else
+              break
+            end
           end
         else
           shuffled_data = raw_data.shuffle
           # Process data in mini-batches
           shuffled_data.each_slice(batch_size) do |batch|
+            process_start = Time.monotonic
             batch_error = process_batch(batch, cost_proc, training_type)
+            process_time = Time.monotonic - process_start
+            process_ms = process_time.total_milliseconds
+            process_batch_time_total += process_ms
+            process_batch_time_max = Math.max(process_batch_time_max, process_ms)
+            process_batch_count += 1
+
             total_error += batch_error
             sample_count += batch.size
           end
         end
+
+        avg_fetch_ms = next_batch_count > 0 ? next_batch_time_total / next_batch_count : 0.0
+        avg_process_ms = process_batch_count > 0 ? process_batch_time_total / process_batch_count : 0.0
 
         avg_error = total_error / sample_count
         @total_error = total_error
@@ -1069,6 +1105,13 @@ module SHAInet
               top_pools = pool_stats[:pools].to_a.sort_by(&.[1]).reverse.first(3)
               Log.debug { "    Top pool sizes: #{top_pools.map { |k, v| "#{k}(#{v})" }.join(", ")}" }
             end
+          end
+
+          if next_batch_count > 0
+            Log.debug { "  Batch fetch: avg #{avg_fetch_ms.round(3)} ms, max #{next_batch_time_max.round(3)} ms" }
+          end
+          if process_batch_count > 0
+            Log.debug { "  Batch process: avg #{avg_process_ms.round(3)} ms, max #{process_batch_time_max.round(3)} ms" }
           end
         end
 
