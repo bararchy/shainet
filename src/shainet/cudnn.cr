@@ -624,6 +624,7 @@ module SHAInet
     def self.element_mul!(result : CudaMatrix, a : CudaMatrix, b : CudaMatrix, alpha : Float32 = 1.0, beta : Float32 = 0.0)
       # Element-wise multiplication requires custom implementation since cuBLAS doesn't have direct support
       # For now, fall back to CPU implementation
+      Log.warn { "Falling back to CPU for element_mul" }
       raise "Matrices must have same dimensions" unless a.rows == b.rows && a.cols == b.cols && result.rows == a.rows && result.cols == a.cols
 
       # Sync to CPU for element-wise operations

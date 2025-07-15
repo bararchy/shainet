@@ -1409,6 +1409,7 @@ module SHAInet
           result.mark_device_dirty!
         else
           # GPU not used - fall back to CPU
+          Log.warn { "Falling back to CPU for element_division" }
           self.sync_from_device!("element_division")
           other.sync_from_device!("element_division")
           @rows.times do |i|
@@ -1422,6 +1423,7 @@ module SHAInet
         end
       else
         # Fallback to CPU implementation
+        Log.warn { "Falling back to CPU for element_division" }
         self.sync_from_device!("element_division") if device_dirty?
         other.sync_from_device!("element_division") if other.device_dirty?
 
