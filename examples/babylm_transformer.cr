@@ -124,9 +124,10 @@ net.transformer_layers.each { |l| l.mask = mask }
 
 # Build training/validation splits and write pairs to disk for streaming
 
-# Write pairs as much smaller JSONL: input is a sequence of token IDs, target is the next token ID (integer)
+# Write pairs in a compact binary format. Each record contains `seq_len` Int32
+# token IDs followed by the Int32 target ID.
 def write_pairs(path, ids, seq_len)
-  File.open(path, "w") do |f|
+  File.open(path, "wb") do |f|
     if ids.size <= seq_len
       puts "Warning: Dataset too small (#{ids.size} tokens) for sequence length #{seq_len}"
       return
@@ -138,9 +139,8 @@ def write_pairs(path, ids, seq_len)
     (0...(ids.size - seq_len)).each do |i|
       seq = ids[i, seq_len]
       target = ids[i + seq_len]
-      # Transformer expects tokens as a column matrix, so store as [[id], ...]
-      inputs = seq.map { |id| [id] }
-      f.puts({"input" => inputs, "target" => target}.to_json)
+      seq.each { |id| f.write_bytes(id.to_i32, IO::ByteFormat::LittleEndian) }
+      f.write_bytes(target.to_i32, IO::ByteFormat::LittleEndian)
     end
   end
 end
@@ -149,8 +149,8 @@ split = ids.size * 9 // 10
 train_ids = ids[0, split]
 val_ids = ids[split, ids.size - split]
 
-train_file = "train_pairs.jsonl"
-val_file = "val_pairs.jsonl"
+train_file = "train_pairs.bin"
+val_file = "val_pairs.bin"
 
 write_pairs(train_file, train_ids, seq_len)
 write_pairs(val_file, val_ids, seq_len)
@@ -160,8 +160,8 @@ puts "Expected training sequences: #{train_ids.size - seq_len}"
 puts "Expected validation sequences: #{val_ids.size - seq_len}"
 
 # Data loader now expects {"input": [...], "target": ...} format.
-train_data = SHAInet::StreamingData.new(train_file, shuffle: true, gpu_batches: true)
-val_data = SHAInet::StreamingData.new(val_file, gpu_batches: true)
+train_data = SHAInet::BinaryStreamingData.new(train_file, seq_len, shuffle: true, gpu_batches: true)
+val_data = SHAInet::BinaryStreamingData.new(val_file, seq_len, gpu_batches: true)
 
 puts "Training the network for #{epochs} epochs with batch size #{batch}..."
 # Train for all epochs at once with proper logging
