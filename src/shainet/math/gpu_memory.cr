@@ -153,6 +153,55 @@ module SHAInet
       dest
     end
 
+    # Build a batched matrix from a list of `SimpleMatrix` rows without
+    # iterating over each element. When the destination is a `CudaMatrix`
+    # and CUDA is available, pinned host memory is used for faster
+    # transfers.
+    def build_batch!(sources : Array(SimpleMatrix), dest : SimpleMatrix | CudaMatrix)
+      raise ArgumentError.new("empty batch") if sources.empty?
+
+      rows = sources.first.rows
+      cols = sources.first.cols
+      expected_rows = rows * sources.size
+      raise ArgumentError.new("size mismatch") unless dest.rows == expected_rows && dest.cols == cols
+
+      elem_size = dest.element_size
+      row_bytes = cols * elem_size
+      total_bytes = row_bytes * sources.size * rows
+
+      if dest.is_a?(CudaMatrix) && CUDA.fully_available?
+        host_ptr = Pointer(UInt8).null
+        CUDA.malloc_host(pointerof(host_ptr).as(Pointer(Pointer(Void))), total_bytes.to_u64)
+        host_slice = Slice(UInt8).new(host_ptr, total_bytes)
+        offset = 0
+        sources.each do |m|
+          src = m.raw_data_buffer
+          host_slice[offset, src.size].copy_from(src)
+          offset += src.size
+        end
+
+        dest.as(CudaMatrix).raw_data_buffer.copy_from(host_slice)
+
+        if (dptr = dest.as(CudaMatrix).device_ptr) && !dptr.null?
+          CUDA.memcpy(dptr.as(Pointer(Void)), host_ptr.as(Pointer(Void)), total_bytes.to_u64, CUDA::MemcpyKind::HostToDevice)
+          dest.as(CudaMatrix).mark_device_dirty!
+        end
+
+        CUDA.free_host(host_ptr.as(Pointer(Void)))
+      else
+        dest_buf = dest.raw_data_buffer
+        offset = 0
+        sources.each do |m|
+          src = m.raw_data_buffer
+          dest_buf[offset, src.size].copy_from(src)
+          offset += src.size
+        end
+        dest.mark_device_clean! if dest.is_a?(CudaMatrix)
+      end
+
+      dest
+    end
+
     # Ensure matrix stays on GPU if it's already there
     def keep_on_gpu(matrix : SimpleMatrix)
       if matrix.is_a?(CudaMatrix)

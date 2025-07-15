@@ -1145,7 +1145,10 @@ module SHAInet
         grad_matrix = SimpleMatrix.new(total_out_rows, out_cols, 0.0_f32, @precision)
       end
 
-      batch.each_with_index do |sample, idx|
+      input_parts = [] of SimpleMatrix
+      expected_parts = [] of SimpleMatrix
+
+      batch.each do |sample|
         input_data = sample[0]
         expected_output = sample[1]
 
@@ -1162,27 +1165,21 @@ module SHAInet
         src_in = to_simple_matrix(input_data)
         src_out = to_simple_matrix(expected_output)
 
-        offset_in = idx * in_rows
-        offset_out = idx * out_rows
-
-        in_rows.times do |r|
-          in_cols.times { |c| cpu_input[offset_in + r, c] = src_in[r, c] }
-        end
-
-        out_rows.times do |r|
-          out_cols.times { |c| cpu_expected[offset_out + r, c] = src_out[r, c] }
-        end
+        input_parts << src_in
+        expected_parts << src_out
       end
 
       if input_matrix.is_a?(CudaMatrix)
-        GPUMemory.to_gpu!(cpu_input, input_matrix.as(CudaMatrix))
+        GPUMemory.build_batch!(input_parts, input_matrix.as(CudaMatrix))
       else
+        GPUMemory.build_batch!(input_parts, cpu_input)
         input_matrix = cpu_input
       end
 
       if expected_matrix.is_a?(CudaMatrix)
-        GPUMemory.to_gpu!(cpu_expected, expected_matrix.as(CudaMatrix))
+        GPUMemory.build_batch!(expected_parts, expected_matrix.as(CudaMatrix))
       else
+        GPUMemory.build_batch!(expected_parts, cpu_expected)
         expected_matrix = cpu_expected
       end
 
