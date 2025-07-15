@@ -1164,6 +1164,17 @@ module SHAInet
 
       actual_matrix = run_batch(input_matrix, stealth: true)
 
+      if grad_matrix.rows != actual_matrix.rows || grad_matrix.cols != actual_matrix.cols
+        if grad_matrix.is_a?(CudaMatrix)
+          if @batch_grad_ws.nil? || @batch_grad_ws.not_nil!.rows != actual_matrix.rows || @batch_grad_ws.not_nil!.cols != actual_matrix.cols
+            @batch_grad_ws = CudaMatrix.new(actual_matrix.rows, actual_matrix.cols, precision: @precision)
+          end
+          grad_matrix = @batch_grad_ws.not_nil!
+        else
+          grad_matrix = SimpleMatrix.new(actual_matrix.rows, actual_matrix.cols, 0.0_f32, @precision)
+        end
+      end
+
       output_layer = @output_layers.last
       if output_layer.is_a?(MatrixLayer)
         use_label_gpu = actual_matrix.is_a?(CudaMatrix) && expected_matrix.is_a?(CudaMatrix) &&
