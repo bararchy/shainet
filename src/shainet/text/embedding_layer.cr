@@ -126,6 +126,7 @@ module SHAInet
           return result
         rescue
           # If CUDA operations fail, fall back to CPU then convert
+          Log.warn { "Falling back to CPU for embedding lookup" }
           return embed_cpu(ids).to_cuda
         end
       end

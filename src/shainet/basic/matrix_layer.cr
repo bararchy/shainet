@@ -214,6 +214,7 @@ module SHAInet
         @sigma_primes.as(CudaMatrix).mark_device_dirty!
       else
         # For other activation functions, fall back to CPU
+        Log.warn { "Falling back to CPU for activation function" }
         linear_result.rows.times do |i|
           linear_result.cols.times do |j|
             val = linear_result[i, j]
