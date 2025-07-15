@@ -37,19 +37,13 @@ module SHAInet
       ((@bits.to_u32) << 16).unsafe_as(Float32)
     end
 
-    def to_f32 : Float32
+    def to_f : Float32
       to_f32
     end
   end
 end
 
 # Convenience conversion helpers
-struct Float32
-  def to_f16 : SHAInet::Float16
-    SHAInet::Float16.new(self)
-  end
-end
-
 struct Float32
   def to_f16 : SHAInet::Float16
     SHAInet::Float16.new(self)
