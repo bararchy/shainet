@@ -6,9 +6,10 @@ module SHAInet
     alias Batch = Array(Array(Datum)) | Array(Array(CudaMatrix))
 
     @queue : Channel(Batch)?
-    @prefetch_fiber : Fiber?
+    @prefetch_fibers : Array(Fiber) = [] of Fiber
     @prefetch_done : Channel(Nil)?
     @batch_size : Int32 = 0
+    @prefetch_workers : Int32
     @stop_prefetch : Bool = false
     @mutex = Mutex.new
     @path : String
@@ -26,14 +27,15 @@ module SHAInet
     # Reads data from `path`. The file is buffered in chunks to avoid loading
     # everything into memory. When `shuffle` is true the buffer is shuffled at
     # the beginning of each chunk.
-    def initialize(@path : String, @shuffle : Bool = false, @chunk_size : Int32 = 1024, gpu_batches : Bool = false)
+    def initialize(@path : String, @shuffle : Bool = false, @chunk_size : Int32 = 1024, gpu_batches : Bool = false, prefetch_workers : Int32 = 1)
       @gpu_batches = gpu_batches
+      @prefetch_workers = prefetch_workers
       @file = File.new(@path)
       @buffer = [] of String
       @index = 0
       read_chunk
       @queue = nil
-      @prefetch_fiber = nil
+      @prefetch_fibers = [] of Fiber
       @prefetch_done = nil
     end
 
@@ -42,7 +44,7 @@ module SHAInet
     # converted to `Float32`. When prefetching is enabled, this will
     # pull the next batch from the internal queue.
     def next_batch(batch_size : Int32)
-      start_prefetch(batch_size) unless @prefetch_fiber
+      start_prefetch(batch_size) if @prefetch_fibers.empty?
 
       if batch = @queue.not_nil!.receive?
         batch
@@ -210,17 +212,27 @@ module SHAInet
     end
 
     private def start_prefetch(batch_size : Int32)
-      if @prefetch_fiber && @batch_size == batch_size && !@stop_prefetch
+      if !@prefetch_fibers.empty? && @batch_size == batch_size && !@stop_prefetch
         return
       end
 
       stop_prefetch
 
       @batch_size = batch_size
-      @queue = Channel(Batch).new(2)
+      @queue = Channel(Batch).new(@prefetch_workers * 2)
       @prefetch_done = Channel(Nil).new
       @stop_prefetch = false
-      @prefetch_fiber = spawn { prefetch_loop }
+
+      {% if flag?(:execution_context) %}
+        context = Fiber::ExecutionContext::MultiThreaded.new("streaming-data", @prefetch_workers)
+        @prefetch_workers.times do
+          @prefetch_fibers << spawn(context: context) { prefetch_loop }
+        end
+      {% else %}
+        @prefetch_workers.times do
+          @prefetch_fibers << spawn { prefetch_loop }
+        end
+      {% end %}
     end
 
     private def prefetch_loop
@@ -234,10 +246,10 @@ module SHAInet
     end
 
     private def stop_prefetch
-      return unless @prefetch_fiber
+      return if @prefetch_fibers.empty?
       @stop_prefetch = true
-      @prefetch_done.try &.receive?
-      @prefetch_fiber = nil
+      @prefetch_workers.times { @prefetch_done.try &.receive? }
+      @prefetch_fibers.clear
     end
   end
 end

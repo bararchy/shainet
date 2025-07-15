@@ -19,6 +19,19 @@ describe SHAInet::StreamingData do
     batch2.size.should eq(2)
   end
 
+  it "prefetches with multiple workers" do
+    File.open("/tmp/stream_multi.txt", "w") do |f|
+      4.times do |i|
+        f.puts "[[#{i},#{i}],[#{i % 2}]]"
+      end
+    end
+
+    data = SHAInet::StreamingData.new("/tmp/stream_multi.txt", prefetch_workers: 2)
+    batch = data.next_batch(2)
+    batch.size.should eq(2)
+    data.rewind
+  end
+
   it "reads tokenized data and reshuffles each epoch" do
     Random::DEFAULT.new_seed(42_u64, 13_u64)
     File.open("/tmp/stream_tok.txt", "w") do |f|
