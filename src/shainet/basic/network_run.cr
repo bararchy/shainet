@@ -51,6 +51,38 @@ module SHAInet
       seq.map { |row| convert_array(row) }
     end
 
+    # Convert any supported input format to a SimpleMatrix. This avoids
+    # triggering GPU transfers when building batch buffers.
+    private def to_simple_matrix(obj) : SimpleMatrix
+      case obj
+      when SimpleMatrix
+        obj
+      when CudaMatrix
+        obj.to_simple
+      else
+        arr = obj.as(Array)
+        if arr.size > 0 && arr[0].is_a?(Array)
+          rows = arr.size
+          cols = arr[0].as(Array).size
+          sm = SimpleMatrix.new(rows, cols, 0.0_f32, @precision)
+          rows.times do |i|
+            row = arr[i].as(Array)
+            cols.times do |j|
+              sm[i, j] = convert_num(row[j].as(GenNum)).to_f32
+            end
+          end
+          sm
+        else
+          cols = arr.size
+          sm = SimpleMatrix.new(1, cols, 0.0_f32, @precision)
+          cols.times do |j|
+            sm[0, j] = convert_num(arr[j].as(GenNum)).to_f32
+          end
+          sm
+        end
+      end
+    end
+
     # Run an input through the network to get an output (weights & biases do not change)
     # Simple wrapper that converts array input to matrix and calls the core matrix method
     def run(input : Array(GenNum), stealth : Bool = false) : Array(Float32)
@@ -1093,6 +1125,9 @@ module SHAInet
       total_in_rows = batch_size * in_rows
       total_out_rows = batch_size * out_rows
 
+      cpu_input = SimpleMatrix.new(total_in_rows, in_cols, 0.0_f32, @precision)
+      cpu_expected = SimpleMatrix.new(total_out_rows, out_cols, 0.0_f32, @precision)
+
       input_matrix : SimpleMatrix | CudaMatrix
       expected_matrix : SimpleMatrix | CudaMatrix
       grad_matrix : SimpleMatrix | CudaMatrix
@@ -1105,8 +1140,8 @@ module SHAInet
         end
         grad_matrix = @batch_grad_ws.not_nil!
       else
-        input_matrix = SimpleMatrix.new(total_in_rows, in_cols, 0.0_f32, @precision)
-        expected_matrix = SimpleMatrix.new(total_out_rows, out_cols, 0.0_f32, @precision)
+        input_matrix = cpu_input
+        expected_matrix = cpu_expected
         grad_matrix = SimpleMatrix.new(total_out_rows, out_cols, 0.0_f32, @precision)
       end
 
@@ -1124,42 +1159,31 @@ module SHAInet
           end
         end
 
-        src_in = case input_data
-                 when SimpleMatrix, CudaMatrix
-                   input_data
-                 else
-                   to_matrix(input_data)
-                 end
-
-        src_out = case expected_output
-                  when SimpleMatrix, CudaMatrix
-                    expected_output
-                  else
-                    to_matrix(expected_output)
-                  end
+        src_in = to_simple_matrix(input_data)
+        src_out = to_simple_matrix(expected_output)
 
         offset_in = idx * in_rows
         offset_out = idx * out_rows
 
-        if input_matrix.is_a?(CudaMatrix)
-          src_gpu = src_in.is_a?(CudaMatrix) ? src_in.as(CudaMatrix) : GPUMemory.to_gpu(src_in.as(SimpleMatrix)).as(CudaMatrix)
-          in_rows.times { |r| input_matrix.as(CudaMatrix).set_row!(offset_in + r, src_gpu, r) }
-        else
-          src_cpu = src_in.is_a?(SimpleMatrix) ? src_in.as(SimpleMatrix) : src_in.as(CudaMatrix).to_simple
-          in_rows.times do |r|
-            src_cpu.cols.times { |c| input_matrix[offset_in + r, c] = src_cpu[r, c] }
-          end
+        in_rows.times do |r|
+          in_cols.times { |c| cpu_input[offset_in + r, c] = src_in[r, c] }
         end
 
-        if expected_matrix.is_a?(CudaMatrix)
-          src_gpu = src_out.is_a?(CudaMatrix) ? src_out.as(CudaMatrix) : GPUMemory.to_gpu(src_out.as(SimpleMatrix)).as(CudaMatrix)
-          out_rows.times { |r| expected_matrix.as(CudaMatrix).set_row!(offset_out + r, src_gpu, r) }
-        else
-          src_cpu = src_out.is_a?(SimpleMatrix) ? src_out.as(SimpleMatrix) : src_out.as(CudaMatrix).to_simple
-          out_rows.times do |r|
-            src_cpu.cols.times { |c| expected_matrix[offset_out + r, c] = src_cpu[r, c] }
-          end
+        out_rows.times do |r|
+          out_cols.times { |c| cpu_expected[offset_out + r, c] = src_out[r, c] }
         end
+      end
+
+      if input_matrix.is_a?(CudaMatrix)
+        GPUMemory.to_gpu!(cpu_input, input_matrix.as(CudaMatrix))
+      else
+        input_matrix = cpu_input
+      end
+
+      if expected_matrix.is_a?(CudaMatrix)
+        GPUMemory.to_gpu!(cpu_expected, expected_matrix.as(CudaMatrix))
+      else
+        expected_matrix = cpu_expected
       end
 
       actual_matrix = run_batch(input_matrix, stealth: true)
