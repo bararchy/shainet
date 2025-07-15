@@ -1212,15 +1212,17 @@ module SHAInet
         expected_parts << src_out
       end
 
+      stream = CUDA.fully_available? ? CUDA.stream_create : nil
+
       if input_matrix.is_a?(CudaMatrix)
-        GPUMemory.build_batch!(input_parts, input_matrix.as(CudaMatrix))
+        GPUMemory.build_batch!(input_parts, input_matrix.as(CudaMatrix), stream)
       else
         GPUMemory.build_batch!(input_parts, cpu_input)
         input_matrix = cpu_input
       end
 
       if expected_matrix.is_a?(CudaMatrix)
-        GPUMemory.build_batch!(expected_parts, expected_matrix.as(CudaMatrix))
+        GPUMemory.build_batch!(expected_parts, expected_matrix.as(CudaMatrix), stream)
       else
         GPUMemory.build_batch!(expected_parts, cpu_expected)
         expected_matrix = cpu_expected
@@ -1381,6 +1383,8 @@ module SHAInet
 
         @accumulation_counter = 0
       end
+
+      CUDA.stream_synchronize(stream) if stream
 
       @time_step += 1
       batch_error

@@ -80,12 +80,7 @@ module SHAInet
       bytes = buf.size.to_u64
       if (dptr = dest.device_ptr) && !dptr.null?
         if stream
-          host_ptr = Pointer(UInt8).null
-          CUDA.malloc_host(pointerof(host_ptr).as(Pointer(Pointer(Void))), bytes)
-          Slice(UInt8).new(host_ptr, bytes).copy_from(buf)
-          res = CUDA.memcpy_async(dptr.as(Pointer(Void)), host_ptr.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice, stream)
-          CUDA.stream_synchronize(stream)
-          CUDA.free_host(host_ptr.as(Pointer(Void)))
+          res = CUDA.memcpy_async(dptr.as(Pointer(Void)), buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice, stream)
         else
           res = CUDA.memcpy(dptr.as(Pointer(Void)), buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
         end
@@ -116,12 +111,7 @@ module SHAInet
       bytes = buf.size.to_u64
       if (dptr = dest.device_ptr) && !dptr.null?
         if stream
-          host_ptr = Pointer(UInt8).null
-          CUDA.malloc_host(pointerof(host_ptr).as(Pointer(Pointer(Void))), bytes)
-          Slice(UInt8).new(host_ptr, bytes).copy_from(buf)
-          res = CUDA.memcpy_async(dptr.as(Pointer(Void)), host_ptr.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice, stream)
-          CUDA.stream_synchronize(stream)
-          CUDA.free_host(host_ptr.as(Pointer(Void)))
+          res = CUDA.memcpy_async(dptr.as(Pointer(Void)), buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice, stream)
         else
           res = CUDA.memcpy(dptr.as(Pointer(Void)), buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
         end
@@ -175,7 +165,7 @@ module SHAInet
     # iterating over each element. When the destination is a `CudaMatrix`
     # and CUDA is available, pinned host memory is used for faster
     # transfers.
-    def build_batch!(sources : Array(SimpleMatrix), dest : SimpleMatrix | CudaMatrix)
+    def build_batch!(sources : Array(SimpleMatrix), dest : SimpleMatrix | CudaMatrix, stream : CUDA::Stream? = nil)
       raise ArgumentError.new("empty batch") if sources.empty?
 
       rows = sources.first.rows
@@ -188,24 +178,24 @@ module SHAInet
       total_bytes = row_bytes * sources.size * rows
 
       if dest.is_a?(CudaMatrix) && CUDA.fully_available?
-        host_ptr = Pointer(UInt8).null
-        CUDA.malloc_host(pointerof(host_ptr).as(Pointer(Pointer(Void))), total_bytes.to_u64)
-        host_slice = Slice(UInt8).new(host_ptr, total_bytes)
+        dest_buf = dest.raw_data_buffer
         offset = 0
         sources.each do |m|
           src = m.raw_data_buffer
-          host_slice[offset, src.size].copy_from(src)
+          dest_buf[offset, src.size].copy_from(src)
           offset += src.size
         end
 
-        dest.as(CudaMatrix).raw_data_buffer.copy_from(host_slice)
-
         if (dptr = dest.as(CudaMatrix).device_ptr) && !dptr.null?
-          CUDA.memcpy(dptr.as(Pointer(Void)), host_ptr.as(Pointer(Void)), total_bytes.to_u64, CUDA::MemcpyKind::HostToDevice)
+          if stream
+            CUDA.memcpy_async(dptr.as(Pointer(Void)), dest_buf.to_unsafe.as(Pointer(Void)), total_bytes.to_u64, CUDA::MemcpyKind::HostToDevice, stream)
+          else
+            CUDA.memcpy(dptr.as(Pointer(Void)), dest_buf.to_unsafe.as(Pointer(Void)), total_bytes.to_u64, CUDA::MemcpyKind::HostToDevice)
+          end
           dest.as(CudaMatrix).mark_device_dirty!
+        else
+          dest.as(CudaMatrix).mark_device_clean!
         end
-
-        CUDA.free_host(host_ptr.as(Pointer(Void)))
       else
         dest_buf = dest.raw_data_buffer
         offset = 0
