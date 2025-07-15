@@ -222,15 +222,20 @@ module SHAInet
       @queue = Channel(Batch).new(@prefetch_workers * 2)
       @prefetch_done = Channel(Nil).new
       @stop_prefetch = false
+      @prefetch_fibers = [] of Fiber
 
       {% if flag?(:execution_context) %}
         context = Fiber::ExecutionContext::MultiThreaded.new("streaming-data", @prefetch_workers)
         @prefetch_workers.times do
-          @prefetch_fibers << spawn(context: context) { prefetch_loop }
+          @prefetch_fibers << spawn(context: context) do
+            prefetch_loop
+          end
         end
       {% else %}
         @prefetch_workers.times do
-          @prefetch_fibers << spawn { prefetch_loop }
+          @prefetch_fibers << spawn do
+            prefetch_loop
+          end
         end
       {% end %}
     end
@@ -248,7 +253,7 @@ module SHAInet
     private def stop_prefetch
       return if @prefetch_fibers.empty?
       @stop_prefetch = true
-      @prefetch_workers.times { @prefetch_done.try &.receive? }
+      @prefetch_fibers.size.times { @prefetch_done.try &.receive? }
       @prefetch_fibers.clear
     end
   end
