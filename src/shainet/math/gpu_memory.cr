@@ -79,7 +79,16 @@ module SHAInet
       buf = src.raw_data_buffer
       bytes = buf.size.to_u64
       if (dptr = dest.device_ptr) && !dptr.null?
-        res = stream ? CUDA.memcpy_async(dptr.as(Pointer(Void)), buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice, stream) : CUDA.memcpy(dptr.as(Pointer(Void)), buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
+        if stream
+          host_ptr = Pointer(UInt8).null
+          CUDA.malloc_host(pointerof(host_ptr).as(Pointer(Pointer(Void))), bytes)
+          Slice(UInt8).new(host_ptr, bytes).copy_from(buf)
+          res = CUDA.memcpy_async(dptr.as(Pointer(Void)), host_ptr.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice, stream)
+          CUDA.stream_synchronize(stream)
+          CUDA.free_host(host_ptr.as(Pointer(Void)))
+        else
+          res = CUDA.memcpy(dptr.as(Pointer(Void)), buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
+        end
         if res == 0
           dest.mark_device_dirty!
           return dest
@@ -106,7 +115,16 @@ module SHAInet
       buf = matrix.raw_data_buffer
       bytes = buf.size.to_u64
       if (dptr = dest.device_ptr) && !dptr.null?
-        res = stream ? CUDA.memcpy_async(dptr.as(Pointer(Void)), buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice, stream) : CUDA.memcpy(dptr.as(Pointer(Void)), buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
+        if stream
+          host_ptr = Pointer(UInt8).null
+          CUDA.malloc_host(pointerof(host_ptr).as(Pointer(Pointer(Void))), bytes)
+          Slice(UInt8).new(host_ptr, bytes).copy_from(buf)
+          res = CUDA.memcpy_async(dptr.as(Pointer(Void)), host_ptr.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice, stream)
+          CUDA.stream_synchronize(stream)
+          CUDA.free_host(host_ptr.as(Pointer(Void)))
+        else
+          res = CUDA.memcpy(dptr.as(Pointer(Void)), buf.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
+        end
         if res == 0
           dest.mark_device_dirty!
           return dest
