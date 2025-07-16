@@ -755,24 +755,21 @@ module SHAInet
       )
       raise RuntimeError.new("Failed to allocate result matrix on GPU") unless result.device_ptr && !result.device_ptr.not_nil!.null?
 
-      # Try cuDNN first for element-wise operations
       if CUDNN.available?
         begin
           CUDNN.element_add!(result, self, other, 1.0, 1.0)
+          result.mark_device_dirty!
           return result
         rescue e : Exception
           raise e
         end
-      else
-        raise "cuDNN not available - non-FP32 precisions require cuDNN"
       end
 
-      # Fallback to cuBLAS GEAM (only FP64)
       handle = CUDA.create_handle
       begin
         CUDA.geam(handle,
           ptr_a.as(Pointer(Void)), ptr_b.as(Pointer(Void)), result.device_ptr.not_nil!.as(Pointer(Void)),
-          @rows, @cols, 1.0, 1.0, Precision::Fp32)
+          @rows, @cols, 1.0, 1.0, result.precision)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -803,10 +800,9 @@ module SHAInet
 
       handle = CUDA.create_handle
       begin
-        # Use GEAM with alpha=1.0, beta=-1.0 to compute A - B
         CUDA.geam(handle,
           ptr_a.as(Pointer(Void)), ptr_b.as(Pointer(Void)), result.device_ptr.not_nil!.as(Pointer(Void)),
-          @rows, @cols, 1.0, -1.0, Precision::Fp32)
+          @rows, @cols, 1.0, -1.0, result.precision)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -922,7 +918,7 @@ module SHAInet
       begin
         CUDA.geam(handle,
           ptr_a.as(Pointer(Void)), ptr_b.as(Pointer(Void)), ptr_a.as(Pointer(Void)),
-          @rows, @cols, 1.0, -1.0, Precision::Fp32)
+          @rows, @cols, 1.0, -1.0, self.precision)
       ensure
         CUDA.destroy_handle(handle)
       end
