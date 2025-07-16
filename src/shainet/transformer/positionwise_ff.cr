@@ -31,7 +31,10 @@ module SHAInet
     @workspace_dh : CudaMatrix | Nil = nil
     @workspace_h : CudaMatrix | Nil = nil
     @workspace_out : CudaMatrix | Nil = nil
+
     @workspace_pre_act_grad : CudaMatrix | Nil = nil
+    @workspace_gated : CudaMatrix | Nil = nil
+
     @last_batch_size : Int32 = 0
 
     @pre_act : SimpleMatrix | CudaMatrix | Nil = nil
@@ -81,6 +84,7 @@ module SHAInet
       @workspace_h = nil
       @workspace_out = nil
       @workspace_pre_act_grad = nil
+      @workspace_gated = nil
       @last_batch_size = 0
     end
 
@@ -112,6 +116,7 @@ module SHAInet
         @workspace_h = nil
         @workspace_out = nil
         @workspace_pre_act_grad = nil
+        @workspace_gated = nil
         @last_batch_size = 0
       end
     end
@@ -135,7 +140,7 @@ module SHAInet
       when SHAInet.swiglu
         h_ws.sync_from_device! if h_ws.device_dirty?
         half = h_ws.cols // 2
-        gated = CudaMatrix.zeros(h_ws.rows, half)
+        gated = @workspace_gated.not_nil!
         h_ws.rows.times do |i|
           half.times do |j|
             a = h_ws.unsafe_get(i, j)
@@ -603,6 +608,9 @@ module SHAInet
         if ws = @workspace_out
           CudaMatrix.return_workspace(ws)
         end
+        if ws = @workspace_gated
+          CudaMatrix.return_workspace(ws)
+        end
         if ws = @workspace_d_input
           CudaMatrix.return_workspace(ws)
         end
@@ -617,6 +625,9 @@ module SHAInet
         @workspace_h_t = CudaMatrix.get_workspace(hidden, batch_size, "ff_h_t", precision)
         @workspace_h = CudaMatrix.get_workspace(batch_size, hidden, "ff_h", precision)
         @workspace_out = CudaMatrix.get_workspace(batch_size, d_model, "ff_out", precision)
+        if @activation_function == SHAInet.swiglu
+          @workspace_gated = CudaMatrix.get_workspace(batch_size, hidden // 2, "ff_gated", precision)
+        end
         @workspace_d_input = CudaMatrix.get_workspace(batch_size, d_model, "ff_d_input", precision)
         @workspace_dh = CudaMatrix.get_workspace(batch_size, hidden, "ff_dh", precision)
         @workspace_pre_act_grad = CudaMatrix.get_workspace(batch_size, hidden, "ff_pre_act_grad", precision)
@@ -639,6 +650,7 @@ module SHAInet
       @workspace_h_t = nil
       @workspace_h = nil
       @workspace_out = nil
+      @workspace_gated = nil
       @workspace_d_input = nil
       @workspace_dh = nil
       @workspace_pre_act_grad = nil
