@@ -243,9 +243,9 @@ module SHAInet
           CUDA.axpy(
             handle,
             -lr,
-            g_ptr.as(Pointer(Float32)),
-            e_ptr.as(Pointer(Float32)),
-            total)
+            g_ptr.as(Pointer(Void)),
+            e_ptr.as(Pointer(Void)),
+            total, Precision::Fp32)
           CUDA.destroy_handle(handle)
           zeros = Array(Float32).new(total, 0.0)
           CUDA.memcpy(g_ptr.as(Pointer(Void)), zeros.to_unsafe.as(Pointer(Void)), (total * 8).to_u64, CUDA::MemcpyKind::HostToDevice)

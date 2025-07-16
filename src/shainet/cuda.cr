@@ -507,16 +507,50 @@ module SHAInet
       free_loss_buffer
     end
 
-    def gemm(handle : LibCUBLAS::Handle, a : Pointer(Float32), b : Pointer(Float32), c : Pointer(Float32),
-             m : Int32, n : Int32, k : Int32, lda : Int32, ldb : Int32, ldc : Int32)
-      alpha = 1.0_f32
-      beta = 0.0_f32
-      LibCUBLAS.cublasSgemm_v2(handle,
-        Operation::N.value, Operation::N.value,
-        m, n, k,
-        pointerof(alpha), a, lda,
-        b, ldb,
-        pointerof(beta), c, ldc)
+    # GEMM dispatch based on matrix precision
+    def gemm(handle : LibCUBLAS::Handle, a : Pointer(Void), b : Pointer(Void), c : Pointer(Void),
+             m : Int32, n : Int32, k : Int32, lda : Int32, ldb : Int32, ldc : Int32,
+             precision : Precision)
+      case precision
+      when Precision::Fp32
+        alpha = 1.0_f32
+        beta = 0.0_f32
+        LibCUBLAS.cublasSgemm_v2(handle,
+          Operation::N.value, Operation::N.value,
+          m, n, k,
+          pointerof(alpha), a.as(Pointer(Float32)), lda,
+          b.as(Pointer(Float32)), ldb,
+          pointerof(beta), c.as(Pointer(Float32)), ldc)
+      when Precision::Fp16, Precision::Bf16
+        if gemm_ex_available?
+          dtype = data_type_for(precision)
+          ctype = compute_type_for(precision)
+          alpha = scalar_for_compute_type(1.0_f32, ctype)
+          beta = scalar_for_compute_type(0.0_f32, ctype)
+          LibCUBLAS.cublasGemmEx(handle,
+            Operation::N.value, Operation::N.value,
+            m, n, k,
+            alpha.to_unsafe,
+            a, dtype.value, lda,
+            b, dtype.value, ldb,
+            beta.to_unsafe,
+            c, dtype.value, ldc,
+            ctype.value, 0)
+        elsif precision == Precision::Fp16 && hgemm_available?
+          alpha = 1.0_f32.to_f16
+          beta = 0.0_f32.to_f16
+          LibCUBLAS.cublasHgemm(handle,
+            Operation::N.value, Operation::N.value,
+            m, n, k,
+            pointerof(alpha).as(Pointer(UInt16)), a.as(UInt16Ptr), lda,
+            b.as(UInt16Ptr), ldb,
+            pointerof(beta).as(Pointer(UInt16)), c.as(UInt16Ptr), ldc)
+        else
+          return -1
+        end
+      else
+        return -1
+      end
     end
 
     # Wrapper for cublasGemmEx to handle half precision inputs when available
@@ -524,31 +558,10 @@ module SHAInet
                 m : Int32, n : Int32, k : Int32, lda : Int32, ldb : Int32, ldc : Int32,
                 atype : LibCUBLAS::DataType, btype : LibCUBLAS::DataType, ctype : LibCUBLAS::DataType,
                 compute_type : LibCUBLAS::ComputeType)
-      alpha_ptr = Pointer(Void).null
-      beta_ptr = Pointer(Void).null
-
-      case compute_type
-      when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_16F
-        alpha = SHAInet::Float16.new(1.0_f32)
-        beta = SHAInet::Float16.new(0.0_f32)
-        alpha_ptr = pointerof(alpha).as(Void*)
-        beta_ptr = pointerof(beta).as(Void*)
-      when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_16BF
-        alpha = SHAInet::BFloat16.new(1.0_f32)
-        beta = SHAInet::BFloat16.new(0.0_f32)
-        alpha_ptr = pointerof(alpha).as(Void*)
-        beta_ptr = pointerof(beta).as(Void*)
-      when LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32I
-        alpha = 1_i32
-        beta = 0_i32
-        alpha_ptr = pointerof(alpha).as(Void*)
-        beta_ptr = pointerof(beta).as(Void*)
-      else
-        alpha = 1.0_f32
-        beta = 0.0_f32
-        alpha_ptr = pointerof(alpha).as(Void*)
-        beta_ptr = pointerof(beta).as(Void*)
-      end
+      alpha_buf = scalar_for_compute_type(1.0_f32, compute_type)
+      beta_buf = scalar_for_compute_type(0.0_f32, compute_type)
+      alpha_ptr = alpha_buf.to_unsafe
+      beta_ptr = beta_buf.to_unsafe
 
       LibCUBLAS.cublasGemmEx(handle,
         Operation::N.value, Operation::N.value,
@@ -577,37 +590,59 @@ module SHAInet
         LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32I.value, 0)
     end
 
-    def gemm_accumulate(handle : LibCUBLAS::Handle, a : Pointer(Float32), b : Pointer(Float32), c : Pointer(Float32),
-                        m : Int32, n : Int32, k : Int32, lda : Int32, ldb : Int32, ldc : Int32, alpha : Float32, beta : Float32)
-      LibCUBLAS.cublasSgemm_v2(handle,
-        Operation::N.value, Operation::N.value,
-        m, n, k,
-        pointerof(alpha), a, lda,
-        b, ldb,
-        pointerof(beta), c, ldc)
+    def gemm_accumulate(handle : LibCUBLAS::Handle, a : Pointer(Void), b : Pointer(Void), c : Pointer(Void),
+                        m : Int32, n : Int32, k : Int32, lda : Int32, ldb : Int32, ldc : Int32,
+                        alpha : Float32, beta : Float32, precision : Precision)
+      case precision
+      when Precision::Fp32
+        LibCUBLAS.cublasSgemm_v2(handle,
+          Operation::N.value, Operation::N.value,
+          m, n, k,
+          pointerof(alpha), a.as(Pointer(Float32)), lda,
+          b.as(Pointer(Float32)), ldb,
+          pointerof(beta), c.as(Pointer(Float32)), ldc)
+      when Precision::Fp16, Precision::Bf16
+        if gemm_ex_available?
+          dtype = data_type_for(precision)
+          ctype = compute_type_for(precision)
+          a_scalar = scalar_for_compute_type(alpha, ctype)
+          b_scalar = scalar_for_compute_type(beta, ctype)
+          LibCUBLAS.cublasGemmEx(handle,
+            Operation::N.value, Operation::N.value,
+            m, n, k,
+            a_scalar.to_unsafe,
+            a, dtype.value, lda,
+            b, dtype.value, ldb,
+            b_scalar.to_unsafe,
+            c, dtype.value, ldc,
+            ctype.value, 0)
+        elsif precision == Precision::Fp16 && hgemm_available?
+          af16 = Float16.new(alpha)
+          bf16 = Float16.new(beta)
+          LibCUBLAS.cublasHgemm(handle,
+            Operation::N.value, Operation::N.value,
+            m, n, k,
+            pointerof(af16).as(Pointer(UInt16)), a.as(UInt16Ptr), lda,
+            b.as(UInt16Ptr), ldb,
+            pointerof(bf16).as(Pointer(UInt16)), c.as(UInt16Ptr), ldc)
+        else
+          return -1
+        end
+      else
+        return -1
+      end
     end
 
-    def sgemm(handle : LibCUBLAS::Handle, a : Pointer(Float32), b : Pointer(Float32), c : Pointer(Float32),
-              m : Int32, n : Int32, k : Int32, lda : Int32, ldb : Int32, ldc : Int32)
-      alpha = 1.0_f32
-      beta = 0.0_f32
-      LibCUBLAS.cublasSgemm_v2(handle,
-        Operation::N.value, Operation::N.value,
-        m, n, k,
-        pointerof(alpha), a, lda,
-        b, ldb,
-        pointerof(beta), c, ldc)
+    def sgemm(handle : LibCUBLAS::Handle, a : Pointer(Void), b : Pointer(Void), c : Pointer(Void),
+              m : Int32, n : Int32, k : Int32, lda : Int32, ldb : Int32, ldc : Int32,
+              precision : Precision)
+      gemm(handle, a, b, c, m, n, k, lda, ldb, ldc, precision)
     end
 
-    def sgemm_accumulate(handle : LibCUBLAS::Handle, a : Pointer(Float32), b : Pointer(Float32), c : Pointer(Float32),
+    def sgemm_accumulate(handle : LibCUBLAS::Handle, a : Pointer(Void), b : Pointer(Void), c : Pointer(Void),
                          m : Int32, n : Int32, k : Int32, lda : Int32, ldb : Int32, ldc : Int32,
-                         alpha : Float32, beta : Float32)
-      LibCUBLAS.cublasSgemm_v2(handle,
-        Operation::N.value, Operation::N.value,
-        m, n, k,
-        pointerof(alpha), a, lda,
-        b, ldb,
-        pointerof(beta), c, ldc)
+                         alpha : Float32, beta : Float32, precision : Precision)
+      gemm_accumulate(handle, a, b, c, m, n, k, lda, ldb, ldc, alpha, beta, precision)
     end
 
     @@hgemm_available : Bool? = nil
@@ -650,36 +685,76 @@ module SHAInet
         pointerof(beta).as(Pointer(UInt16)), c, ldc)
     end
 
-    def geam(handle : LibCUBLAS::Handle, a : Pointer(Float32), b : Pointer(Float32), c : Pointer(Float32),
-             m : Int32, n : Int32, alpha : Float32, beta : Float32)
-      LibCUBLAS.cublasSgeam(handle,
-        Operation::N.value, Operation::N.value,
-        m, n,
-        pointerof(alpha), a, m,
-        pointerof(beta), b, m,
-        c, m)
+    def geam(handle : LibCUBLAS::Handle, a : Pointer(Void), b : Pointer(Void), c : Pointer(Void),
+             m : Int32, n : Int32, alpha : Float32, beta : Float32, precision : Precision)
+      case precision
+      when Precision::Fp32
+        LibCUBLAS.cublasSgeam(handle,
+          Operation::N.value, Operation::N.value,
+          m, n,
+          pointerof(alpha), a.as(Pointer(Float32)), m,
+          pointerof(beta), b.as(Pointer(Float32)), m,
+          c.as(Pointer(Float32)), m)
+      else
+        return -1
+      end
     end
 
-    def scal(handle : LibCUBLAS::Handle, x : Pointer(Float32), n : Int32, alpha : Float32)
-      LibCUBLAS.cublasSscal_v2(handle, n, pointerof(alpha), x, 1)
+    def scal(handle : LibCUBLAS::Handle, x : Pointer(Void), n : Int32, alpha : Float32, precision : Precision)
+      case precision
+      when Precision::Fp32
+        LibCUBLAS.cublasSscal_v2(handle, n, pointerof(alpha), x.as(Pointer(Float32)), 1)
+      when Precision::Fp16
+        scale_fp16(x.as(UInt16Ptr), alpha, n) if kernels_available?
+      when Precision::Bf16
+        scale_bf16(x.as(UInt16Ptr), alpha, n) if kernels_available?
+      else
+        return -1
+      end
     end
 
-    def scal_s(handle : LibCUBLAS::Handle, x : Pointer(Float32), n : Int32, alpha : Float32)
-      LibCUBLAS.cublasSscal_v2(handle, n, pointerof(alpha), x, 1)
+    def scal_s(handle : LibCUBLAS::Handle, x : Pointer(Void), n : Int32, alpha : Float32, precision : Precision)
+      scal(handle, x, n, alpha, precision)
     end
 
-    def ger(handle : LibCUBLAS::Handle, x : Pointer(Float32), y : Pointer(Float32), a : Pointer(Float32), m : Int32, n : Int32, lda : Int32, alpha : Float32 = 1.0)
-      LibCUBLAS.cublasSger_v2(handle, m, n, pointerof(alpha), x, 1, y, 1, a, lda)
+    def ger(handle : LibCUBLAS::Handle, x : Pointer(Void), y : Pointer(Void), a : Pointer(Void), m : Int32, n : Int32, lda : Int32, precision : Precision, alpha : Float32 = 1.0)
+      case precision
+      when Precision::Fp32
+        LibCUBLAS.cublasSger_v2(handle, m, n, pointerof(alpha), x.as(Pointer(Float32)), 1, y.as(Pointer(Float32)), 1, a.as(Pointer(Float32)), lda)
+      else
+        return -1
+      end
     end
 
-    def dot(handle : LibCUBLAS::Handle, x : Pointer(Float32), y : Pointer(Float32), n : Int32)
-      result = 0.0
-      LibCUBLAS.cublasSdot_v2(handle, n, x, 1, y, 1, pointerof(result))
-      result
+    def dot(handle : LibCUBLAS::Handle, x : Pointer(Void), y : Pointer(Void), n : Int32, precision : Precision)
+      case precision
+      when Precision::Fp32
+        result = 0.0
+        LibCUBLAS.cublasSdot_v2(handle, n, x.as(Pointer(Float32)), 1, y.as(Pointer(Float32)), 1, pointerof(result))
+        result
+      else
+        0.0
+      end
     end
 
-    def axpy(handle : LibCUBLAS::Handle, alpha : Float32, x : Pointer(Float32), y : Pointer(Float32), n : Int32)
-      LibCUBLAS.cublasSaxpy_v2(handle, n, pointerof(alpha), x, 1, y, 1)
+    def axpy(handle : LibCUBLAS::Handle, alpha : Float32, x : Pointer(Void), y : Pointer(Void), n : Int32, precision : Precision)
+      case precision
+      when Precision::Fp32
+        LibCUBLAS.cublasSaxpy_v2(handle, n, pointerof(alpha), x.as(Pointer(Float32)), 1, y.as(Pointer(Float32)), 1)
+      when Precision::Fp16, Precision::Bf16
+        if axpy_ex_available?
+          dtype = data_type_for(precision)
+          ctype = compute_type_for(precision)
+          scalar = scalar_for_compute_type(alpha, ctype)
+          LibCUBLAS.cublasAxpyEx(handle, n,
+            scalar.to_unsafe,
+            x, dtype.value, 1,
+            y, dtype.value, 1,
+            ctype.value)
+        end
+      else
+        return -1
+      end
       # Optional kernels implemented in src/shainet/native/cuda_kernels.cu
       # These methods fall back to CPU when the native library is missing.
     end

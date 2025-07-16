@@ -540,16 +540,16 @@ module SHAInet
           # gamma := gamma - lr * g_gamma (using axpy with negative lr)
           gamma_size = @gamma.rows * @gamma.cols
           CUDA.axpy(handle, -lr,
-            gg_ptr.as(Pointer(Float32)),
-            g_ptr.as(Pointer(Float32)),
-            gamma_size)
+            gg_ptr.as(Pointer(Void)),
+            g_ptr.as(Pointer(Void)),
+            gamma_size, Precision::Fp32)
 
           # beta := beta - lr * g_beta (using axpy with negative lr)
           beta_size = @beta.rows * @beta.cols
           CUDA.axpy(handle, -lr,
-            gb_ptr.as(Pointer(Float32)),
-            b_ptr.as(Pointer(Float32)),
-            beta_size)
+            gb_ptr.as(Pointer(Void)),
+            b_ptr.as(Pointer(Void)),
+            beta_size, Precision::Fp32)
 
           CUDA.destroy_handle(handle)
 
