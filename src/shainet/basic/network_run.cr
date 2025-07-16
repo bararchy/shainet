@@ -236,6 +236,7 @@ module SHAInet
               last_row_vals = matrix.rows == 1 ? matrix : slice_rows_helper(matrix, matrix.rows - 1, 1)
               out_layer.activations = last_row_vals.clone
               out_layer.sigma_primes = CudaMatrix.ones(1, matrix.cols)
+              CudaMatrix.return_workspace(last_row_vals) if last_row_vals != matrix
             end
           else
             # Fallback to CPU for unsupported activation functions - minimize sync operations
@@ -1653,7 +1654,13 @@ module SHAInet
             raise ArgumentError.new("Transformer output dimension mismatch: d_model (#{last_token.cols}) doesn't match weights input size (#{weights.rows})")
           end
 
-          return last_token * weights
+          result = last_token * weights
+          if (ws = @workspace_last_token) && ws.object_id == last_token.object_id
+            # last_token points to persistent workspace, don't return
+          else
+            CudaMatrix.return_workspace(last_token)
+          end
+          return result
         end
 
         # For matrix * weights, we need matrix.cols == weights.rows
@@ -1808,7 +1815,8 @@ module SHAInet
 
     # Helper method for matrix slicing (missing method)
     private def slice_rows_helper(matrix : CudaMatrix, start_row : Int32, num_rows : Int32) : CudaMatrix
-      result = CudaMatrix.new(num_rows, matrix.cols, precision: @precision)
+      CUDA.set_device(matrix.device_id) if CUDA.fully_available?
+      result = CudaMatrix.get_workspace(num_rows, matrix.cols, "slice_rows_helper", @precision)
       num_rows.times do |i|
         matrix.cols.times do |j|
           result[i, j] = matrix[start_row + i, j]
@@ -1818,18 +1826,19 @@ module SHAInet
       result
     end
 
-  private def convert_matrix_precision(mat : CudaMatrix, prec : Precision) : CudaMatrix
-    return mat if mat.precision == prec
-    mat.sync_from_device!("convert_matrix_precision") if mat.device_dirty?
-    result = CudaMatrix.new(mat.rows, mat.cols, precision: prec, device_id: mat.device_id)
-    mat.rows.times do |i|
-      mat.cols.times do |j|
-        result[i, j] = mat[i, j]
+    private def convert_matrix_precision(mat : CudaMatrix, prec : Precision) : CudaMatrix
+      return mat if mat.precision == prec
+      mat.sync_from_device!("convert_matrix_precision") if mat.device_dirty?
+      CUDA.set_device(mat.device_id) if CUDA.fully_available?
+      result = CudaMatrix.get_workspace(mat.rows, mat.cols, "convert_matrix_precision", prec)
+      mat.rows.times do |i|
+        mat.cols.times do |j|
+          result[i, j] = mat[i, j]
+        end
       end
+      result.sync_to_device! if CUDA.fully_available?
+      result
     end
-    result.sync_to_device! if CUDA.fully_available?
-    result
-  end
 
     private def ensure_last_token_ws(cols : Int32, precision : Precision, device_id : Int32)
       return unless CUDA.fully_available?
