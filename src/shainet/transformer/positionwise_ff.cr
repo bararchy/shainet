@@ -435,23 +435,25 @@ module SHAInet
       raise ArgumentError.new("size mismatch") unless grad.rows == dest.rows && grad.cols == dest.cols
       case @activation_function
       when SHAInet.swiglu
-        m.sync_from_device!("ff_gradient_debug") if m.device_dirty?
-        grad.sync_from_device!("ff_gradient_debug") if grad.device_dirty?
         half = grad.cols
         raise ArgumentError.new("dest size") unless dest.cols == m.cols
-        dest.zero!
-        m.rows.times do |i|
-          half.times do |j|
-            a = m.unsafe_get(i, j)
-            b = m.unsafe_get(i, j + half)
-            g = grad.unsafe_get(i, j)
-            sig = SHAInet._sigmoid(b)
-            sig_p = SHAInet._sigmoid_prime(b)
-            dest.unsafe_set(i, j, g * sig)
-            dest.unsafe_set(i, j + half, g * a * sig_p)
+        if CUDA.fully_available?
+          begin
+            CUDA.swiglu_backward(
+              dest.device_ptr.not_nil!.as(Pointer(Float32)),
+              m.device_ptr.not_nil!.as(Pointer(Float32)),
+              grad.device_ptr.not_nil!.as(Pointer(Float32)),
+              m.rows,
+              half
+            )
+            dest.mark_device_dirty!
+            return dest
+          rescue e : Exception
+            Log.debug { "CUDA swiglu_backward failed: #{e}" }
           end
+        else
+          raise "CUDA not available for swiglu_backward"
         end
-        dest.sync_to_device!("ff_backward_result")
         dest
       when SHAInet.relu
         # Use cuDNN for optimized ReLU gradient if available
