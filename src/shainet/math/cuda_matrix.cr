@@ -48,8 +48,8 @@ module SHAInet
     # Detailed sync tracking by source
     @@sync_sources = Hash(String, UInt64).new(0_u64)
 
-    # Disable workspace pool - use in-place operations instead
-    @@matrix_pool = Hash(String, Array(CudaMatrix)).new { |h, k| h[k] = [] of CudaMatrix }
+    # Disable workspace pool - use raw device buffer pooling instead
+    @@buffer_pool = Hash(String, Array(Pointer(Void))).new { |h, k| h[k] = [] of Pointer(Void) }
     @@pool_enabled = true
     @@max_pool_size = 30_000
 
@@ -57,6 +57,19 @@ module SHAInet
 
     def element_size : Int32
       case @precision
+      when Precision::Int8
+        1
+      when Precision::Fp16, Precision::Bf16
+        2
+      when Precision::Fp32
+        4
+      else
+        4
+      end
+    end
+
+    def self.element_size(precision : Precision) : Int32
+      case precision
       when Precision::Int8
         1
       when Precision::Fp16, Precision::Bf16
@@ -134,7 +147,8 @@ module SHAInet
     end
 
     def initialize(@rows : Int32, @cols : Int32, init : Float32 = 0_f32,
-                   precision : Precision = Precision::Fp32, device_id : Int32? = nil)
+                   precision : Precision = Precision::Fp32, device_id : Int32? = nil,
+                   device_ptr : Pointer(Void)? = nil)
       @precision = precision
       @device_id = device_id || (CUDA.current_device || 0)
       @data_f32_master = nil
@@ -170,36 +184,41 @@ module SHAInet
 
       # CudaMatrix requires CUDA to be available
       raise RuntimeError.new("CudaMatrix requires CUDA to be available") unless CUDA.fully_available?
-      # Print the most frequent allocation sites
       size = @rows * @cols
       elem_size = element_size
       bytes = (size * elem_size).to_u64
 
-      # Check if we would exceed memory limits or are getting close
-      if @@total_gpu_memory_allocated + bytes > @@max_gpu_memory ||
-         @@total_gpu_memory_allocated > (@@max_gpu_memory * 0.8).to_u64 # 80% threshold
-        Log.warn { "CudaMatrix.initialize: GPU memory usage high (#{@@total_gpu_memory_allocated}/#{@@max_gpu_memory} bytes, #{@@active_matrices} matrices). Forcing cleanup..." }
-
-        # Try again after cleanup
-        if @@total_gpu_memory_allocated + bytes > @@max_gpu_memory
-          raise RuntimeError.new("GPU memory limit exceeded: would use #{@@total_gpu_memory_allocated + bytes}/#{@@max_gpu_memory} bytes")
-        end
-      end
-
-      @@allocation_attempts += 1
-
-      ptr = Pointer(Void).null
-      result = CUDA.malloc(pointerof(ptr).as(Pointer(Pointer(Void))), bytes)
-
-      if result == 0 && !ptr.null?
-        @device_ptr = ptr
+      if device_ptr
+        # Reuse an existing buffer from the pool
+        @device_ptr = device_ptr
         @gpu_memory_size = bytes
-        @@total_gpu_memory_allocated += bytes
         @@active_matrices += 1
       else
-        @@allocation_failures += 1
-        Log.error { "CudaMatrix.initialize: GPU allocation failed with result #{result} for #{@rows}x#{@cols}. Total usage: #{@@active_matrices} matrices, #{@@total_gpu_memory_allocated} bytes" }
-        raise RuntimeError.new("Failed to allocate #{bytes} bytes of GPU memory (CUDA error: #{result})")
+        # Check if we would exceed memory limits or are getting close
+        if @@total_gpu_memory_allocated + bytes > @@max_gpu_memory ||
+           @@total_gpu_memory_allocated > (@@max_gpu_memory * 0.8).to_u64
+          Log.warn { "CudaMatrix.initialize: GPU memory usage high (#{@@total_gpu_memory_allocated}/#{@@max_gpu_memory} bytes, #{@@active_matrices} matrices). Forcing cleanup..." }
+
+          if @@total_gpu_memory_allocated + bytes > @@max_gpu_memory
+            raise RuntimeError.new("GPU memory limit exceeded: would use #{@@total_gpu_memory_allocated + bytes}/#{@@max_gpu_memory} bytes")
+          end
+        end
+
+        @@allocation_attempts += 1
+
+        ptr = Pointer(Void).null
+        result = CUDA.malloc(pointerof(ptr).as(Pointer(Pointer(Void))), bytes)
+
+        if result == 0 && !ptr.null?
+          @device_ptr = ptr
+          @gpu_memory_size = bytes
+          @@total_gpu_memory_allocated += bytes
+          @@active_matrices += 1
+        else
+          @@allocation_failures += 1
+          Log.error { "CudaMatrix.initialize: GPU allocation failed with result #{result} for #{@rows}x#{@cols}. Total usage: #{@@active_matrices} matrices, #{@@total_gpu_memory_allocated} bytes" }
+          raise RuntimeError.new("Failed to allocate #{bytes} bytes of GPU memory (CUDA error: #{result})")
+        end
       end
     end
 
@@ -1588,54 +1607,87 @@ module SHAInet
       self
     end
 
+    # Request a raw device buffer from the pool or allocate a new one
+    def self.request_buffer(size : Int32, precision : Precision) : Pointer(Void)
+      return Pointer(Void).null unless @@pool_enabled
+
+      key = "#{size}_#{precision}"
+      pool = @@buffer_pool[key]
+
+      if ptr = pool.pop?
+        ptr
+      else
+        bytes = (size * element_size(precision)).to_u64
+        out = Pointer(Void).null
+        result = CUDA.malloc(pointerof(out).as(Pointer(Pointer(Void))), bytes)
+        if result == 0 && !out.null?
+          @@total_gpu_memory_allocated += bytes
+          out
+        else
+          raise RuntimeError.new("Failed to allocate #{bytes} bytes of GPU memory")
+        end
+      end
+    end
+
+    # Release a raw buffer back to the pool
+    def self.release_buffer(ptr : Pointer(Void), size : Int32, precision : Precision)
+      return if ptr.null? || !@@pool_enabled
+
+      key = "#{size}_#{precision}"
+      pool = @@buffer_pool[key]
+      if pool.size < @@max_pool_size
+        pool << ptr
+      else
+        CUDA.free(ptr)
+        @@total_gpu_memory_allocated -= (size * element_size(precision)).to_u64
+      end
+    end
+
     # Get a matrix from the pool or create a new one
     def self.get_workspace(rows : Int32, cols : Int32,
                            source : String = "workspace",
                            precision : Precision = Precision::Fp32) : CudaMatrix
       return new(rows, cols, precision: precision) unless @@pool_enabled
 
-      key = "#{rows}x#{cols}_#{precision}"
-      pool = @@matrix_pool[key]
-
-      if matrix = pool.pop?
-        # Reuse existing matrix - zero it out for cleanliness
-        matrix.zero!
-        matrix
-      else
-        # Create new matrix
-        new(rows, cols, precision: precision)
-      end
+      size = rows * cols
+      ptr = request_buffer(size, precision)
+      matrix = new(rows, cols, precision: precision, device_ptr: ptr)
+      matrix.zero!
+      matrix
     end
 
-    # Return a matrix to the pool for reuse
+    # Return a matrix's buffer to the pool for reuse
     def self.return_workspace(matrix : CudaMatrix)
       return unless @@pool_enabled
-
-      key = "#{matrix.rows}x#{matrix.cols}_#{matrix.precision}"
-      pool = @@matrix_pool[key]
-
-      # Only pool if we haven't exceeded the limit
-      if pool.size < @@max_pool_size
-        pool << matrix
+      if ptr = matrix.device_ptr
+        size = matrix.rows * matrix.cols
+        release_buffer(ptr, size, matrix.precision)
+        @@active_matrices -= 1
+        matrix.device_ptr = Pointer(Void).null
       end
     end
 
-    # Clear all pooled matrices
+    # Clear all pooled buffers
     def self.clear_workspace_pool
-      total_freed = 0
-      @@matrix_pool.each_value do |pool|
-        total_freed += pool.size
+      @@buffer_pool.each do |key, pool|
+        size, prec_str = key.split("_")
+        precision = Precision.parse(prec_str)
+        elem_size = element_size(precision)
+        pool.each do |ptr|
+          CUDA.free(ptr)
+          @@total_gpu_memory_allocated -= (size.to_i * elem_size).to_u64
+        end
         pool.clear
       end
     end
 
     # Get pool statistics
     def self.pool_stats
-      total_pooled = @@matrix_pool.values.sum(&.size)
+      total_pooled = @@buffer_pool.values.sum(&.size)
       {
         enabled:      @@pool_enabled,
         total_pooled: total_pooled,
-        pools:        @@matrix_pool.transform_values(&.size),
+        pools:        @@buffer_pool.transform_values(&.size),
       }
     end
 
