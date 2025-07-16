@@ -705,6 +705,37 @@ module SHAInet
           pointerof(alpha), a.as(Pointer(Float32)), m,
           pointerof(beta), b.as(Pointer(Float32)), m,
           c.as(Pointer(Float32)), m)
+      when Precision::Fp16, Precision::Bf16
+        return -1 unless gemm_ex_available?
+
+        dtype = data_type_for(precision)
+        ctype = compute_type_for(precision)
+        total = m * n
+        elem_sz = case precision
+                  when Precision::Fp16, Precision::Bf16
+                    2
+                  else
+                    4
+                  end
+
+        copy_device_to_device(c, b, (total * elem_sz).to_u64)
+
+        if beta != 1.0_f32
+          scal(handle, c, total, beta, precision)
+        end
+
+        one_buf = scalar_for_compute_type(1.0_f32, ctype)
+        alpha_buf = scalar_for_compute_type(alpha, ctype)
+
+        LibCUBLAS.cublasGemmEx(handle,
+          Operation::N.value, Operation::N.value,
+          total, 1, 1,
+          alpha_buf.to_unsafe,
+          a, dtype.value, total,
+          one_buf.to_unsafe, dtype.value, 1,
+          one_buf.to_unsafe,
+          c, dtype.value, total,
+          ctype.value, 0)
       else
         return -1
       end
@@ -1993,13 +2024,13 @@ module SHAInet
       handle = create_handle(stream)
 
       # Add bias to each row using AXPY: row_i += 1.0 * bias
-        rows.times do |i|
-          row_start = mat + (i * cols) # Pointer to start of row i
-          axpy(handle, 1.0,
-            bias,
-            row_start,
-            cols, Precision::Fp32)
-        end
+      rows.times do |i|
+        row_start = mat + (i * cols) # Pointer to start of row i
+        axpy(handle, 1.0,
+          bias,
+          row_start,
+          cols, Precision::Fp32)
+      end
 
       destroy_handle(handle)
     end
@@ -2037,13 +2068,13 @@ module SHAInet
       end
 
       handle = create_handle(stream)
-        rows.times do |i|
-          row_start = src + (i * cols)
-          axpy(handle, 1.0,
-            row_start,
-            dst,
-            cols, Precision::Fp32)
-        end
+      rows.times do |i|
+        row_start = src + (i * cols)
+        axpy(handle, 1.0,
+          row_start,
+          dst,
+          cols, Precision::Fp32)
+      end
       destroy_handle(handle)
     end
 
