@@ -197,20 +197,58 @@ module SHAInet
             # Fallback: use identity (no activation derivative applied)
             host_vec = Array(Float32).new(@l_size, 1.0)
           end
+          precision = @gradients.as(CudaMatrix).precision
+          elem_size = CudaMatrix.element_size(precision)
+          bytes = (@l_size * elem_size).to_u64
 
-          bytes = (@l_size * 8).to_u64
-          g_dev = Pointer(Float32).null
-          CUDA.malloc(pointerof(g_dev).as(Pointer(Pointer(Void))), bytes)
-          CUDA.memcpy(g_dev.as(Pointer(Void)), host_vec.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
-          one_val = 1.0_f32
-          one_dev = Pointer(Float32).null
-          CUDA.malloc(pointerof(one_dev).as(Pointer(Pointer(Void))), 4_u64)
-          CUDA.memcpy(one_dev.as(Pointer(Void)), pointerof(one_val).as(Pointer(Void)), 4_u64, CUDA::MemcpyKind::HostToDevice)
-          handle = CUDA.create_handle
-          CUDA.ger(handle, one_dev, g_dev, dptr + id*@l_size, @l_size, 1, @l_size)
-          CUDA.destroy_handle(handle)
-          CUDA.free(g_dev.as(Pointer(Void)))
-          CUDA.free(one_dev.as(Pointer(Void)))
+          case precision
+          when Precision::Fp32
+            g_dev = Pointer(Float32).null
+            CUDA.malloc(pointerof(g_dev).as(Pointer(Pointer(Void))), bytes)
+            CUDA.memcpy(g_dev.as(Pointer(Void)), host_vec.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
+            one_val = 1.0_f32
+            one_dev = Pointer(Float32).null
+            CUDA.malloc(pointerof(one_dev).as(Pointer(Pointer(Void))), 4_u64)
+            CUDA.memcpy(one_dev.as(Pointer(Void)), pointerof(one_val).as(Pointer(Void)), 4_u64, CUDA::MemcpyKind::HostToDevice)
+            handle = CUDA.create_handle
+            CUDA.ger(handle, one_dev, g_dev, dptr + id*@l_size, 1, @l_size, 1, Precision::Fp32)
+            CUDA.destroy_handle(handle)
+            CUDA.free(g_dev.as(Pointer(Void)))
+            CUDA.free(one_dev.as(Pointer(Void)))
+          when Precision::Fp16
+            vec16 = host_vec.map { |v| Float16.new(v) }
+            g_dev = Pointer(UInt16).null
+            CUDA.malloc(pointerof(g_dev).as(Pointer(Pointer(Void))), bytes)
+            CUDA.memcpy(g_dev.as(Pointer(Void)), vec16.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
+            one_val = Float16.new(1.0_f32)
+            one_dev = Pointer(UInt16).null
+            CUDA.malloc(pointerof(one_dev).as(Pointer(Pointer(Void))), 2_u64)
+            CUDA.memcpy(one_dev.as(Pointer(Void)), pointerof(one_val).as(Pointer(Void)), 2_u64, CUDA::MemcpyKind::HostToDevice)
+            handle = CUDA.create_handle
+            CUDA.ger_fp16(one_dev, g_dev, dptr.as(CUDA::UInt16Ptr) + id*@l_size, 1, @l_size, @l_size, 1.0_f32)
+            CUDA.destroy_handle(handle)
+            CUDA.free(g_dev.as(Pointer(Void)))
+            CUDA.free(one_dev.as(Pointer(Void)))
+          when Precision::Bf16
+            vec16 = host_vec.map { |v| BFloat16.new(v) }
+            g_dev = Pointer(UInt16).null
+            CUDA.malloc(pointerof(g_dev).as(Pointer(Pointer(Void))), bytes)
+            CUDA.memcpy(g_dev.as(Pointer(Void)), vec16.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
+            one_val = BFloat16.new(1.0_f32)
+            one_dev = Pointer(UInt16).null
+            CUDA.malloc(pointerof(one_dev).as(Pointer(Pointer(Void))), 2_u64)
+            CUDA.memcpy(one_dev.as(Pointer(Void)), pointerof(one_val).as(Pointer(Void)), 2_u64, CUDA::MemcpyKind::HostToDevice)
+            handle = CUDA.create_handle
+            CUDA.ger_bf16(one_dev, g_dev, dptr.as(CUDA::UInt16Ptr) + id*@l_size, 1, @l_size, @l_size, 1.0_f32)
+            CUDA.destroy_handle(handle)
+            CUDA.free(g_dev.as(Pointer(Void)))
+            CUDA.free(one_dev.as(Pointer(Void)))
+          else
+            # unsupported precision, fallback to CPU path
+            @l_size.times do |i|
+              @gradients[id, i] += host_vec[i]
+            end
+          end
         else
           # Use matrix-based gradient accumulation
           # Check if activations and sigma_primes are available from forward pass

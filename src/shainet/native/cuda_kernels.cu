@@ -262,6 +262,32 @@ __global__ void element_mul_kernel_t(T *out, const T *a, const T *b,
 }
 
 template <typename T>
+__global__ void ger_kernel_t(const T *x, const T *y, T *a,
+                             int m, int n, int lda, float alpha) {
+  int col = blockIdx.x * blockDim.x + threadIdx.x;
+  int row = blockIdx.y * blockDim.y + threadIdx.y;
+  if (row >= m || col >= n)
+    return;
+
+  float xv = Convert<T>::to_float(x[row]);
+  float yv = Convert<T>::to_float(y[col]);
+  int idx = row * lda + col;
+  float av = Convert<T>::to_float(a[idx]);
+  a[idx] = Convert<T>::from_float(av + alpha * xv * yv);
+}
+
+template <typename T>
+void ger_t(const T *x, const T *y, T *a, int m, int n, int lda, float alpha) {
+  dim3 block(16, 16);
+  dim3 grid((n + block.x - 1) / block.x, (m + block.y - 1) / block.y);
+  ger_kernel_t<<<grid, block>>>(x, y, a, m, n, lda, alpha);
+  cudaError_t err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    printf("CUDA Error in ger kernel: %s\n", cudaGetErrorString(err));
+  }
+}
+
+template <typename T>
 __global__ void sum_cols_kernel_t(T *out, const T *in, int rows, int cols) {
   int col = blockIdx.x;
   if (col >= cols)
@@ -1269,6 +1295,16 @@ void scale_bf16(__nv_bfloat16 *data, float alpha, int size) {
   if (err != cudaSuccess) {
     printf("CUDA Error in scale_bf16: %s\n", cudaGetErrorString(err));
   }
+}
+
+void ger_fp16(const __half *x, const __half *y, __half *a,
+              int m, int n, int lda, float alpha) {
+  ger_t<__half>(x, y, a, m, n, lda, alpha);
+}
+
+void ger_bf16(const __nv_bfloat16 *x, const __nv_bfloat16 *y, __nv_bfloat16 *a,
+               int m, int n, int lda, float alpha) {
+  ger_t<__nv_bfloat16>(x, y, a, m, n, lda, alpha);
 }
 
 // Public C API wrappers
