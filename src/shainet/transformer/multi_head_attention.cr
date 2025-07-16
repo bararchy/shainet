@@ -82,6 +82,7 @@ module SHAInet
     @workspace_d_x : CudaMatrix | Nil
 
     @last_batch_size : Int32
+    @workspace_precision : Precision
 
     getter w_q, w_k, w_v, w_o
     property g_w_q, g_w_k, g_w_v, g_w_o
@@ -148,6 +149,7 @@ module SHAInet
       @workspace_d_x = nil
 
       @last_batch_size = 0
+      @workspace_precision = precision
 
       # Initialize cached transposes
       @w_q_t = mat_klass.new(@d_model, @d_model)
@@ -209,6 +211,7 @@ module SHAInet
         @workspace_d_x = nil
 
         @last_batch_size = 0
+        @workspace_precision = @precision
 
         # Convert stored head matrices to GPU
         @q_heads = @q_heads.map { |h| h.is_a?(CudaMatrix) ? h.as(SimpleMatrix | CudaMatrix) : h.as(SimpleMatrix).to_cuda.as(SimpleMatrix | CudaMatrix) }
@@ -805,8 +808,8 @@ module SHAInet
     private def ensure_workspace_matrices(batch_size : Int32)
       if CUDA.fully_available?
         precision = @w_q.is_a?(CudaMatrix) ? @w_q.as(CudaMatrix).precision : Precision::Fp32
-        # Only reallocate if batch size changed
-        if @last_batch_size != batch_size
+        # Reallocate if batch size or precision changed
+        if @last_batch_size != batch_size || @workspace_precision != precision
           # Return previous workspaces to pool if they exist
           if ws = @workspace_concat
             CudaMatrix.return_workspace(ws)
@@ -938,6 +941,7 @@ module SHAInet
           end
 
           @last_batch_size = batch_size
+          @workspace_precision = precision
         end
       end
     end
