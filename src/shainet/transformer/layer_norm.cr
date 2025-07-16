@@ -30,6 +30,7 @@ module SHAInet
     @workspace_d_beta : CudaMatrix | Nil
     @last_batch_size : Int32
     @d_model : Int32
+    @workspace_precision : Precision
 
     # Workspaces are allocated on the first forward pass and reused for the
     # lifetime of the layer. Call `to_gpu!` or `to_cpu!` only when switching
@@ -53,6 +54,7 @@ module SHAInet
       @norm = mat_klass.zeros(1, 1, precision)
       @d_model = d_model
       @last_batch_size = 0
+      @workspace_precision = precision
 
       # Initialize workspace matrices as nil - will be allocated on first use
       @workspace_mean = nil
@@ -126,6 +128,7 @@ module SHAInet
         @workspace_d_gamma = nil
         @workspace_d_beta = nil
         @last_batch_size = 0
+        @workspace_precision = @precision
       end
     end
 
@@ -173,14 +176,15 @@ module SHAInet
       @workspace_d_gamma = nil
       @workspace_d_beta = nil
       @last_batch_size = 0
+      @workspace_precision = @precision
     end
 
     # Pre-allocate or reuse workspace matrices based on input dimensions
     private def ensure_workspace_matrices(batch_size : Int32, d_model : Int32, precision : Precision = Precision::Fp32)
       return unless CUDA.fully_available?
 
-      # Reallocate workspaces when batch size or model dimension changes
-      if @last_batch_size != batch_size || @d_model != d_model
+      # Reallocate workspaces when batch size, model dimension, or precision changes
+      if @last_batch_size != batch_size || @d_model != d_model || @workspace_precision != precision
         if ws = @workspace_mean
           CudaMatrix.return_workspace(ws)
         end
@@ -216,6 +220,7 @@ module SHAInet
 
         @last_batch_size = batch_size
         @d_model = d_model
+        @workspace_precision = precision
       end
     end
 
