@@ -635,26 +635,13 @@ module SHAInet
 
       handle = CUDA.create_handle
       begin
-        if self.precision == other.precision &&
-           (self.precision == Precision::Fp16 || self.precision == Precision::Bf16)
-          if CUDA.gemm_ex_available?
-            compute = CUDA.compute_type_for(self.precision)
-            CUDA.gemm_ex(handle,
-              ptr_b, ptr_a, result.device_ptr.not_nil!,
-              other.cols, @rows, other.rows,
-              other.cols, @cols, result.cols,
-              CUDA.data_type_for(self.precision),
-              CUDA.data_type_for(self.precision),
-              CUDA.data_type_for(result.precision),
-              compute)
-          elsif self.precision == Precision::Fp16 && CUDA.hgemm_available?
-            CUDA.hgemm(handle,
-              ptr_b.as(CUDA::UInt16Ptr), ptr_a.as(CUDA::UInt16Ptr),
-              result.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
-              other.cols, @rows, other.rows,
-              other.cols, @cols, result.cols)
-          else
-            # CPU fallback when GEMMEx is unavailable
+        if self.precision == other.precision
+          status = CUDA.gemm(handle,
+            ptr_b.as(Pointer(Void)), ptr_a.as(Pointer(Void)), result.device_ptr.not_nil!.as(Pointer(Void)),
+            other.cols, @rows, other.rows,
+            other.cols, @cols, result.cols,
+            self.precision)
+          if status != 0
             self.sync_from_device!("gemm_fallback") if device_dirty?
             other.sync_from_device!("gemm_fallback") if other.device_dirty?
             @rows.times do |i|
@@ -667,59 +654,6 @@ module SHAInet
               end
             end
             result.sync_to_device!("gemm_fallback_result")
-          end
-        elsif self.precision == other.precision &&
-              self.precision == Precision::Fp32
-          if CUDA.gemm_ex_available?
-            compute = CUDA::LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F
-            dtype_a = CUDA.data_type_for(Precision::Fp32)
-            dtype_a_lib = dtype_a.is_a?(CUDA::LibCUBLAS::DataType) ? dtype_a : CUDA::LibCUBLAS::DataType.new(dtype_a.value)
-            dtype_c = CUDA.data_type_for(result.precision)
-            dtype_c_lib = dtype_c.is_a?(CUDA::LibCUBLAS::DataType) ? dtype_c : CUDA::LibCUBLAS::DataType.new(dtype_c.value)
-            status = CUDA.gemm_ex(handle,
-              ptr_b, ptr_a, result.device_ptr.not_nil!,
-              other.cols, @rows, other.rows,
-              other.cols, @cols, result.cols,
-              dtype_a_lib,
-              dtype_a_lib,
-              dtype_c_lib,
-              compute)
-            if status != 0
-              Log.error { "gemm_ex failed with status #{status} for A #{@rows}x#{@cols} B #{other.rows}x#{other.cols}" }
-              self.sync_from_device!("gemm_fallback") if device_dirty?
-              other.sync_from_device!("gemm_fallback") if other.device_dirty?
-              @rows.times do |i|
-                other.cols.times do |j|
-                  sum = 0.0_f32
-                  @cols.times do |k|
-                    sum += self.unsafe_get(i, k) * other.unsafe_get(k, j)
-                  end
-                  result.unsafe_set(i, j, sum)
-                end
-              end
-              result.sync_to_device!("gemm_fallback_result")
-            end
-          else
-            status = CUDA.sgemm(handle,
-              ptr_b.as(Pointer(Float32)), ptr_a.as(Pointer(Float32)),
-              result.device_ptr.not_nil!.as(Pointer(Float32)),
-              other.cols, @rows, other.rows,
-              other.cols, @cols, result.cols)
-            if status != 0
-              Log.error { "sgemm failed with status #{status} for A #{@rows}x#{@cols} B #{other.rows}x#{other.cols}" }
-              self.sync_from_device!("gemm_fallback") if device_dirty?
-              other.sync_from_device!("gemm_fallback") if other.device_dirty?
-              @rows.times do |i|
-                other.cols.times do |j|
-                  sum = 0.0_f32
-                  @cols.times do |k|
-                    sum += self.unsafe_get(i, k) * other.unsafe_get(k, j)
-                  end
-                  result.unsafe_set(i, j, sum)
-                end
-              end
-              result.sync_to_device!("gemm_fallback_result")
-            end
           end
         else
           if CUDA.gemm_ex_available?
@@ -813,7 +747,9 @@ module SHAInet
       # Fallback to cuBLAS GEAM (only FP64)
       handle = CUDA.create_handle
       begin
-        CUDA.geam(handle, ptr_a.as(Pointer(Float32)), ptr_b.as(Pointer(Float32)), result.device_ptr.not_nil!.as(Pointer(Float32)), @rows, @cols, 1.0, 1.0)
+        CUDA.geam(handle,
+          ptr_a.as(Pointer(Void)), ptr_b.as(Pointer(Void)), result.device_ptr.not_nil!.as(Pointer(Void)),
+          @rows, @cols, 1.0, 1.0, Precision::Fp32)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -845,7 +781,9 @@ module SHAInet
       handle = CUDA.create_handle
       begin
         # Use GEAM with alpha=1.0, beta=-1.0 to compute A - B
-        CUDA.geam(handle, ptr_a.as(Pointer(Float32)), ptr_b.as(Pointer(Float32)), result.device_ptr.not_nil!.as(Pointer(Float32)), @rows, @cols, 1.0, -1.0)
+        CUDA.geam(handle,
+          ptr_a.as(Pointer(Void)), ptr_b.as(Pointer(Void)), result.device_ptr.not_nil!.as(Pointer(Void)),
+          @rows, @cols, 1.0, -1.0, Precision::Fp32)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -936,7 +874,9 @@ module SHAInet
       # Fallback to cuBLAS GEAM (only FP64)
       handle = CUDA.create_handle
       begin
-        CUDA.geam(handle, ptr_a.as(Pointer(Float32)), ptr_b.as(Pointer(Float32)), ptr_a.as(Pointer(Float32)), @rows, @cols, 1.0, 1.0)
+        CUDA.geam(handle,
+          ptr_a.as(Pointer(Void)), ptr_b.as(Pointer(Void)), ptr_a.as(Pointer(Void)),
+          @rows, @cols, 1.0, 1.0, Precision::Fp32)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -957,7 +897,9 @@ module SHAInet
 
       handle = CUDA.create_handle
       begin
-        CUDA.geam(handle, ptr_a.as(Pointer(Float32)), ptr_b.as(Pointer(Float32)), ptr_a.as(Pointer(Float32)), @rows, @cols, 1.0, -1.0)
+        CUDA.geam(handle,
+          ptr_a.as(Pointer(Void)), ptr_b.as(Pointer(Void)), ptr_a.as(Pointer(Void)),
+          @rows, @cols, 1.0, -1.0, Precision::Fp32)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -991,7 +933,7 @@ module SHAInet
 
       handle = CUDA.create_handle
       begin
-        CUDA.scal(handle, ptr, (@rows*@cols), scalar.to_f32)
+        CUDA.scal(handle, ptr.as(Pointer(Void)), (@rows*@cols), scalar.to_f32, Precision::Fp32)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -1403,7 +1345,7 @@ module SHAInet
         begin
           case @precision
           when Precision::Fp32
-            CUDA.scal_s(handle, dptr.as(Pointer(Float32)), (@rows*@cols), scalar.to_f32)
+            CUDA.scal_s(handle, dptr.as(Pointer(Void)), (@rows*@cols), scalar.to_f32, Precision::Fp32)
           when Precision::Fp16
             if CUDA.kernels_available?
               CUDA.scale_fp16(dptr.as(Pointer(UInt16)), scalar.to_f32, (@rows*@cols))
@@ -1662,100 +1604,13 @@ module SHAInet
           raise ArgumentError.new("precision mismatch for GEMM")
         end
 
-        if (a.precision == Precision::Fp16 ||
-           a.precision == Precision::Bf16) && CUDA.gemm_ex_available?
-          compute = CUDA.compute_type_for(a.precision)
-          status = CUDA.gemm_ex(handle,
-            ptr_b, ptr_a, ptr_c,
-            b.cols, a.rows, b.rows,
-            b.cols, a.cols, @cols,
-            CUDA.data_type_for(a.precision),
-            CUDA.data_type_for(a.precision),
-            CUDA.data_type_for(a.precision),
-            compute)
-          if status != 0
-            Log.error { "gemm_ex failed with status #{status} for A #{a.rows}x#{a.cols} B #{b.rows}x#{b.cols} (precision #{a.precision})" }
-            raise RuntimeError.new("CUDA.gemm_ex failed with status #{status} for #{a.rows}x#{a.cols}x#{b.cols} (precision #{a.precision})")
-          end
-        elsif a.precision == Precision::Fp32 && CUDA.gemm_ex_available?
-          compute = CUDA::LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F
-          dtype_a = CUDA.data_type_for(Precision::Fp32)
-          dtype_a_lib = dtype_a.is_a?(CUDA::LibCUBLAS::DataType) ? dtype_a : CUDA::LibCUBLAS::DataType.new(dtype_a.value)
-          status = CUDA.gemm_ex(handle,
-            ptr_b, ptr_a, ptr_c,
-            b.cols, a.rows, b.rows,
-            b.cols, a.cols, @cols,
-            dtype_a_lib,
-            dtype_a_lib,
-            dtype_a_lib,
-            compute)
-          if status != 0
-            Log.error { "gemm_ex failed with status #{status} for A #{a.rows}x#{a.cols} B #{b.rows}x#{b.cols} (precision #{a.precision})" }
-            raise RuntimeError.new("CUDA.gemm_ex failed with status #{status} for #{a.rows}x#{a.cols}x#{b.cols} (precision #{a.precision})")
-          end
-        elsif a.precision == Precision::Fp16 && CUDA.hgemm_available?
-          status = CUDA.hgemm_accumulate(handle,
-            ptr_b.as(CUDA::UInt16Ptr), ptr_a.as(CUDA::UInt16Ptr), ptr_c.as(CUDA::UInt16Ptr),
-            b.cols, a.rows, b.rows,
-            b.cols, a.cols, @cols,
-            alpha.to_f16, beta.to_f16)
-          if status != 0
-            Log.error { "hgemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}" }
-            raise RuntimeError.new("CUDA.hgemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}")
-          end
-        elsif a.precision == Precision::Fp32
-          status = CUDA.sgemm_accumulate(handle,
-            ptr_b.as(Pointer(Float32)), ptr_a.as(Pointer(Float32)), ptr_c.as(Pointer(Float32)),
-            b.cols, a.rows, b.rows,
-            b.cols, a.cols, @cols,
-            alpha.to_f32, beta.to_f32)
-          if status != 0
-            Log.error { "sgemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}" }
-            # CPU fallback mirroring the regular `*` implementation
-            self.sync_from_device!("gemm_fallback") if device_dirty?
-            a.sync_from_device!("gemm_fallback") if a.device_dirty?
-            b.sync_from_device!("gemm_fallback") if b.device_dirty?
-            @rows.times do |i|
-              @cols.times do |j|
-                sum = 0.0
-                a.cols.times do |k|
-                  sum += a.unsafe_get(i, k) * b.unsafe_get(k, j)
-                end
-                val = alpha * sum + beta * self.unsafe_get(i, j)
-                self.unsafe_set(i, j, val)
-              end
-            end
-            self.sync_to_device!("gemm_fallback_result")
-          end
-        elsif a.precision == Precision::Bf16
-          # CPU fallback when no suitable cuBLAS routine is available
-          self.sync_from_device!("gemm_fallback") if device_dirty?
-          a.sync_from_device!("gemm_fallback") if a.device_dirty?
-          b.sync_from_device!("gemm_fallback") if b.device_dirty?
-          @rows.times do |i|
-            @cols.times do |j|
-              sum = 0.0
-              a.cols.times do |k|
-                sum += a.unsafe_get(i, k) * b.unsafe_get(k, j)
-              end
-              val = alpha * sum + beta * self.unsafe_get(i, j)
-              self.unsafe_set(i, j, val)
-            end
-          end
-          self.sync_to_device!("gemm_fallback_result")
-        else
-          # In-place GEMM: C = alpha * A * B + beta * C
-          # cuBLAS expects column-major ordering, so we perform the same
-          # transpose trick used in `*` by swapping operands and dimensions.
-          # Treating row-major A,B as column-major A^T,B^T results in:
-          # C^T = B^T * A^T
-          status = CUDA.gemm_accumulate(handle, ptr_b.as(Pointer(Float32)), ptr_a.as(Pointer(Float32)), ptr_c.as(Pointer(Float32)),
-            b.cols, a.rows, b.rows,
-            b.cols, a.cols, @cols, alpha, beta)
-          if status != 0
-            Log.error { "gemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}" }
-            raise RuntimeError.new("CUDA.gemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}")
-          end
+        status = CUDA.gemm_accumulate(handle,
+          ptr_b.as(Pointer(Void)), ptr_a.as(Pointer(Void)), ptr_c.as(Pointer(Void)),
+          b.cols, a.rows, b.rows,
+          b.cols, a.cols, @cols, alpha, beta, a.precision)
+        if status != 0
+          Log.error { "gemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}" }
+          raise RuntimeError.new("CUDA.gemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}")
         end
       ensure
         CUDA.destroy_handle(handle)
@@ -1856,7 +1711,7 @@ module SHAInet
             raise "axpyEx unavailable"
           end
         else
-          CUDA.axpy(handle, -learning_rate, grad_ptr.as(Pointer(Float32)), weight_ptr.as(Pointer(Float32)), total_elements)
+          CUDA.axpy(handle, -learning_rate, grad_ptr.as(Pointer(Void)), weight_ptr.as(Pointer(Void)), total_elements, Precision::Fp32)
         end
       rescue
         # CPU fallback when CUDA routines are missing
