@@ -354,8 +354,8 @@ module SHAInet
         cached_vals = cache.values[layer][h]
 
         total_len = cached_keys.size + ks_new.rows
-        k_all = CudaMatrix.new(total_len, @head_dim)
-        v_all = CudaMatrix.new(total_len, @head_dim)
+        k_all = CudaMatrix.get_workspace(total_len, @head_dim, "mha_k_all_ws", x.precision)
+        v_all = CudaMatrix.get_workspace(total_len, @head_dim, "mha_v_all_ws", x.precision)
 
         cached_keys.each_with_index { |m, idx| k_all.set_row!(idx, m.as(CudaMatrix)) }
         cached_vals.each_with_index { |m, idx| v_all.set_row!(idx, m.as(CudaMatrix)) }
@@ -373,15 +373,21 @@ module SHAInet
         end
         scores.softmax_rows!
         outputs << (scores * v_all)
+        CudaMatrix.return_workspace(k_all)
+        CudaMatrix.return_workspace(v_all)
       end
 
-      concat = CudaMatrix.new(x.rows, @d_model)
-      @num_heads.times do |h|
-        concat.set_cols!(h * @head_dim, outputs[h])
-      end
+      concat = CudaMatrix.get_workspace(x.rows, @d_model, "mha_concat_cache_ws", x.precision)
+      begin
+        @num_heads.times do |h|
+          concat.set_cols!(h * @head_dim, outputs[h])
+        end
 
-      out = concat * @w_o.as(CudaMatrix)
-      {out, cache}
+        out = concat * @w_o.as(CudaMatrix)
+        {out, cache}
+      ensure
+        CudaMatrix.return_workspace(concat)
+      end
     end
 
     # CPU path - all operations with SimpleMatrix
