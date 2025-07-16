@@ -48,8 +48,8 @@ module SHAInet
     # Detailed sync tracking by source
     @@sync_sources = Hash(String, UInt64).new(0_u64)
 
-    # Disable workspace pool - use in-place operations instead
-    @@matrix_pool = Hash(String, Array(CudaMatrix)).new { |h, k| h[k] = [] of CudaMatrix }
+    # Disable workspace pool - use raw device buffer pooling instead
+    @@buffer_pool = Hash(String, Array(Pointer(Void))).new { |h, k| h[k] = [] of Pointer(Void) }
     @@pool_enabled = true
     @@max_pool_size = 30_000
 
@@ -57,6 +57,19 @@ module SHAInet
 
     def element_size : Int32
       case @precision
+      when Precision::Int8
+        1
+      when Precision::Fp16, Precision::Bf16
+        2
+      when Precision::Fp32
+        4
+      else
+        4
+      end
+    end
+
+    def self.element_size(precision : Precision) : Int32
+      case precision
       when Precision::Int8
         1
       when Precision::Fp16, Precision::Bf16
@@ -134,7 +147,8 @@ module SHAInet
     end
 
     def initialize(@rows : Int32, @cols : Int32, init : Float32 = 0_f32,
-                   precision : Precision = Precision::Fp32, device_id : Int32? = nil)
+                   precision : Precision = Precision::Fp32, device_id : Int32? = nil,
+                   device_ptr : Pointer(Void)? = nil)
       @precision = precision
       @device_id = device_id || (CUDA.current_device || 0)
       @data_f32_master = nil
@@ -170,36 +184,41 @@ module SHAInet
 
       # CudaMatrix requires CUDA to be available
       raise RuntimeError.new("CudaMatrix requires CUDA to be available") unless CUDA.fully_available?
-      # Print the most frequent allocation sites
       size = @rows * @cols
       elem_size = element_size
       bytes = (size * elem_size).to_u64
 
-      # Check if we would exceed memory limits or are getting close
-      if @@total_gpu_memory_allocated + bytes > @@max_gpu_memory ||
-         @@total_gpu_memory_allocated > (@@max_gpu_memory * 0.8).to_u64 # 80% threshold
-        Log.warn { "CudaMatrix.initialize: GPU memory usage high (#{@@total_gpu_memory_allocated}/#{@@max_gpu_memory} bytes, #{@@active_matrices} matrices). Forcing cleanup..." }
-
-        # Try again after cleanup
-        if @@total_gpu_memory_allocated + bytes > @@max_gpu_memory
-          raise RuntimeError.new("GPU memory limit exceeded: would use #{@@total_gpu_memory_allocated + bytes}/#{@@max_gpu_memory} bytes")
-        end
-      end
-
-      @@allocation_attempts += 1
-
-      ptr = Pointer(Void).null
-      result = CUDA.malloc(pointerof(ptr).as(Pointer(Pointer(Void))), bytes)
-
-      if result == 0 && !ptr.null?
-        @device_ptr = ptr
+      if device_ptr
+        # Reuse an existing buffer from the pool
+        @device_ptr = device_ptr
         @gpu_memory_size = bytes
-        @@total_gpu_memory_allocated += bytes
         @@active_matrices += 1
       else
-        @@allocation_failures += 1
-        Log.error { "CudaMatrix.initialize: GPU allocation failed with result #{result} for #{@rows}x#{@cols}. Total usage: #{@@active_matrices} matrices, #{@@total_gpu_memory_allocated} bytes" }
-        raise RuntimeError.new("Failed to allocate #{bytes} bytes of GPU memory (CUDA error: #{result})")
+        # Check if we would exceed memory limits or are getting close
+        if @@total_gpu_memory_allocated + bytes > @@max_gpu_memory ||
+           @@total_gpu_memory_allocated > (@@max_gpu_memory * 0.8).to_u64
+          Log.warn { "CudaMatrix.initialize: GPU memory usage high (#{@@total_gpu_memory_allocated}/#{@@max_gpu_memory} bytes, #{@@active_matrices} matrices). Forcing cleanup..." }
+
+          if @@total_gpu_memory_allocated + bytes > @@max_gpu_memory
+            raise RuntimeError.new("GPU memory limit exceeded: would use #{@@total_gpu_memory_allocated + bytes}/#{@@max_gpu_memory} bytes")
+          end
+        end
+
+        @@allocation_attempts += 1
+
+        ptr = Pointer(Void).null
+        result = CUDA.malloc(pointerof(ptr).as(Pointer(Pointer(Void))), bytes)
+
+        if result == 0 && !ptr.null?
+          @device_ptr = ptr
+          @gpu_memory_size = bytes
+          @@total_gpu_memory_allocated += bytes
+          @@active_matrices += 1
+        else
+          @@allocation_failures += 1
+          Log.error { "CudaMatrix.initialize: GPU allocation failed with result #{result} for #{@rows}x#{@cols}. Total usage: #{@@active_matrices} matrices, #{@@total_gpu_memory_allocated} bytes" }
+          raise RuntimeError.new("Failed to allocate #{bytes} bytes of GPU memory (CUDA error: #{result})")
+        end
       end
     end
 
@@ -639,26 +658,13 @@ module SHAInet
 
       handle = CUDA.create_handle
       begin
-        if self.precision == other.precision &&
-           (self.precision == Precision::Fp16 || self.precision == Precision::Bf16)
-          if CUDA.gemm_ex_available?
-            compute = CUDA.compute_type_for(self.precision)
-            CUDA.gemm_ex(handle,
-              ptr_b, ptr_a, result.device_ptr.not_nil!,
-              other.cols, @rows, other.rows,
-              other.cols, @cols, result.cols,
-              CUDA.data_type_for(self.precision),
-              CUDA.data_type_for(self.precision),
-              CUDA.data_type_for(result.precision),
-              compute)
-          elsif self.precision == Precision::Fp16 && CUDA.hgemm_available?
-            CUDA.hgemm(handle,
-              ptr_b.as(CUDA::UInt16Ptr), ptr_a.as(CUDA::UInt16Ptr),
-              result.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
-              other.cols, @rows, other.rows,
-              other.cols, @cols, result.cols)
-          else
-            # CPU fallback when GEMMEx is unavailable
+        if self.precision == other.precision
+          status = CUDA.gemm(handle,
+            ptr_b.as(Pointer(Void)), ptr_a.as(Pointer(Void)), result.device_ptr.not_nil!.as(Pointer(Void)),
+            other.cols, @rows, other.rows,
+            other.cols, @cols, result.cols,
+            self.precision)
+          if status != 0
             self.sync_from_device!("gemm_fallback") if device_dirty?
             other.sync_from_device!("gemm_fallback") if other.device_dirty?
             @rows.times do |i|
@@ -671,59 +677,6 @@ module SHAInet
               end
             end
             result.sync_to_device!("gemm_fallback_result")
-          end
-        elsif self.precision == other.precision &&
-              self.precision == Precision::Fp32
-          if CUDA.gemm_ex_available?
-            compute = CUDA::LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F
-            dtype_a = CUDA.data_type_for(Precision::Fp32)
-            dtype_a_lib = dtype_a.is_a?(CUDA::LibCUBLAS::DataType) ? dtype_a : CUDA::LibCUBLAS::DataType.new(dtype_a.value)
-            dtype_c = CUDA.data_type_for(result.precision)
-            dtype_c_lib = dtype_c.is_a?(CUDA::LibCUBLAS::DataType) ? dtype_c : CUDA::LibCUBLAS::DataType.new(dtype_c.value)
-            status = CUDA.gemm_ex(handle,
-              ptr_b, ptr_a, result.device_ptr.not_nil!,
-              other.cols, @rows, other.rows,
-              other.cols, @cols, result.cols,
-              dtype_a_lib,
-              dtype_a_lib,
-              dtype_c_lib,
-              compute)
-            if status != 0
-              Log.error { "gemm_ex failed with status #{status} for A #{@rows}x#{@cols} B #{other.rows}x#{other.cols}" }
-              self.sync_from_device!("gemm_fallback") if device_dirty?
-              other.sync_from_device!("gemm_fallback") if other.device_dirty?
-              @rows.times do |i|
-                other.cols.times do |j|
-                  sum = 0.0_f32
-                  @cols.times do |k|
-                    sum += self.unsafe_get(i, k) * other.unsafe_get(k, j)
-                  end
-                  result.unsafe_set(i, j, sum)
-                end
-              end
-              result.sync_to_device!("gemm_fallback_result")
-            end
-          else
-            status = CUDA.sgemm(handle,
-              ptr_b.as(Pointer(Float32)), ptr_a.as(Pointer(Float32)),
-              result.device_ptr.not_nil!.as(Pointer(Float32)),
-              other.cols, @rows, other.rows,
-              other.cols, @cols, result.cols)
-            if status != 0
-              Log.error { "sgemm failed with status #{status} for A #{@rows}x#{@cols} B #{other.rows}x#{other.cols}" }
-              self.sync_from_device!("gemm_fallback") if device_dirty?
-              other.sync_from_device!("gemm_fallback") if other.device_dirty?
-              @rows.times do |i|
-                other.cols.times do |j|
-                  sum = 0.0_f32
-                  @cols.times do |k|
-                    sum += self.unsafe_get(i, k) * other.unsafe_get(k, j)
-                  end
-                  result.unsafe_set(i, j, sum)
-                end
-              end
-              result.sync_to_device!("gemm_fallback_result")
-            end
           end
         else
           if CUDA.gemm_ex_available?
@@ -817,7 +770,9 @@ module SHAInet
       # Fallback to cuBLAS GEAM (only FP64)
       handle = CUDA.create_handle
       begin
-        CUDA.geam(handle, ptr_a.as(Pointer(Float32)), ptr_b.as(Pointer(Float32)), result.device_ptr.not_nil!.as(Pointer(Float32)), @rows, @cols, 1.0, 1.0)
+        CUDA.geam(handle,
+          ptr_a.as(Pointer(Void)), ptr_b.as(Pointer(Void)), result.device_ptr.not_nil!.as(Pointer(Void)),
+          @rows, @cols, 1.0, 1.0, Precision::Fp32)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -849,7 +804,9 @@ module SHAInet
       handle = CUDA.create_handle
       begin
         # Use GEAM with alpha=1.0, beta=-1.0 to compute A - B
-        CUDA.geam(handle, ptr_a.as(Pointer(Float32)), ptr_b.as(Pointer(Float32)), result.device_ptr.not_nil!.as(Pointer(Float32)), @rows, @cols, 1.0, -1.0)
+        CUDA.geam(handle,
+          ptr_a.as(Pointer(Void)), ptr_b.as(Pointer(Void)), result.device_ptr.not_nil!.as(Pointer(Void)),
+          @rows, @cols, 1.0, -1.0, Precision::Fp32)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -940,7 +897,9 @@ module SHAInet
       # Fallback to cuBLAS GEAM (only FP64)
       handle = CUDA.create_handle
       begin
-        CUDA.geam(handle, ptr_a.as(Pointer(Float32)), ptr_b.as(Pointer(Float32)), ptr_a.as(Pointer(Float32)), @rows, @cols, 1.0, 1.0)
+        CUDA.geam(handle,
+          ptr_a.as(Pointer(Void)), ptr_b.as(Pointer(Void)), ptr_a.as(Pointer(Void)),
+          @rows, @cols, 1.0, 1.0, Precision::Fp32)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -961,7 +920,9 @@ module SHAInet
 
       handle = CUDA.create_handle
       begin
-        CUDA.geam(handle, ptr_a.as(Pointer(Float32)), ptr_b.as(Pointer(Float32)), ptr_a.as(Pointer(Float32)), @rows, @cols, 1.0, -1.0)
+        CUDA.geam(handle,
+          ptr_a.as(Pointer(Void)), ptr_b.as(Pointer(Void)), ptr_a.as(Pointer(Void)),
+          @rows, @cols, 1.0, -1.0, Precision::Fp32)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -995,7 +956,7 @@ module SHAInet
 
       handle = CUDA.create_handle
       begin
-        CUDA.scal(handle, ptr, (@rows*@cols), scalar.to_f32)
+        CUDA.scal(handle, ptr.as(Pointer(Void)), (@rows*@cols), scalar.to_f32, Precision::Fp32)
       ensure
         CUDA.destroy_handle(handle)
       end
@@ -1407,7 +1368,7 @@ module SHAInet
         begin
           case @precision
           when Precision::Fp32
-            CUDA.scal_s(handle, dptr.as(Pointer(Float32)), (@rows*@cols), scalar.to_f32)
+            CUDA.scal_s(handle, dptr.as(Pointer(Void)), (@rows*@cols), scalar.to_f32, Precision::Fp32)
           when Precision::Fp16
             if CUDA.kernels_available?
               CUDA.scale_fp16(dptr.as(Pointer(UInt16)), scalar.to_f32, (@rows*@cols))
@@ -1589,54 +1550,87 @@ module SHAInet
       self
     end
 
+    # Request a raw device buffer from the pool or allocate a new one
+    def self.request_buffer(size : Int32, precision : Precision) : Pointer(Void)
+      return Pointer(Void).null unless @@pool_enabled
+
+      key = "#{size}_#{precision}"
+      pool = @@buffer_pool[key]
+
+      if ptr = pool.pop?
+        ptr
+      else
+        bytes = (size * element_size(precision)).to_u64
+        out = Pointer(Void).null
+        result = CUDA.malloc(pointerof(out).as(Pointer(Pointer(Void))), bytes)
+        if result == 0 && !out.null?
+          @@total_gpu_memory_allocated += bytes
+          out
+        else
+          raise RuntimeError.new("Failed to allocate #{bytes} bytes of GPU memory")
+        end
+      end
+    end
+
+    # Release a raw buffer back to the pool
+    def self.release_buffer(ptr : Pointer(Void), size : Int32, precision : Precision)
+      return if ptr.null? || !@@pool_enabled
+
+      key = "#{size}_#{precision}"
+      pool = @@buffer_pool[key]
+      if pool.size < @@max_pool_size
+        pool << ptr
+      else
+        CUDA.free(ptr)
+        @@total_gpu_memory_allocated -= (size * element_size(precision)).to_u64
+      end
+    end
+
     # Get a matrix from the pool or create a new one
     def self.get_workspace(rows : Int32, cols : Int32,
                            source : String = "workspace",
                            precision : Precision = Precision::Fp32) : CudaMatrix
       return new(rows, cols, precision: precision) unless @@pool_enabled
 
-      key = "#{rows}x#{cols}_#{precision}"
-      pool = @@matrix_pool[key]
-
-      if matrix = pool.pop?
-        # Reuse existing matrix - zero it out for cleanliness
-        matrix.zero!
-        matrix
-      else
-        # Create new matrix
-        new(rows, cols, precision: precision)
-      end
+      size = rows * cols
+      ptr = request_buffer(size, precision)
+      matrix = new(rows, cols, precision: precision, device_ptr: ptr)
+      matrix.zero!
+      matrix
     end
 
-    # Return a matrix to the pool for reuse
+    # Return a matrix's buffer to the pool for reuse
     def self.return_workspace(matrix : CudaMatrix)
       return unless @@pool_enabled
-
-      key = "#{matrix.rows}x#{matrix.cols}_#{matrix.precision}"
-      pool = @@matrix_pool[key]
-
-      # Only pool if we haven't exceeded the limit
-      if pool.size < @@max_pool_size
-        pool << matrix
+      if ptr = matrix.device_ptr
+        size = matrix.rows * matrix.cols
+        release_buffer(ptr, size, matrix.precision)
+        @@active_matrices -= 1
+        matrix.device_ptr = Pointer(Void).null
       end
     end
 
-    # Clear all pooled matrices
+    # Clear all pooled buffers
     def self.clear_workspace_pool
-      total_freed = 0
-      @@matrix_pool.each_value do |pool|
-        total_freed += pool.size
+      @@buffer_pool.each do |key, pool|
+        size, prec_str = key.split("_")
+        precision = Precision.parse(prec_str)
+        elem_size = element_size(precision)
+        pool.each do |ptr|
+          CUDA.free(ptr)
+          @@total_gpu_memory_allocated -= (size.to_i * elem_size).to_u64
+        end
         pool.clear
       end
     end
 
     # Get pool statistics
     def self.pool_stats
-      total_pooled = @@matrix_pool.values.sum(&.size)
+      total_pooled = @@buffer_pool.values.sum(&.size)
       {
         enabled:      @@pool_enabled,
         total_pooled: total_pooled,
-        pools:        @@matrix_pool.transform_values(&.size),
+        pools:        @@buffer_pool.transform_values(&.size),
       }
     end
 
@@ -1663,100 +1657,13 @@ module SHAInet
           raise ArgumentError.new("precision mismatch for GEMM")
         end
 
-        if (a.precision == Precision::Fp16 ||
-           a.precision == Precision::Bf16) && CUDA.gemm_ex_available?
-          compute = CUDA.compute_type_for(a.precision)
-          status = CUDA.gemm_ex(handle,
-            ptr_b, ptr_a, ptr_c,
-            b.cols, a.rows, b.rows,
-            b.cols, a.cols, @cols,
-            CUDA.data_type_for(a.precision),
-            CUDA.data_type_for(a.precision),
-            CUDA.data_type_for(a.precision),
-            compute)
-          if status != 0
-            Log.error { "gemm_ex failed with status #{status} for A #{a.rows}x#{a.cols} B #{b.rows}x#{b.cols} (precision #{a.precision})" }
-            raise RuntimeError.new("CUDA.gemm_ex failed with status #{status} for #{a.rows}x#{a.cols}x#{b.cols} (precision #{a.precision})")
-          end
-        elsif a.precision == Precision::Fp32 && CUDA.gemm_ex_available?
-          compute = CUDA::LibCUBLAS::ComputeType::CUBLAS_COMPUTE_32F
-          dtype_a = CUDA.data_type_for(Precision::Fp32)
-          dtype_a_lib = dtype_a.is_a?(CUDA::LibCUBLAS::DataType) ? dtype_a : CUDA::LibCUBLAS::DataType.new(dtype_a.value)
-          status = CUDA.gemm_ex(handle,
-            ptr_b, ptr_a, ptr_c,
-            b.cols, a.rows, b.rows,
-            b.cols, a.cols, @cols,
-            dtype_a_lib,
-            dtype_a_lib,
-            dtype_a_lib,
-            compute)
-          if status != 0
-            Log.error { "gemm_ex failed with status #{status} for A #{a.rows}x#{a.cols} B #{b.rows}x#{b.cols} (precision #{a.precision})" }
-            raise RuntimeError.new("CUDA.gemm_ex failed with status #{status} for #{a.rows}x#{a.cols}x#{b.cols} (precision #{a.precision})")
-          end
-        elsif a.precision == Precision::Fp16 && CUDA.hgemm_available?
-          status = CUDA.hgemm_accumulate(handle,
-            ptr_b.as(CUDA::UInt16Ptr), ptr_a.as(CUDA::UInt16Ptr), ptr_c.as(CUDA::UInt16Ptr),
-            b.cols, a.rows, b.rows,
-            b.cols, a.cols, @cols,
-            alpha.to_f16, beta.to_f16)
-          if status != 0
-            Log.error { "hgemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}" }
-            raise RuntimeError.new("CUDA.hgemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}")
-          end
-        elsif a.precision == Precision::Fp32
-          status = CUDA.sgemm_accumulate(handle,
-            ptr_b.as(Pointer(Float32)), ptr_a.as(Pointer(Float32)), ptr_c.as(Pointer(Float32)),
-            b.cols, a.rows, b.rows,
-            b.cols, a.cols, @cols,
-            alpha.to_f32, beta.to_f32)
-          if status != 0
-            Log.error { "sgemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}" }
-            # CPU fallback mirroring the regular `*` implementation
-            self.sync_from_device!("gemm_fallback") if device_dirty?
-            a.sync_from_device!("gemm_fallback") if a.device_dirty?
-            b.sync_from_device!("gemm_fallback") if b.device_dirty?
-            @rows.times do |i|
-              @cols.times do |j|
-                sum = 0.0
-                a.cols.times do |k|
-                  sum += a.unsafe_get(i, k) * b.unsafe_get(k, j)
-                end
-                val = alpha * sum + beta * self.unsafe_get(i, j)
-                self.unsafe_set(i, j, val)
-              end
-            end
-            self.sync_to_device!("gemm_fallback_result")
-          end
-        elsif a.precision == Precision::Bf16
-          # CPU fallback when no suitable cuBLAS routine is available
-          self.sync_from_device!("gemm_fallback") if device_dirty?
-          a.sync_from_device!("gemm_fallback") if a.device_dirty?
-          b.sync_from_device!("gemm_fallback") if b.device_dirty?
-          @rows.times do |i|
-            @cols.times do |j|
-              sum = 0.0
-              a.cols.times do |k|
-                sum += a.unsafe_get(i, k) * b.unsafe_get(k, j)
-              end
-              val = alpha * sum + beta * self.unsafe_get(i, j)
-              self.unsafe_set(i, j, val)
-            end
-          end
-          self.sync_to_device!("gemm_fallback_result")
-        else
-          # In-place GEMM: C = alpha * A * B + beta * C
-          # cuBLAS expects column-major ordering, so we perform the same
-          # transpose trick used in `*` by swapping operands and dimensions.
-          # Treating row-major A,B as column-major A^T,B^T results in:
-          # C^T = B^T * A^T
-          status = CUDA.gemm_accumulate(handle, ptr_b.as(Pointer(Float32)), ptr_a.as(Pointer(Float32)), ptr_c.as(Pointer(Float32)),
-            b.cols, a.rows, b.rows,
-            b.cols, a.cols, @cols, alpha, beta)
-          if status != 0
-            Log.error { "gemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}" }
-            raise RuntimeError.new("CUDA.gemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}")
-          end
+        status = CUDA.gemm_accumulate(handle,
+          ptr_b.as(Pointer(Void)), ptr_a.as(Pointer(Void)), ptr_c.as(Pointer(Void)),
+          b.cols, a.rows, b.rows,
+          b.cols, a.cols, @cols, alpha, beta, a.precision)
+        if status != 0
+          Log.error { "gemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}" }
+          raise RuntimeError.new("CUDA.gemm_accumulate failed with status #{status} for #{a.rows}x#{a.cols} * #{b.rows}x#{b.cols}")
         end
       ensure
         CUDA.destroy_handle(handle)
