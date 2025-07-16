@@ -49,12 +49,7 @@ module SHAInet
               @cols
             )
           else
-            CUDA.softmax_rows(
-              rptr.as(Pointer(Float32)),
-              dptr.as(Pointer(Float32)),
-              @rows,
-              @cols
-            )
+            raise "Unsupported precision #{precision} for softmax_rows"
           end
 
           # Mark result as having newer GPU data
@@ -105,10 +100,7 @@ module SHAInet
               dptr.as(Pointer(Float32)),
               @rows, @cols, prob, seed)
           else
-            CUDA.dropout_fp32(
-              rptr.as(Pointer(Float32)),
-              dptr.as(Pointer(Float32)),
-              @rows, @cols, prob, seed)
+            raise "Unsupported precision #{precision} for dropout"
           end
 
           # Mark result as having newer GPU data

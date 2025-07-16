@@ -539,11 +539,13 @@ module SHAInet
           dptr.as(CUDA::UInt16Ptr),
           sptr.as(CUDA::UInt16Ptr),
           @rows, @cols, start_col, length)
-      else
+      when Precision::Fp32
         CUDA.slice_cols(
           dptr.as(Pointer(Float32)),
           sptr.as(Pointer(Float32)),
           @rows, @cols, start_col, length)
+      else
+        raise "slice_cols_into! unsupported for precision #{@precision}"
       end
 
       dest.mark_device_dirty!
@@ -581,11 +583,13 @@ module SHAInet
           dptr.as(CUDA::UInt16Ptr),
           sptr.as(CUDA::UInt16Ptr),
           @rows, @cols, start_col, other.cols)
-      else
+      when Precision::Fp32
         CUDA.set_cols(
           dptr.as(Pointer(Float32)),
           sptr.as(Pointer(Float32)),
           @rows, @cols, start_col, other.cols)
+      else
+        raise "set_cols! unsupported for precision #{@precision}"
       end
 
       # Mark self as having newer GPU data
@@ -1510,10 +1514,7 @@ module SHAInet
               dptr.as(Pointer(Float32)),
               @rows, @cols)
           else
-            CUDA.softmax_rows(
-              dptr.as(Pointer(Float32)),
-              dptr.as(Pointer(Float32)),
-              @rows, @cols)
+            raise "softmax_rows! unsupported for precision #{@precision}"
           end
 
           mark_device_dirty!
@@ -1762,8 +1763,10 @@ module SHAInet
           else
             raise "axpyEx unavailable"
           end
+        when Precision::Int8
+          CUDA.axpy(handle, -learning_rate, grad_ptr.as(Pointer(Float32)), weight_ptr.as(Pointer(Float32)), total_elements)
         else
-          CUDA.axpy(handle, -learning_rate, grad_ptr.as(Pointer(Void)), weight_ptr.as(Pointer(Void)), total_elements, Precision::Fp32)
+          raise "weight_update! unsupported for precision #{@precision}"
         end
       rescue
         # CPU fallback when CUDA routines are missing
@@ -1814,7 +1817,7 @@ module SHAInet
           when Precision::Fp32
             CUDA.element_mul_fp32(sptr.as(Pointer(Float32)), sptr.as(Pointer(Float32)), optr.as(Pointer(Float32)), alpha, beta, size)
           else
-            CUDA.element_mul(sptr.as(Pointer(Float32)), sptr.as(Pointer(Float32)), optr.as(Pointer(Float32)), alpha, beta, size)
+            raise "element_mul! unsupported for precision #{@precision}"
           end
 
           mark_device_dirty!
@@ -1864,10 +1867,7 @@ module SHAInet
               dptr.as(Pointer(Float32)),
               @rows, @cols, prob, seed)
           else
-            CUDA.dropout_fp32(
-              dptr.as(Pointer(Float32)),
-              dptr.as(Pointer(Float32)),
-              @rows, @cols, prob, seed)
+            raise "dropout! unsupported for precision #{@precision}"
           end
 
           mark_device_dirty!
