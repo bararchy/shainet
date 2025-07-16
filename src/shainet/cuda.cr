@@ -871,6 +871,8 @@ module SHAInet
     @@fill_matrix_proc : Proc(Pointer(Float32), Float32, Int32, Void)? = nil
     @@scale_fp16_proc : Proc(Pointer(UInt16), Float32, Int32, Void)? = nil
     @@scale_bf16_proc : Proc(Pointer(UInt16), Float32, Int32, Void)? = nil
+    @@ger_fp16_proc : Proc(UInt16Ptr, UInt16Ptr, UInt16Ptr, Int32, Int32, Int32, Float32, Void)? = nil
+    @@ger_bf16_proc : Proc(UInt16Ptr, UInt16Ptr, UInt16Ptr, Int32, Int32, Int32, Float32, Void)? = nil
     @@element_mul_proc : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Float32, Float32, Int32, Void)? = nil
     @@element_mul_fp16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Pointer(UInt16), Float32, Float32, Int32, Void)? = nil
     @@element_mul_bf16_proc : Proc(Pointer(UInt16), Pointer(UInt16), Pointer(UInt16), Float32, Float32, Int32, Void)? = nil
@@ -1183,6 +1185,40 @@ module SHAInet
       end
       raise "CUDA kernels not available" unless fn
       fn.call(ptr, alpha, size)
+    end
+
+    def ger_fp16(x : UInt16Ptr, y : UInt16Ptr, a : UInt16Ptr, m : Int32, n : Int32, lda : Int32, alpha : Float32)
+      unless fn = @@ger_fp16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "ger_fp16")
+          unless sym.null?
+            @@ger_fp16_proc = Proc(UInt16Ptr, UInt16Ptr, UInt16Ptr, Int32, Int32, Int32, Float32, Void).new(sym, Pointer(Void).null)
+            fn = @@ger_fp16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(x, y, a, m, n, lda, alpha)
+    end
+
+    def ger_bf16(x : UInt16Ptr, y : UInt16Ptr, a : UInt16Ptr, m : Int32, n : Int32, lda : Int32, alpha : Float32)
+      unless fn = @@ger_bf16_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "ger_bf16")
+          unless sym.null?
+            @@ger_bf16_proc = Proc(UInt16Ptr, UInt16Ptr, UInt16Ptr, Int32, Int32, Int32, Float32, Void).new(sym, Pointer(Void).null)
+            fn = @@ger_bf16_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+      fn.call(x, y, a, m, n, lda, alpha)
     end
 
     def slice_cols(dst : Pointer(Float32), src : Pointer(Float32), rows : Int32, src_cols : Int32, start_col : Int32, len : Int32)
