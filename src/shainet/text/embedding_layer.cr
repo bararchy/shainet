@@ -240,15 +240,20 @@ module SHAInet
         if e_ptr && g_ptr && !e_ptr.null? && !g_ptr.null?
           handle = CUDA.create_handle
           total = @embeddings.rows * @embeddings.cols
+          prec = @embeddings.as(CudaMatrix).precision
           CUDA.axpy(
             handle,
             -lr,
             g_ptr.as(Pointer(Void)),
             e_ptr.as(Pointer(Void)),
-            total, Precision::Fp32)
+            total, prec)
           CUDA.destroy_handle(handle)
-          zeros = Array(Float32).new(total, 0.0)
-          CUDA.memcpy(g_ptr.as(Pointer(Void)), zeros.to_unsafe.as(Pointer(Void)), (total * 8).to_u64, CUDA::MemcpyKind::HostToDevice)
+
+          elem_size = @gradients.as(CudaMatrix).element_size
+          bytes = (total * elem_size).to_u64
+          zeros = Bytes.new(total * elem_size, 0_u8)
+          CUDA.memcpy(g_ptr.as(Pointer(Void)), zeros.to_unsafe.as(Pointer(Void)), bytes, CUDA::MemcpyKind::HostToDevice)
+
           @embeddings.as(CudaMatrix).scale!(1.0_f32 - weight_decay) if weight_decay != 0.0
           # Don't sync embeddings from device - keep them on GPU for performance
           @embeddings.as(CudaMatrix).mark_device_dirty!
