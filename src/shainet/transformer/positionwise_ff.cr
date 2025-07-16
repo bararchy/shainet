@@ -36,6 +36,7 @@ module SHAInet
     @workspace_gated : CudaMatrix | Nil = nil
 
     @last_batch_size : Int32 = 0
+    @workspace_precision : Precision
 
     @pre_act : SimpleMatrix | CudaMatrix | Nil = nil
 
@@ -86,6 +87,7 @@ module SHAInet
       @workspace_pre_act_grad = nil
       @workspace_gated = nil
       @last_batch_size = 0
+      @workspace_precision = precision
     end
 
     # Convert all internal matrices to GPU
@@ -118,6 +120,7 @@ module SHAInet
         @workspace_pre_act_grad = nil
         @workspace_gated = nil
         @last_batch_size = 0
+        @workspace_precision = @precision
       end
     end
 
@@ -595,7 +598,7 @@ module SHAInet
       @workspace_temp_grad_w1 ||= CudaMatrix.get_workspace(d_model, hidden, "ff_temp_grad_w1", precision)
       @workspace_pre_act_grad ||= CudaMatrix.get_workspace(batch_size, hidden, "ff_pre_act_grad", precision)
 
-      if @last_batch_size != batch_size || @workspace_x_t.nil?
+      if @last_batch_size != batch_size || @workspace_x_t.nil? || @workspace_precision != precision
         if ws = @workspace_x_t
           CudaMatrix.return_workspace(ws)
         end
@@ -632,6 +635,7 @@ module SHAInet
         @workspace_dh = CudaMatrix.get_workspace(batch_size, hidden, "ff_dh", precision)
         @workspace_pre_act_grad = CudaMatrix.get_workspace(batch_size, hidden, "ff_pre_act_grad", precision)
         @last_batch_size = batch_size
+        @workspace_precision = precision
       end
     end
 
