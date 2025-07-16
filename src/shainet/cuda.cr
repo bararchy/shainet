@@ -523,38 +523,38 @@ module SHAInet
              precision : Precision)
       case precision
       when Precision::Fp32
-        alpha = 1.0_f32
-        beta = 0.0_f32
+        alpha32 = 1.0_f32
+        beta32 = 0.0_f32
         LibCUBLAS.cublasSgemm_v2(handle,
           Operation::N.value, Operation::N.value,
           m, n, k,
-          pointerof(alpha), a.as(Pointer(Float32)), lda,
+          pointerof(alpha32), a.as(Pointer(Float32)), lda,
           b.as(Pointer(Float32)), ldb,
-          pointerof(beta), c.as(Pointer(Float32)), ldc)
+          pointerof(beta32), c.as(Pointer(Float32)), ldc)
       when Precision::Fp16, Precision::Bf16
         if gemm_ex_available?
           dtype = data_type_for(precision)
           ctype = compute_type_for(precision)
-          alpha = scalar_for_compute_type(1.0_f32, ctype)
-          beta = scalar_for_compute_type(0.0_f32, ctype)
+          alpha_buf = scalar_for_compute_type(1.0_f32, ctype)
+          beta_buf = scalar_for_compute_type(0.0_f32, ctype)
           LibCUBLAS.cublasGemmEx(handle,
             Operation::N.value, Operation::N.value,
             m, n, k,
-            alpha.to_unsafe,
+            alpha_buf.to_unsafe,
             a, dtype.value, lda,
             b, dtype.value, ldb,
-            beta.to_unsafe,
+            beta_buf.to_unsafe,
             c, dtype.value, ldc,
             ctype.value, 0)
         elsif precision == Precision::Fp16 && hgemm_available?
-          alpha = 1.0_f32.to_f16
-          beta = 0.0_f32.to_f16
+          alpha16 = 1.0_f32.to_f16
+          beta16 = 0.0_f32.to_f16
           LibCUBLAS.cublasHgemm(handle,
             Operation::N.value, Operation::N.value,
             m, n, k,
-            pointerof(alpha).as(Pointer(UInt16)), a.as(UInt16Ptr), lda,
+            pointerof(alpha16).as(Pointer(UInt16)), a.as(UInt16Ptr), lda,
             b.as(UInt16Ptr), ldb,
-            pointerof(beta).as(Pointer(UInt16)), c.as(UInt16Ptr), ldc)
+            pointerof(beta16).as(Pointer(UInt16)), c.as(UInt16Ptr), ldc)
         else
           return -1
         end
@@ -1993,10 +1993,13 @@ module SHAInet
       handle = create_handle(stream)
 
       # Add bias to each row using AXPY: row_i += 1.0 * bias
-      rows.times do |i|
-        row_start = mat + (i * cols) # Pointer to start of row i
-        axpy(handle, 1.0, bias, row_start, cols)
-      end
+        rows.times do |i|
+          row_start = mat + (i * cols) # Pointer to start of row i
+          axpy(handle, 1.0,
+            bias,
+            row_start,
+            cols, Precision::Fp32)
+        end
 
       destroy_handle(handle)
     end
@@ -2034,10 +2037,13 @@ module SHAInet
       end
 
       handle = create_handle(stream)
-      rows.times do |i|
-        row_start = src + (i * cols)
-        axpy(handle, 1.0, row_start, dst, cols)
-      end
+        rows.times do |i|
+          row_start = src + (i * cols)
+          axpy(handle, 1.0,
+            row_start,
+            dst,
+            cols, Precision::Fp32)
+        end
       destroy_handle(handle)
     end
 
