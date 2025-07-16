@@ -1764,7 +1764,10 @@ module SHAInet
             raise "axpyEx unavailable"
           end
         when Precision::Int8
-          CUDA.axpy(handle, -learning_rate, grad_ptr.as(Pointer(Float32)), weight_ptr.as(Pointer(Float32)), total_elements)
+          CUDA.axpy(handle, -learning_rate,
+            grad_ptr.as(Pointer(Void)),
+            weight_ptr.as(Pointer(Void)),
+            total_elements, Precision::Fp32)
         else
           raise "weight_update! unsupported for precision #{@precision}"
         end
