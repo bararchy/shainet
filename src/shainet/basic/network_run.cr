@@ -24,9 +24,11 @@ module SHAInet
     # for methods regarding creating and maintaining go to network_setup.cr
     # ------------
 
-    @batch_in_ws : CudaMatrix? = nil
-    @batch_out_ws : CudaMatrix? = nil
-    @batch_grad_ws : CudaMatrix? = nil
+    alias MatrixData = SimpleMatrix | CudaMatrix
+
+    @batch_in_ws : MatrixData? = nil
+    @batch_out_ws : MatrixData? = nil
+    @batch_grad_ws : MatrixData? = nil
     property exit_save_path : String?
     @exit_traps_installed : Bool = false
 
@@ -1203,24 +1205,55 @@ module SHAInet
       total_in_rows = batch_size * in_rows
       total_out_rows = batch_size * out_rows
 
-      cpu_input = SimpleMatrix.new(total_in_rows, in_cols, 0.0_f32, @precision)
-      cpu_expected = SimpleMatrix.new(total_out_rows, out_cols, 0.0_f32, @precision)
-
-      input_matrix : SimpleMatrix | CudaMatrix
-      expected_matrix : SimpleMatrix | CudaMatrix
-      grad_matrix : SimpleMatrix | CudaMatrix
+      input_matrix : MatrixData
+      expected_matrix : MatrixData
+      grad_matrix : MatrixData
+      cpu_input : SimpleMatrix
+      cpu_expected : SimpleMatrix
 
       if CUDA.fully_available?
-        input_matrix = CudaMatrix.new(total_in_rows, in_cols, precision: @precision)
-        expected_matrix = CudaMatrix.new(total_out_rows, out_cols, precision: @precision)
-        if @batch_grad_ws.nil? || @batch_grad_ws.not_nil!.rows != total_out_rows || @batch_grad_ws.not_nil!.cols != out_cols
-          @batch_grad_ws = CudaMatrix.new(total_out_rows, out_cols, precision: @precision)
+        if @batch_in_ws.nil? || !@batch_in_ws.is_a?(CudaMatrix) || @batch_in_ws.as(CudaMatrix).rows != total_in_rows || @batch_in_ws.as(CudaMatrix).cols != in_cols
+          if ws = @batch_in_ws
+            CudaMatrix.return_workspace(ws.as(CudaMatrix)) if ws.is_a?(CudaMatrix)
+          end
+          @batch_in_ws = CudaMatrix.get_workspace(total_in_rows, in_cols, "net_batch_in", @precision)
         end
-        grad_matrix = @batch_grad_ws.not_nil!
+        input_matrix = @batch_in_ws.as(CudaMatrix)
+
+        if @batch_out_ws.nil? || !@batch_out_ws.is_a?(CudaMatrix) || @batch_out_ws.as(CudaMatrix).rows != total_out_rows || @batch_out_ws.as(CudaMatrix).cols != out_cols
+          if ws = @batch_out_ws
+            CudaMatrix.return_workspace(ws.as(CudaMatrix)) if ws.is_a?(CudaMatrix)
+          end
+          @batch_out_ws = CudaMatrix.get_workspace(total_out_rows, out_cols, "net_batch_out", @precision)
+        end
+        expected_matrix = @batch_out_ws.as(CudaMatrix)
+
+        if @batch_grad_ws.nil? || !@batch_grad_ws.is_a?(CudaMatrix) || @batch_grad_ws.as(CudaMatrix).rows != total_out_rows || @batch_grad_ws.as(CudaMatrix).cols != out_cols
+          if ws = @batch_grad_ws
+            CudaMatrix.return_workspace(ws.as(CudaMatrix)) if ws.is_a?(CudaMatrix)
+          end
+          @batch_grad_ws = CudaMatrix.get_workspace(total_out_rows, out_cols, "net_batch_grad", @precision)
+        end
+        grad_matrix = @batch_grad_ws.as(CudaMatrix)
+        cpu_input = SimpleMatrix.new(0, 0)
+        cpu_expected = SimpleMatrix.new(0, 0)
       else
+        if @batch_in_ws.nil? || !@batch_in_ws.is_a?(SimpleMatrix) || @batch_in_ws.as(SimpleMatrix).rows != total_in_rows || @batch_in_ws.as(SimpleMatrix).cols != in_cols
+          @batch_in_ws = SimpleMatrix.new(total_in_rows, in_cols, 0.0_f32, @precision)
+        end
+        cpu_input = @batch_in_ws.as(SimpleMatrix)
         input_matrix = cpu_input
+
+        if @batch_out_ws.nil? || !@batch_out_ws.is_a?(SimpleMatrix) || @batch_out_ws.as(SimpleMatrix).rows != total_out_rows || @batch_out_ws.as(SimpleMatrix).cols != out_cols
+          @batch_out_ws = SimpleMatrix.new(total_out_rows, out_cols, 0.0_f32, @precision)
+        end
+        cpu_expected = @batch_out_ws.as(SimpleMatrix)
         expected_matrix = cpu_expected
-        grad_matrix = SimpleMatrix.new(total_out_rows, out_cols, 0.0_f32, @precision)
+
+        if @batch_grad_ws.nil? || !@batch_grad_ws.is_a?(SimpleMatrix) || @batch_grad_ws.as(SimpleMatrix).rows != total_out_rows || @batch_grad_ws.as(SimpleMatrix).cols != out_cols
+          @batch_grad_ws = SimpleMatrix.new(total_out_rows, out_cols, 0.0_f32, @precision)
+        end
+        grad_matrix = @batch_grad_ws.as(SimpleMatrix)
       end
 
       input_parts = [] of SimpleMatrix
@@ -1930,6 +1963,20 @@ module SHAInet
     end
 
     def finalize
+      if ws = @batch_in_ws
+        CudaMatrix.return_workspace(ws.as(CudaMatrix)) if ws.is_a?(CudaMatrix)
+      end
+      if ws = @batch_out_ws
+        CudaMatrix.return_workspace(ws.as(CudaMatrix)) if ws.is_a?(CudaMatrix)
+      end
+      if ws = @batch_grad_ws
+        CudaMatrix.return_workspace(ws.as(CudaMatrix)) if ws.is_a?(CudaMatrix)
+      end
+
+      @batch_in_ws = nil
+      @batch_out_ws = nil
+      @batch_grad_ws = nil
+
       CUDA.cleanup_handles if CUDA.fully_available?
     end
   end
