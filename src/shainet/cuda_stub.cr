@@ -182,6 +182,13 @@ module SHAInet
     def free_host(*args)
     end
 
+    def ensure_loss_buffer : Pointer(Float32)
+      Pointer(Float32).null
+    end
+
+    def free_loss_buffer
+    end
+
     def memory_info
       nil
     end
@@ -223,6 +230,14 @@ module SHAInet
       false
     end
 
+    def gemm_ex(*args) : Int32
+      0
+    end
+
+    def gemm_int8(*args) : Int32
+      0
+    end
+
     def hgemm(*args)
     end
 
@@ -232,7 +247,12 @@ module SHAInet
     def geam(*args)
     end
 
-    def scal(*args)
+    def scal(handle : LibCUBLAS::Handle, x : Pointer(Void), n : Int32, alpha : Float32, precision : Precision) : Int32
+      0
+    end
+
+    def scal_s(handle : LibCUBLAS::Handle, x : Pointer(Void), n : Int32, alpha : Float32, precision : Precision) : Int32
+      0
     end
 
     def ger(*args)
@@ -381,6 +401,18 @@ module SHAInet
       raise "CUDA kernels not available"
     end
 
+    def sum_cols_fp16(dst : Pointer(UInt16), src : Pointer(UInt16), rows : Int32, cols : Int32)
+      raise "CUDA kernels not available"
+    end
+
+    def sum_cols_bf16(dst : Pointer(UInt16), src : Pointer(UInt16), rows : Int32, cols : Int32)
+      raise "CUDA kernels not available"
+    end
+
+    def sum_cols_fp32(dst : Pointer(Float32), src : Pointer(Float32), rows : Int32, cols : Int32)
+      raise "CUDA kernels not available"
+    end
+
     def mul_row_vector(*args)
       raise "CUDA kernels not available"
     end
@@ -449,6 +481,34 @@ module SHAInet
       raise "CUDA kernels not available"
     end
 
+    def element_div_fp16(dst : Pointer(UInt16), a : Pointer(UInt16), b : Pointer(UInt16), size : Int32)
+      raise "CUDA kernels not available"
+    end
+
+    def element_div_bf16(dst : Pointer(UInt16), a : Pointer(UInt16), b : Pointer(UInt16), size : Int32)
+      raise "CUDA kernels not available"
+    end
+
+    def element_div_fp32(dst : Pointer(Float32), a : Pointer(Float32), b : Pointer(Float32), size : Int32)
+      raise "CUDA kernels not available"
+    end
+
+    def element_mul(dst : Pointer(Float32), a : Pointer(Float32), b : Pointer(Float32), alpha : Float32, beta : Float32, size : Int32)
+      raise "CUDA kernels not available"
+    end
+
+    def element_mul_fp16(dst : Pointer(UInt16), a : Pointer(UInt16), b : Pointer(UInt16), alpha : Float32, beta : Float32, size : Int32)
+      raise "CUDA kernels not available"
+    end
+
+    def element_mul_bf16(dst : Pointer(UInt16), a : Pointer(UInt16), b : Pointer(UInt16), alpha : Float32, beta : Float32, size : Int32)
+      raise "CUDA kernels not available"
+    end
+
+    def element_mul_fp32(dst : Pointer(Float32), a : Pointer(Float32), b : Pointer(Float32), alpha : Float32, beta : Float32, size : Int32)
+      raise "CUDA kernels not available"
+    end
+
     def relu(*args)
       raise "CUDA kernels not available"
     end
@@ -461,19 +521,59 @@ module SHAInet
       raise "CUDA kernels not available"
     end
 
+    def row_sum_fp16(dst : Pointer(UInt16), src : Pointer(UInt16), rows : Int32, cols : Int32)
+      raise "CUDA kernels not available"
+    end
+
+    def row_sum_bf16(dst : Pointer(UInt16), src : Pointer(UInt16), rows : Int32, cols : Int32)
+      raise "CUDA kernels not available"
+    end
+
+    def row_sum_fp32(dst : Pointer(Float32), src : Pointer(Float32), rows : Int32, cols : Int32)
+      raise "CUDA kernels not available"
+    end
+
     def count_token_pairs(*args)
       raise "CUDA kernels not available"
     end
 
-    def cross_entropy_loss_gradient(*args) : Int32
+    def cross_entropy_loss_gradient(predicted : Pointer(Float32), target : Pointer(Float32), grad_output : Pointer(Float32), loss_output : Pointer(Float32), rows : Int32, cols : Int32) : Int32
       raise "CUDA kernels not available"
     end
 
-    def softmax_cross_entropy_label(*args) : Int32
+    def cross_entropy_loss_gradient_fp32(predicted : Pointer(Float32), target : Pointer(Float32), grad_output : Pointer(Float32), loss_output : Pointer(Float32), rows : Int32, cols : Int32) : Int32
       raise "CUDA kernels not available"
     end
 
-    def softmax_cross_entropy_label_matrix(*args) : Int32
+    def cross_entropy_loss_gradient_fp16(predicted : UInt16Ptr, target : UInt16Ptr, grad_output : UInt16Ptr, loss_output : Pointer(Float32), rows : Int32, cols : Int32) : Int32
+      raise "CUDA kernels not available"
+    end
+
+    def cross_entropy_loss_gradient_bf16(predicted : UInt16Ptr, target : UInt16Ptr, grad_output : UInt16Ptr, loss_output : Pointer(Float32), rows : Int32, cols : Int32) : Int32
+      raise "CUDA kernels not available"
+    end
+
+    def softmax_cross_entropy_label(predicted : Pointer(Float32), labels : Pointer(Int32), grad_out : Pointer(Float32), loss_out : Pointer(Float32), rows : Int32, cols : Int32) : Int32
+      raise "CUDA kernels not available"
+    end
+
+    def softmax_cross_entropy_label_fp32(predicted : Pointer(Float32), labels : Pointer(Int32), grad_out : Pointer(Float32), loss_out : Pointer(Float32), rows : Int32, cols : Int32) : Int32
+      raise "CUDA kernels not available"
+    end
+
+    def softmax_cross_entropy_label_matrix(predicted : Pointer(Float32), labels : Pointer(Float32), grad_out : Pointer(Float32), loss_out : Pointer(Float32), rows : Int32, cols : Int32) : Int32
+      raise "CUDA kernels not available"
+    end
+
+    def softmax_cross_entropy_label_matrix_fp32(predicted : Pointer(Float32), labels : Pointer(Float32), grad_out : Pointer(Float32), loss_out : Pointer(Float32), rows : Int32, cols : Int32) : Int32
+      raise "CUDA kernels not available"
+    end
+
+    def softmax_cross_entropy_label_matrix_fp16(predicted : UInt16Ptr, labels : UInt16Ptr, grad_out : UInt16Ptr, loss_out : Pointer(Float32), rows : Int32, cols : Int32) : Int32
+      raise "CUDA kernels not available"
+    end
+
+    def softmax_cross_entropy_label_matrix_bf16(predicted : UInt16Ptr, labels : UInt16Ptr, grad_out : UInt16Ptr, loss_out : Pointer(Float32), rows : Int32, cols : Int32) : Int32
       raise "CUDA kernels not available"
     end
 
@@ -494,6 +594,14 @@ module SHAInet
     end
 
     def mse_cost_gradient_fp32(*args)
+      raise "CUDA kernels not available"
+    end
+
+    def mse_cost_gradient_fp16(actual_ptr : UInt16Ptr, expected_ptr : UInt16Ptr, grad_ptr : UInt16Ptr, loss_ptr : Pointer(Float32), rows : Int32, cols : Int32) : Int32
+      raise "CUDA kernels not available"
+    end
+
+    def mse_cost_gradient_bf16(actual_ptr : UInt16Ptr, expected_ptr : UInt16Ptr, grad_ptr : UInt16Ptr, loss_ptr : Pointer(Float32), rows : Int32, cols : Int32) : Int32
       raise "CUDA kernels not available"
     end
   end
