@@ -29,6 +29,8 @@ module SHAInet
     @batch_in_ws : MatrixData? = nil
     @batch_out_ws : MatrixData? = nil
     @batch_grad_ws : MatrixData? = nil
+    @workspace_last_token : CudaMatrix? = nil
+    @workspace_reshaped : CudaMatrix? = nil
     property exit_save_path : String?
     @exit_traps_installed : Bool = false
 
@@ -1585,8 +1587,12 @@ module SHAInet
           raise RuntimeError.new("safe_output_transform: matrix has zero rows or columns")
         end
 
-        matrix.sync_to_device!("safe_output_transform")
-        weights.sync_to_device!("safe_output_transform")
+        if matrix.device_ptr.nil? || matrix.device_ptr.not_nil!.null? || !matrix.device_dirty?
+          matrix.sync_to_device!("safe_output_transform")
+        end
+        if weights.device_ptr.nil? || weights.device_ptr.not_nil!.null? || !weights.device_dirty?
+          weights.sync_to_device!("safe_output_transform")
+        end
         # For transformer architectures, use only the last token's representation
         if @hidden_layers.any? &.is_a?(TransformerLayer)
           # Extract last token (row) from transformer output for language modeling using GPU kernel
@@ -1596,7 +1602,8 @@ module SHAInet
                          if mptr && wptr && !mptr.null? && !wptr.null?
                            begin
                              CUDA.set_device(matrix.device_id)
-                             result = CudaMatrix.new(1, matrix.cols, precision: matrix.precision, device_id: matrix.device_id)
+                             ensure_last_token_ws(matrix.cols, matrix.precision, matrix.device_id)
+                             result = @workspace_last_token.not_nil!
                              last_row_offset = (matrix.rows - 1) * matrix.cols
                              elem_size = matrix.element_size
                              byte_offset = last_row_offset * elem_size
@@ -1632,7 +1639,8 @@ module SHAInet
                          end
                        else
                          # CPU fallback
-                         last_token_cpu = CudaMatrix.new(1, matrix.cols, precision: matrix.precision, device_id: matrix.device_id)
+                         ensure_last_token_ws(matrix.cols, matrix.precision, matrix.device_id)
+                         last_token_cpu = @workspace_last_token.not_nil!
                          matrix.cols.times do |j|
                            last_token_cpu[0, j] = matrix[matrix.rows - 1, j]
                          end
@@ -1660,7 +1668,8 @@ module SHAInet
           # Try reshaping for a single token/sequence case
           if matrix.rows == 1 && matrix.cols > 0 && weights.rows > 0 && weights.cols > 0
             Log.info { "Reshaping matrix for single-token transformer operation" }
-            reshaped = CudaMatrix.new(1, weights.cols, precision: @precision, device_id: matrix.device_id)
+            ensure_reshaped_ws(weights.cols, @precision, matrix.device_id)
+            reshaped = @workspace_reshaped.not_nil!
             weights.cols.times do |j|
               sum = 0.0_f32
               matrix.cols.times do |k|
@@ -1809,17 +1818,45 @@ module SHAInet
       result
     end
 
-    private def convert_matrix_precision(mat : CudaMatrix, prec : Precision) : CudaMatrix
-      return mat if mat.precision == prec
-      mat.sync_from_device!("convert_matrix_precision") if mat.device_dirty?
-      result = CudaMatrix.new(mat.rows, mat.cols, precision: prec, device_id: mat.device_id)
-      mat.rows.times do |i|
-        mat.cols.times do |j|
-          result[i, j] = mat[i, j]
+  private def convert_matrix_precision(mat : CudaMatrix, prec : Precision) : CudaMatrix
+    return mat if mat.precision == prec
+    mat.sync_from_device!("convert_matrix_precision") if mat.device_dirty?
+    result = CudaMatrix.new(mat.rows, mat.cols, precision: prec, device_id: mat.device_id)
+    mat.rows.times do |i|
+      mat.cols.times do |j|
+        result[i, j] = mat[i, j]
+      end
+    end
+    result.sync_to_device! if CUDA.fully_available?
+    result
+  end
+
+    private def ensure_last_token_ws(cols : Int32, precision : Precision, device_id : Int32)
+      return unless CUDA.fully_available?
+      if ws = @workspace_last_token
+        if ws.cols != cols || ws.precision != precision
+          CudaMatrix.return_workspace(ws)
+          @workspace_last_token = nil
         end
       end
-      result.sync_to_device! if CUDA.fully_available?
-      result
+      if @workspace_last_token.nil?
+        CUDA.set_device(device_id)
+        @workspace_last_token = CudaMatrix.get_workspace(1, cols, "sot_last_token", precision)
+      end
+    end
+
+    private def ensure_reshaped_ws(cols : Int32, precision : Precision, device_id : Int32)
+      return unless CUDA.fully_available?
+      if ws = @workspace_reshaped
+        if ws.cols != cols || ws.precision != precision
+          CudaMatrix.return_workspace(ws)
+          @workspace_reshaped = nil
+        end
+      end
+      if @workspace_reshaped.nil?
+        CUDA.set_device(device_id)
+        @workspace_reshaped = CudaMatrix.get_workspace(1, cols, "sot_reshaped", precision)
+      end
     end
 
     private def compute_cost_and_gradient(actual_matrix, expected_output, grad_matrix, cost_proc)
@@ -1972,10 +2009,18 @@ module SHAInet
       if ws = @batch_grad_ws
         CudaMatrix.return_workspace(ws.as(CudaMatrix)) if ws.is_a?(CudaMatrix)
       end
+      if ws = @workspace_last_token
+        CudaMatrix.return_workspace(ws)
+      end
+      if ws = @workspace_reshaped
+        CudaMatrix.return_workspace(ws)
+      end
 
       @batch_in_ws = nil
       @batch_out_ws = nil
       @batch_grad_ws = nil
+      @workspace_last_token = nil
+      @workspace_reshaped = nil
 
       CUDA.cleanup_handles if CUDA.fully_available?
     end
