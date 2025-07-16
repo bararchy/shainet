@@ -647,21 +647,60 @@ module SHAInet
     def self.cross_entropy_loss_gradient(predicted : CudaMatrix, target : CudaMatrix, loss_output : Float32*, grad_output : CudaMatrix)
       raise "Matrices must have same dimensions" unless predicted.rows == target.rows && predicted.cols == target.cols
 
-      if CUDA.available? && predicted.precision.fp32? && target.precision.fp32? && grad_output.precision.fp32?
-        predicted.sync_to_device! unless predicted.device_dirty?
-        target.sync_to_device! unless target.device_dirty?
-        grad_output.sync_to_device! unless grad_output.device_dirty?
-        result = CUDA.cross_entropy_loss_gradient_fp32(
-          predicted.device_ptr.not_nil!.as(Pointer(Float32)),
-          target.device_ptr.not_nil!.as(Pointer(Float32)),
-          grad_output.device_ptr.not_nil!.as(Pointer(Float32)),
-          loss_output,
-          predicted.rows,
-          predicted.cols
-        )
-        raise "CUDA cross_entropy_loss_gradient failed" if result != 0
-        grad_output.mark_device_dirty!
-        return
+      if CUDA.available?
+        case predicted.precision
+        when .fp32?
+          if target.precision.fp32? && grad_output.precision.fp32?
+            predicted.sync_to_device! unless predicted.device_dirty?
+            target.sync_to_device! unless target.device_dirty?
+            grad_output.sync_to_device! unless grad_output.device_dirty?
+            result = CUDA.cross_entropy_loss_gradient_fp32(
+              predicted.device_ptr.not_nil!.as(Pointer(Float32)),
+              target.device_ptr.not_nil!.as(Pointer(Float32)),
+              grad_output.device_ptr.not_nil!.as(Pointer(Float32)),
+              loss_output,
+              predicted.rows,
+              predicted.cols
+            )
+            raise "CUDA cross_entropy_loss_gradient failed" if result != 0
+            grad_output.mark_device_dirty!
+            return
+          end
+        when .fp16?
+          if target.precision.fp16? && grad_output.precision.fp16?
+            predicted.sync_to_device! unless predicted.device_dirty?
+            target.sync_to_device! unless target.device_dirty?
+            grad_output.sync_to_device! unless grad_output.device_dirty?
+            result = CUDA.cross_entropy_loss_gradient_fp16(
+              predicted.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
+              target.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
+              grad_output.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
+              loss_output,
+              predicted.rows,
+              predicted.cols
+            )
+            raise "CUDA cross_entropy_loss_gradient failed" if result != 0
+            grad_output.mark_device_dirty!
+            return
+          end
+        when .bf16?
+          if target.precision.bf16? && grad_output.precision.bf16?
+            predicted.sync_to_device! unless predicted.device_dirty?
+            target.sync_to_device! unless target.device_dirty?
+            grad_output.sync_to_device! unless grad_output.device_dirty?
+            result = CUDA.cross_entropy_loss_gradient_bf16(
+              predicted.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
+              target.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
+              grad_output.device_ptr.not_nil!.as(CUDA::UInt16Ptr),
+              loss_output,
+              predicted.rows,
+              predicted.cols
+            )
+            raise "CUDA cross_entropy_loss_gradient failed" if result != 0
+            grad_output.mark_device_dirty!
+            return
+          end
+        end
       end
 
       predicted.sync_from_device!("xent_pred") if predicted.device_dirty?
