@@ -331,7 +331,9 @@ module SHAInet
         end
       end
 
-      result = @norm.clone.as(CudaMatrix)
+      result = @norm.clone
+      result = result.to_cuda if result.is_a?(SimpleMatrix)
+      result = result.as(CudaMatrix)
       result.mul_row_vector!(@gamma.as(CudaMatrix))
       result.add_bias!(@beta.as(CudaMatrix))
       result
