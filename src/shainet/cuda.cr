@@ -505,6 +505,16 @@ module SHAInet
       end
       # Release persistent loss buffer
       free_loss_buffer
+
+      # Cleanup cuDNN resources when available
+      CUDNN.cleanup if CUDNN.responds_to?(:cleanup)
+      CUDNN.free_label_buffer if CUDNN.responds_to?(:free_label_buffer)
+
+      # Close optional CUDA kernels library
+      unless @@kernels_handle.null?
+        LibC.dlclose(@@kernels_handle)
+        @@kernels_handle = Pointer(Void).null
+      end
     end
 
     # GEMM dispatch based on matrix precision
