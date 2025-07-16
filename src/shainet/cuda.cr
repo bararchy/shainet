@@ -883,6 +883,7 @@ module SHAInet
     @@element_div_fp32_proc : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Void)? = nil
     @@count_pairs_proc : Proc(Pointer(Int32), Pointer(Int32), Pointer(Int32), Pointer(Int32), Int32, Int32, Void)? = nil
     @@relu_backward_proc : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Void)? = nil
+    @@swiglu_backward_proc : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
     @@softmax_backward_proc : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
     @@element_log_proc : Proc(Pointer(Float32), Pointer(Float32), Int32, Void)? = nil
     @@cross_entropy_loss_grad_proc : Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Int32, Void)? = nil
@@ -2527,6 +2528,34 @@ module SHAInet
         fn.call(dst, input, grad, size)
       rescue e
         Log.error { "CUDA Error in relu_backward: #{e}" }
+        raise e
+      end
+    end
+
+    def swiglu_backward(dst : Pointer(Float32), pre : Pointer(Float32), grad : Pointer(Float32), rows : Int32, cols_half : Int32)
+      if dst.null? || pre.null? || grad.null? || rows <= 0 || cols_half <= 0
+        Log.error { "CUDA swiglu_backward: invalid parameters - dst: #{dst.null? ? "null" : "valid"}, pre: #{pre.null? ? "null" : "valid"}, grad: #{grad.null? ? "null" : "valid"}, rows: #{rows}, cols_half: #{cols_half}" }
+        return
+      end
+
+      unless fn = @@swiglu_backward_proc
+        if @@kernels_handle.null?
+          @@kernels_handle = LibC.dlopen("libshainet_cuda_kernels.so", LibC::RTLD_LAZY)
+        end
+        unless @@kernels_handle.null?
+          sym = LibC.dlsym(@@kernels_handle, "swiglu_backward")
+          unless sym.null?
+            @@swiglu_backward_proc = Proc(Pointer(Float32), Pointer(Float32), Pointer(Float32), Int32, Int32, Void).new(sym, Pointer(Void).null)
+            fn = @@swiglu_backward_proc
+          end
+        end
+      end
+      raise "CUDA kernels not available" unless fn
+
+      begin
+        fn.call(dst, pre, grad, rows, cols_half)
+      rescue e
+        Log.error { "CUDA Error in swiglu_backward: #{e}" }
         raise e
       end
     end

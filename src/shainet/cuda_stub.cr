@@ -585,6 +585,10 @@ module SHAInet
       raise "CUDA kernels not available"
     end
 
+    def swiglu_backward(*args)
+      raise "CUDA kernels not available"
+    end
+
     def softmax_backward(*args)
       raise "CUDA kernels not available"
     end
