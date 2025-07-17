@@ -26,6 +26,9 @@ module SHAInet
       fun cudaGetDeviceCount(count : Pointer(Int32)) : Int32
       fun cudaGetDevice(device : Pointer(Int32)) : Int32
       fun cudaSetDevice(device : Int32) : Int32
+      fun cudaDeviceSynchronize : Int32
+      fun cudaGetLastError : Int32
+      fun cudaGetErrorString(error : Int32) : UInt8*
     end
 
     @[Link("cublas")]
@@ -380,6 +383,19 @@ module SHAInet
 
     def stream_synchronize(stream : LibCUDARuntime::Stream)
       LibCUDARuntime.cudaStreamSynchronize(stream)
+    end
+
+    def device_synchronize : Int32
+      LibCUDARuntime.cudaDeviceSynchronize
+    end
+
+    def last_error : Int32
+      LibCUDARuntime.cudaGetLastError
+    end
+
+    def error_string(err : Int32) : String
+      ptr = LibCUDARuntime.cudaGetErrorString(err)
+      String.new(ptr)
     end
 
     def copy_device_to_device(dst : Pointer(Void), src : Pointer(Void), bytes : LibC::SizeT) : Int32

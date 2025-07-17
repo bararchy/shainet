@@ -170,6 +170,18 @@ module SHAInet
     def stream_synchronize(stream : Stream)
     end
 
+    def device_synchronize : Int32
+      0
+    end
+
+    def last_error : Int32
+      0
+    end
+
+    def error_string(err : Int32) : String
+      "cuda disabled"
+    end
+
     def copy_device_to_device(dst : Pointer(Void), src : Pointer(Void), bytes : LibC::SizeT) : Int32
       # no-op when CUDA is disabled
       0
