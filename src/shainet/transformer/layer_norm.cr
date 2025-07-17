@@ -224,6 +224,14 @@ module SHAInet
       end
     end
 
+    private def check_kernel!(name : String, rows : Int32, cols : Int32, precision : Precision)
+      err = CUDA.device_synchronize
+      if err != 0
+        msg = "#{name} kernel failed for rows=#{rows} cols=#{cols} precision=#{precision}: #{CUDA.error_string(err)}"
+        raise RuntimeError.new(msg)
+      end
+    end
+
     # GPU path - all CudaMatrix operations
     def forward(x : CudaMatrix) : CudaMatrix
       @x = x
@@ -248,48 +256,56 @@ module SHAInet
             cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
             cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
             rows, cols)
+          check_kernel!("row_mean_var_fp16", rows, cols, x.precision)
           CUDA.layer_norm_fp16(
             cuda_norm.device_ptr.not_nil!.as(Pointer(UInt16)),
             x.device_ptr.not_nil!.as(Pointer(UInt16)),
             cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
             cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
             rows, cols, @epsilon.to_f32)
+          check_kernel!("layer_norm_fp16", rows, cols, x.precision)
         when Precision::Fp32
           CUDA.row_mean_var_fp32(
             x.device_ptr.not_nil!.as(Pointer(Float32)),
             cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
             cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
             rows, cols)
+          check_kernel!("row_mean_var_fp32", rows, cols, x.precision)
           CUDA.layer_norm_fp32(
             cuda_norm.device_ptr.not_nil!.as(Pointer(Float32)),
             x.device_ptr.not_nil!.as(Pointer(Float32)),
             cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
             cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
             rows, cols, @epsilon.to_f32)
+          check_kernel!("layer_norm_fp32", rows, cols, x.precision)
         when Precision::Bf16
           CUDA.row_mean_var_bf16(
             x.device_ptr.not_nil!.as(Pointer(UInt16)),
             cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
             cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
             rows, cols)
+          check_kernel!("row_mean_var_bf16", rows, cols, x.precision)
           CUDA.layer_norm_bf16(
             cuda_norm.device_ptr.not_nil!.as(Pointer(UInt16)),
             x.device_ptr.not_nil!.as(Pointer(UInt16)),
             cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
             cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
             rows, cols, @epsilon.to_f32)
+          check_kernel!("layer_norm_bf16", rows, cols, x.precision)
         else
           CUDA.row_mean_var(
             x.device_ptr.not_nil!.as(Pointer(Float32)),
             cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
             cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
             rows, cols)
+          check_kernel!("row_mean_var", rows, cols, x.precision)
           CUDA.layer_norm(
             cuda_norm.device_ptr.not_nil!.as(Pointer(Float32)),
             x.device_ptr.not_nil!.as(Pointer(Float32)),
             cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
             cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
             rows, cols, @epsilon)
+          check_kernel!("layer_norm", rows, cols, x.precision)
         end
 
         # Don't sync from device - keep data on GPU for performance
