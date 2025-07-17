@@ -52,6 +52,7 @@ module SHAInet
     @@buffer_pool = Hash(String, Array(Pointer(Void))).new { |h, k| h[k] = [] of Pointer(Void) }
     @@pool_enabled = true
     @@max_pool_size = 30_000
+    @@buffer_pool_mutex = Mutex.new
 
     getter rows, cols
 
@@ -1551,19 +1552,21 @@ module SHAInet
       return Pointer(Void).null unless @@pool_enabled
 
       key = "#{size}_#{precision}"
-      pool = @@buffer_pool[key]
+      @@buffer_pool_mutex.synchronize do
+        pool = @@buffer_pool[key]
 
-      if ptr = pool.pop?
-        ptr
-      else
-        bytes = (size * element_size(precision)).to_u64
-        out = Pointer(Void).null
-        result = CUDA.malloc(pointerof(out).as(Pointer(Pointer(Void))), bytes)
-        if result == 0 && !out.null?
-          @@total_gpu_memory_allocated += bytes
-          out
+        if ptr = pool.pop?
+          ptr
         else
-          raise RuntimeError.new("Failed to allocate #{bytes} bytes of GPU memory")
+          bytes = (size * element_size(precision)).to_u64
+          out = Pointer(Void).null
+          result = CUDA.malloc(pointerof(out).as(Pointer(Pointer(Void))), bytes)
+          if result == 0 && !out.null?
+            @@total_gpu_memory_allocated += bytes
+            out
+          else
+            raise RuntimeError.new("Failed to allocate #{bytes} bytes of GPU memory")
+          end
         end
       end
     end
@@ -1573,12 +1576,14 @@ module SHAInet
       return if ptr.null? || !@@pool_enabled
 
       key = "#{size}_#{precision}"
-      pool = @@buffer_pool[key]
-      if pool.size < @@max_pool_size
-        pool << ptr
-      else
-        CUDA.free(ptr)
-        @@total_gpu_memory_allocated -= (size * element_size(precision)).to_u64
+      @@buffer_pool_mutex.synchronize do
+        pool = @@buffer_pool[key]
+        if pool.size < @@max_pool_size
+          pool << ptr
+        else
+          CUDA.free(ptr)
+          @@total_gpu_memory_allocated -= (size * element_size(precision)).to_u64
+        end
       end
     end
 
@@ -1608,15 +1613,17 @@ module SHAInet
 
     # Clear all pooled buffers
     def self.clear_workspace_pool
-      @@buffer_pool.each do |key, pool|
-        size, prec_str = key.split("_")
-        precision = Precision.parse(prec_str)
-        elem_size = element_size(precision)
-        pool.each do |ptr|
-          CUDA.free(ptr)
-          @@total_gpu_memory_allocated -= (size.to_i * elem_size).to_u64
+      @@buffer_pool_mutex.synchronize do
+        @@buffer_pool.each do |key, pool|
+          size, prec_str = key.split("_")
+          precision = Precision.parse(prec_str)
+          elem_size = element_size(precision)
+          pool.each do |ptr|
+            CUDA.free(ptr)
+            @@total_gpu_memory_allocated -= (size.to_i * elem_size).to_u64
+          end
+          pool.clear
         end
-        pool.clear
       end
     end
 
