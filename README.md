@@ -209,6 +209,13 @@ net.train(
   log_each: 1000)
 ```
 
+### Streaming Data / GPU
+
+When streaming batches directly on the GPU (`gpu_batches: true`), any
+attention mask must be created with the same precision as the network.
+Use `AttentionMask.causal(seq_len, precision: net.precision)` (or
+`causal_cuda` on GPU) to avoid mismatched precisions.
+
 ### Learning Rate Scheduling
 
 Control the learning rate using warmup and decay:

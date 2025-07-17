@@ -118,9 +118,9 @@ net.transformer_layers.first.positional_encoding = pos_enc
 
 # Causal mask so each position only attends to previous ones
 mask = if SHAInet::CUDA.fully_available?
-         SHAInet::GPUMemory.to_gpu(SHAInet::AttentionMask.causal(seq_len))
+         SHAInet::AttentionMask.causal_cuda(seq_len, precision: net.precision)
        else
-         SHAInet::AttentionMask.causal(seq_len)
+         SHAInet::AttentionMask.causal(seq_len, precision: net.precision)
        end
 net.transformer_layers.each { |l| l.mask = mask }
 
