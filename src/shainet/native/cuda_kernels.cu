@@ -25,7 +25,6 @@ template <> struct Convert<float> {
   __device__ static float from_float(float v) { return v; }
 };
 
-
 template <typename T>
 __global__ void scale_kernel_t(T *data, float alpha, int size) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -36,7 +35,9 @@ __global__ void scale_kernel_t(T *data, float alpha, int size) {
 }
 
 template <typename T>
-__global__ void cross_entropy_loss_gradient_kernel_t(const T *pred, const T *target, T *grad, float *loss, int total) {
+__global__ void cross_entropy_loss_gradient_kernel_t(const T *pred,
+                                                     const T *target, T *grad,
+                                                     float *loss, int total) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx >= total)
     return;
@@ -89,8 +90,8 @@ __global__ void mse_loss_grad_kernel(const T *pred, const T *target, T *grad,
   T t = target[idx];
   T diff = p - t;
   grad[idx] = diff;
-  float contrib = 0.5f * Convert<T>::to_float(diff) *
-                  Convert<T>::to_float(diff);
+  float contrib =
+      0.5f * Convert<T>::to_float(diff) * Convert<T>::to_float(diff);
   atomicAdd(loss, contrib);
 }
 
@@ -262,8 +263,8 @@ __global__ void element_mul_kernel_t(T *out, const T *a, const T *b,
 }
 
 template <typename T>
-__global__ void ger_kernel_t(const T *x, const T *y, T *a,
-                             int m, int n, int lda, float alpha) {
+__global__ void ger_kernel_t(const T *x, const T *y, T *a, int m, int n,
+                             int lda, float alpha) {
   int col = blockIdx.x * blockDim.x + threadIdx.x;
   int row = blockIdx.y * blockDim.y + threadIdx.y;
   if (row >= m || col >= n)
@@ -328,8 +329,8 @@ softmax_cross_entropy_label_kernel_t(const T *pred, const int *labels, T *grad,
 
   // Normalize to obtain probabilities
   for (int j = 0; j < cols; ++j) {
-    row_grad[j] = Convert<T>::from_float(
-        Convert<T>::to_float(row_grad[j]) / sum);
+    row_grad[j] =
+        Convert<T>::from_float(Convert<T>::to_float(row_grad[j]) / sum);
   }
 
   int label = labels[row];
@@ -379,8 +380,8 @@ __global__ void softmax_cross_entropy_label_matrix_kernel_t(
   }
 
   for (int j = 0; j < cols; ++j) {
-    row_grad[j] = Convert<T>::from_float(
-        Convert<T>::to_float(row_grad[j]) / sum);
+    row_grad[j] =
+        Convert<T>::from_float(Convert<T>::to_float(row_grad[j]) / sum);
   }
 
   int label = (int)labels[row];
@@ -421,8 +422,8 @@ __global__ void row_sum_kernel_t(T *dst, const T *src, int rows, int cols) {
 }
 
 template <typename T>
-__global__ void slice_cols_kernel_t(T *out, const T *in, int rows,
-                                    int src_cols, int start, int len) {
+__global__ void slice_cols_kernel_t(T *out, const T *in, int rows, int src_cols,
+                                    int start, int len) {
   int row = blockIdx.x;
   int col = threadIdx.x;
   if (row >= rows || col >= len)
@@ -456,8 +457,8 @@ __global__ void swiglu_backward_kernel_t(T *dest, const T *pre, const T *grad,
 }
 
 template <typename T>
-__global__ void set_cols_kernel_t(T *out, const T *in, int rows,
-                                  int dst_cols, int start, int len) {
+__global__ void set_cols_kernel_t(T *out, const T *in, int rows, int dst_cols,
+                                  int start, int len) {
   int row = blockIdx.x;
   int col = threadIdx.x;
   if (row >= rows || col >= len)
@@ -607,8 +608,8 @@ void row_mean_var_f32(const float *in, float *mean, float *var, int rows,
 
 void apply_layer_norm(float *out, const float *in, const float *mean,
                       const float *var, int rows, int cols, float epsilon) {
-  apply_layer_norm_kernel_t<float><<<rows, 1>>>(out, in, mean, var, rows, cols,
-                                               epsilon);
+  apply_layer_norm_kernel_t<float>
+      <<<rows, 1>>>(out, in, mean, var, rows, cols, epsilon);
   cudaDeviceSynchronize();
 }
 
@@ -635,10 +636,10 @@ void apply_layer_norm_f32(float *out, const float *in, const float *mean,
   cudaDeviceSynchronize();
 }
 
-
-void slice_cols(float *out, const float *in, int rows, int src_cols,
-                int start, int len) {
-  slice_cols_kernel_t<float><<<rows, len>>>(out, in, rows, src_cols, start, len);
+void slice_cols(float *out, const float *in, int rows, int src_cols, int start,
+                int len) {
+  slice_cols_kernel_t<float>
+      <<<rows, len>>>(out, in, rows, src_cols, start, len);
   cudaDeviceSynchronize();
 }
 
@@ -653,7 +654,6 @@ void slice_cols_bf16(__nv_bfloat16 *out, const __nv_bfloat16 *in, int rows,
   slice_cols_kernel_t<<<rows, len>>>(out, in, rows, src_cols, start, len);
   cudaDeviceSynchronize();
 }
-
 
 void set_cols(float *out, const float *in, int rows, int dst_cols, int start,
               int len) {
@@ -691,10 +691,12 @@ void count_token_pairs(const int *a, const int *b, const int *freq,
   cudaDeviceSynchronize();
 }
 
-__global__ void layer_norm_backward_kernel(
-    float *d_x, float *d_gamma, float *d_beta, const float *d_out,
-    const float *x, const float *gamma, const float *mean, const float *var,
-    const float *norm, int rows, int cols, float epsilon) {
+__global__ void layer_norm_backward_kernel(float *d_x, float *d_gamma,
+                                           float *d_beta, const float *d_out,
+                                           const float *x, const float *gamma,
+                                           const float *mean, const float *var,
+                                           const float *norm, int rows,
+                                           int cols, float epsilon) {
   int row = blockIdx.x;
   if (row >= rows)
     return;
@@ -733,10 +735,9 @@ __global__ void layer_norm_backward_kernel(
 }
 
 void layer_norm_backward(float *d_x, float *d_gamma, float *d_beta,
-                         const float *d_out, const float *x,
-                         const float *gamma, const float *mean,
-                         const float *var, const float *norm, int rows,
-                         int cols, float epsilon) {
+                         const float *d_out, const float *x, const float *gamma,
+                         const float *mean, const float *var, const float *norm,
+                         int rows, int cols, float epsilon) {
   layer_norm_backward_kernel<<<rows, 1>>>(d_x, d_gamma, d_beta, d_out, x, gamma,
                                           mean, var, norm, rows, cols, epsilon);
   cudaDeviceSynchronize();
@@ -763,8 +764,8 @@ void sum_cols_f32(float *out, const float *in, int rows, int cols) {
   cudaDeviceSynchronize();
 }
 
-__global__ void mul_row_vector_kernel(float *matrix, const float *vec,
-                                      int rows, int cols) {
+__global__ void mul_row_vector_kernel(float *matrix, const float *vec, int rows,
+                                      int cols) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx >= rows * cols)
     return;
@@ -856,8 +857,8 @@ __global__ void gelu_forward_kernel(float *activations, float *derivatives,
   derivatives[idx] = cdf + x * expf(-0.5f * x * x) / sqrtf(2.0f * M_PI);
 }
 
-void gelu_forward(float *activations, float *derivatives,
-                  const float *linear, int size) {
+void gelu_forward(float *activations, float *derivatives, const float *linear,
+                  int size) {
   int threads_per_block = 256;
   int blocks = (size + threads_per_block - 1) / threads_per_block;
 
@@ -1153,8 +1154,8 @@ void weight_update_bf16(__nv_bfloat16 *weights, const __nv_bfloat16 *grads,
   }
 }
 
-__global__ void element_div_kernel(float *out, const float *a,
-                                   const float *b, int size) {
+__global__ void element_div_kernel(float *out, const float *a, const float *b,
+                                   int size) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx >= size)
     return;
@@ -1205,9 +1206,8 @@ void element_div_f32(float *out, const float *a, const float *b, int size) {
   }
 }
 
-__global__ void element_mul_kernel(float *out, const float *a,
-                                   const float *b, float alpha, float beta,
-                                   int size) {
+__global__ void element_mul_kernel(float *out, const float *a, const float *b,
+                                   float alpha, float beta, int size) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx >= size)
     return;
@@ -1336,13 +1336,13 @@ void scale_bf16(__nv_bfloat16 *data, float alpha, int size) {
   }
 }
 
-void ger_fp16(const __half *x, const __half *y, __half *a,
-              int m, int n, int lda, float alpha) {
+void ger_fp16(const __half *x, const __half *y, __half *a, int m, int n,
+              int lda, float alpha) {
   ger_t<__half>(x, y, a, m, n, lda, alpha);
 }
 
 void ger_bf16(const __nv_bfloat16 *x, const __nv_bfloat16 *y, __nv_bfloat16 *a,
-               int m, int n, int lda, float alpha) {
+              int m, int n, int lda, float alpha) {
   ger_t<__nv_bfloat16>(x, y, a, m, n, lda, alpha);
 }
 
@@ -1357,14 +1357,16 @@ void cross_entropy_loss_gradient_f32(float *pred, float *target, float *grad,
   cross_entropy_loss_gradient_t<float>(pred, target, grad, loss, rows, cols);
 }
 
-void cross_entropy_loss_gradient_fp16(__half *pred, __half *target, __half *grad,
-                                      float *loss, int rows, int cols) {
+void cross_entropy_loss_gradient_fp16(__half *pred, __half *target,
+                                      __half *grad, float *loss, int rows,
+                                      int cols) {
   cross_entropy_loss_gradient_t<__half>(pred, target, grad, loss, rows, cols);
 }
 
-void cross_entropy_loss_gradient_bf16(__nv_bfloat16 *pred, const __nv_bfloat16 *target,
-                                      __nv_bfloat16 *grad, float *loss, int rows,
-                                      int cols) {
+void cross_entropy_loss_gradient_bf16(__nv_bfloat16 *pred,
+                                      const __nv_bfloat16 *target,
+                                      __nv_bfloat16 *grad, float *loss,
+                                      int rows, int cols) {
   cross_entropy_loss_gradient_t<__nv_bfloat16>(pred, target, grad, loss, rows,
                                                cols);
 }
@@ -1414,8 +1416,8 @@ void mse_loss_gradient(float *pred, float *target, float *grad, float *loss,
   mse_loss_gradient_t<float>(pred, target, grad, loss, rows, cols);
 }
 
-void mse_loss_gradient_f32(float *pred, float *target, float *grad,
-                           float *loss, int rows, int cols) {
+void mse_loss_gradient_f32(float *pred, float *target, float *grad, float *loss,
+                           int rows, int cols) {
   mse_loss_gradient_t<float>(pred, target, grad, loss, rows, cols);
 }
 
@@ -1424,9 +1426,9 @@ void mse_loss_gradient_fp16(const __half *pred, const __half *target,
   mse_loss_gradient_t<__half>(pred, target, grad, loss, rows, cols);
 }
 
-void mse_loss_gradient_bf16(const __nv_bfloat16 *pred, const __nv_bfloat16 *target,
-                            __nv_bfloat16 *grad, float *loss, int rows,
-                            int cols) {
+void mse_loss_gradient_bf16(const __nv_bfloat16 *pred,
+                            const __nv_bfloat16 *target, __nv_bfloat16 *grad,
+                            float *loss, int rows, int cols) {
   mse_loss_gradient_t<__nv_bfloat16>(pred, target, grad, loss, rows, cols);
 }
 
