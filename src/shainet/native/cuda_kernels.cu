@@ -431,6 +431,31 @@ __global__ void slice_cols_kernel_t(T *out, const T *in, int rows,
 }
 
 template <typename T>
+__global__ void swiglu_backward_kernel_t(T *dest, const T *pre, const T *grad,
+                                         int rows, int cols_half) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int total = rows * cols_half;
+  if (idx >= total)
+    return;
+
+  int row = idx / cols_half;
+  int col = idx % cols_half;
+  int cols = cols_half * 2;
+
+  const T *pre_row = pre + row * cols;
+  T *dest_row = dest + row * cols;
+
+  float a = Convert<T>::to_float(pre_row[col]);
+  float b = Convert<T>::to_float(pre_row[col + cols_half]);
+  float g = Convert<T>::to_float(grad[row * cols_half + col]);
+  float sig = 1.0f / (1.0f + expf(-b));
+  float sig_p = sig * (1.0f - sig);
+
+  dest_row[col] = Convert<T>::from_float(g * sig);
+  dest_row[col + cols_half] = Convert<T>::from_float(g * a * sig_p);
+}
+
+template <typename T>
 __global__ void set_cols_kernel_t(T *out, const T *in, int rows,
                                   int dst_cols, int start, int len) {
   int row = blockIdx.x;
@@ -486,31 +511,6 @@ void relu_backward(float *output, const float *input, const float *grad,
   if (err != cudaSuccess) {
     printf("CUDA Error in relu_backward: %s\n", cudaGetErrorString(err));
   }
-}
-
-template <typename T>
-__global__ void swiglu_backward_kernel_t(T *dest, const T *pre, const T *grad,
-                                         int rows, int cols_half) {
-  int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  int total = rows * cols_half;
-  if (idx >= total)
-    return;
-
-  int row = idx / cols_half;
-  int col = idx % cols_half;
-  int cols = cols_half * 2;
-
-  const T *pre_row = pre + row * cols;
-  T *dest_row = dest + row * cols;
-
-  float a = Convert<T>::to_float(pre_row[col]);
-  float b = Convert<T>::to_float(pre_row[col + cols_half]);
-  float g = Convert<T>::to_float(grad[row * cols_half + col]);
-  float sig = 1.0f / (1.0f + expf(-b));
-  float sig_p = sig * (1.0f - sig);
-
-  dest_row[col] = Convert<T>::from_float(g * sig);
-  dest_row[col + cols_half] = Convert<T>::from_float(g * a * sig_p);
 }
 
 void swiglu_backward(float *dest, const float *pre, const float *grad, int rows,
