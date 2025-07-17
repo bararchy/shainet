@@ -251,19 +251,19 @@ module SHAInet
         # Try to use CUDA kernels - if they fail, fallback to CPU
         case x.precision
         when Precision::Fp16
-          CUDA.row_mean_var_fp16(
+          CUDA.row_mean_var_fp16_to_fp16(
             x.device_ptr.not_nil!.as(Pointer(UInt16)),
-            cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
-            cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
+            cuda_mean.device_ptr.not_nil!.as(Pointer(UInt16)),
+            cuda_var.device_ptr.not_nil!.as(Pointer(UInt16)),
             rows, cols)
-          check_kernel!("row_mean_var_fp16", rows, cols, x.precision)
-          CUDA.layer_norm_fp16(
+          check_kernel!("row_mean_var_fp16_to_fp16", rows, cols, x.precision)
+          CUDA.layer_norm_fp16_to_fp16(
             cuda_norm.device_ptr.not_nil!.as(Pointer(UInt16)),
             x.device_ptr.not_nil!.as(Pointer(UInt16)),
-            cuda_mean.device_ptr.not_nil!.as(Pointer(Float32)),
-            cuda_var.device_ptr.not_nil!.as(Pointer(Float32)),
+            cuda_mean.device_ptr.not_nil!.as(Pointer(UInt16)),
+            cuda_var.device_ptr.not_nil!.as(Pointer(UInt16)),
             rows, cols, @epsilon.to_f32)
-          check_kernel!("layer_norm_fp16", rows, cols, x.precision)
+          check_kernel!("layer_norm_fp16_to_fp16", rows, cols, x.precision)
         when Precision::Fp32
           CUDA.row_mean_var_fp32(
             x.device_ptr.not_nil!.as(Pointer(Float32)),

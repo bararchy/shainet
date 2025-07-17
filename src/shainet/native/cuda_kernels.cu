@@ -198,6 +198,26 @@ __global__ void row_mean_var_kernel_t(const T *in, float *mean, float *var,
   var[row] = sq_sum / cols - m * m;
 }
 
+// Mixed precision version where input and output can have different types
+template <typename T, typename S>
+__global__ void row_mean_var_kernel_mixed_t(const T *in, S *mean, S *var,
+                                           int rows, int cols) {
+  int row = blockIdx.x;
+  if (row >= rows)
+    return;
+  const T *row_in = in + row * cols;
+  float sum = 0.0f;
+  float sq_sum = 0.0f;
+  for (int j = 0; j < cols; ++j) {
+    float v = Convert<T>::to_float(row_in[j]);
+    sum += v;
+    sq_sum += v * v;
+  }
+  float m = sum / cols;
+  mean[row] = Convert<S>::from_float(m);
+  var[row] = Convert<S>::from_float(sq_sum / cols - m * m);
+}
+
 template <typename T>
 __global__ void transpose_kernel_t(T *out, const T *in, int rows, int cols) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -221,6 +241,25 @@ __global__ void apply_layer_norm_kernel_t(T *out, const T *in,
   T *row_out = out + row * cols;
   float m = mean[row];
   float denom = sqrtf(var[row] + epsilon);
+  for (int j = 0; j < cols; ++j) {
+    float v = Convert<T>::to_float(row_in[j]);
+    row_out[j] = Convert<T>::from_float((v - m) / denom);
+  }
+}
+
+// Mixed precision version where input/output and mean/var can have different types
+template <typename T, typename S>
+__global__ void apply_layer_norm_kernel_mixed_t(T *out, const T *in,
+                                               const S *mean, const S *var,
+                                               int rows, int cols, float epsilon) {
+  int row = blockIdx.x;
+  if (row >= rows)
+    return;
+  const T *row_in = in + row * cols;
+  T *row_out = out + row * cols;
+  float m = Convert<S>::to_float(mean[row]);
+  float v_val = Convert<S>::to_float(var[row]);
+  float denom = sqrtf(v_val + epsilon);
   for (int j = 0; j < cols; ++j) {
     float v = Convert<T>::to_float(row_in[j]);
     row_out[j] = Convert<T>::from_float((v - m) / denom);
@@ -606,6 +645,19 @@ void row_mean_var_f32(const float *in, float *mean, float *var, int rows,
   cudaDeviceSynchronize();
 }
 
+// New FP16-to-FP16 wrapper functions
+void row_mean_var_fp16_to_fp16(const __half *in, __half *mean, __half *var, 
+                               int rows, int cols) {
+  row_mean_var_kernel_mixed_t<<<rows, 1>>>(in, mean, var, rows, cols);
+  cudaDeviceSynchronize();
+}
+
+void row_mean_var_bf16_to_bf16(const __nv_bfloat16 *in, __nv_bfloat16 *mean, 
+                               __nv_bfloat16 *var, int rows, int cols) {
+  row_mean_var_kernel_mixed_t<<<rows, 1>>>(in, mean, var, rows, cols);
+  cudaDeviceSynchronize();
+}
+
 void apply_layer_norm(float *out, const float *in, const float *mean,
                       const float *var, int rows, int cols, float epsilon) {
   apply_layer_norm_kernel_t<float>
@@ -633,6 +685,23 @@ void apply_layer_norm_f32(float *out, const float *in, const float *mean,
                           const float *var, int rows, int cols, float epsilon) {
   apply_layer_norm_kernel_t<<<rows, 1>>>(out, in, mean, var, rows, cols,
                                          epsilon);
+  cudaDeviceSynchronize();
+}
+
+// New FP16-to-FP16 layer norm wrapper functions
+void apply_layer_norm_fp16_to_fp16(__half *out, const __half *in, 
+                                   const __half *mean, const __half *var, 
+                                   int rows, int cols, float epsilon) {
+  apply_layer_norm_kernel_mixed_t<<<rows, 1>>>(out, in, mean, var, rows, cols,
+                                              epsilon);
+  cudaDeviceSynchronize();
+}
+
+void apply_layer_norm_bf16_to_bf16(__nv_bfloat16 *out, const __nv_bfloat16 *in,
+                                   const __nv_bfloat16 *mean, const __nv_bfloat16 *var,
+                                   int rows, int cols, float epsilon) {
+  apply_layer_norm_kernel_mixed_t<<<rows, 1>>>(out, in, mean, var, rows, cols,
+                                              epsilon);
   cudaDeviceSynchronize();
 }
 

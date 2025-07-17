@@ -28,16 +28,16 @@ path = if ARGV[0]?
 # ### Example Control Parameters
 # You can adjust these parameters to control the training process.
 # vocab_size: Size of the tokenizer vocabulary.
-vocab_size = 10_000
+vocab_size = 10_00
 # text_sample_size: How much of the dataset to use for training.
 # Use -1 for the full dataset, or a smaller number for quick testing.
-text_sample_size = 1_000_000
+text_sample_size = 1_000_0
 # d_model: Dimension of the model (embedding size).
-d_model = 512
+d_model = 128
 # seq_len: Length of input sequences for the Transformer. this is the context length.
-seq_len = 128
+seq_len = 64
 # transformer_layers: Number of Transformer layers in the model.
-transformer_layers = 4
+transformer_layers = 1
 # epochs: Number of training epochs.
 # Larger epochs will take longer but may improve performance.
 epochs = 100
